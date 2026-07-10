@@ -1,0 +1,140 @@
+import json
+import os
+from dataclasses import dataclass, field, asdict
+from typing import Dict, Optional, List
+
+
+DEFAULT_CONFIG = {
+    "embedding": {
+        "provider": "local",
+        "model": "all-MiniLM-L6-v2",
+        "api_key": None,
+        "api_base": None,
+        "dimensions": 384,
+    },
+    "chunking": {
+        "max_chunk_size": 1500,
+        "min_chunk_size": 50,
+        "overlap_lines": 20,
+        "use_language_parsing": True,
+    },
+    "knowledge_graph": {
+        "enabled": True,
+        "persist_path": ".code-harness/graph.json",
+    },
+    "repo_graph": {
+        "enabled": True,
+        "persist_path": ".code-harness/repo_graph.json",
+        "skip_modules": [
+            "os", "sys", "re", "json", "math", "typing", "collections",
+            "dataclasses", "enum", "pathlib", "abc", "io", "functools",
+            "itertools", "datetime", "copy", "hashlib", "uuid",
+        ],
+    },
+    "llm": {
+        "provider": "openai",
+        "model": "gpt-4o",
+        "api_key": None,
+        "api_base": None,
+        "temperature": 0.1,
+        "max_tokens": 4096,
+    },
+
+    "retrieval": {
+        "dense_weight": 0.3,
+        "sparse_weight": 0.25,
+        "graph_weight": 0.2,
+        "top_k": 30,
+        "rerank_top_k": 15,
+        "expand_neighbors": 3,
+        "cross_encoder": {
+            "enabled": True,
+            "model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+        },
+        "hyde": {
+            "enabled": False,
+        },
+    },
+
+    "vector_store": {
+        "type": "chromadb",
+        "persist_directory": ".code-harness/chromadb",
+        "collection_name": "code_chunks",
+        "similarity_metric": "cosine",
+        "hnsw_ef_search": 256,
+        "hnsw_ef_construction": 200,
+        "hnsw_m": 32,
+    },
+
+    "indexing": {
+        "exclude_patterns": [
+            "node_modules", "__pycache__", ".git", "venv",
+            ".venv", ".tox", "dist", "build", ".next",
+            "*.pyc", "*.pyo", "*.so", "*.dll", "*.dylib",
+            ".DS_Store", "package-lock.json", "yarn.lock",
+            "*.min.js", "*.min.css",
+        ],
+        "include_extensions": [
+            ".py", ".js", ".ts", ".jsx", ".tsx", ".go", ".rs",
+            ".java", ".c", ".cpp", ".h", ".hpp", ".rb", ".php",
+            ".swift", ".kt", ".scala", ".ex", ".exs",
+            ".md", ".rst", ".txt", ".yaml", ".yml", ".json",
+            ".toml", ".cfg", ".ini",
+        ],
+        "max_file_size_kb": 512,
+        "use_treesitter": True,
+    },
+}
+
+
+@dataclass
+class Config:
+    embedding: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["embedding"]))
+    chunking: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["chunking"]))
+    vector_store: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["vector_store"]))
+    knowledge_graph: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["knowledge_graph"]))
+    repo_graph: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["repo_graph"]))
+    retrieval: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["retrieval"]))
+    llm: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["llm"]))
+    indexing: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["indexing"]))
+    repo_path: str = "."
+    verbose: bool = False
+
+    @classmethod
+    def from_dict(cls, d: Dict) -> "Config":
+        config = cls()
+        for section in DEFAULT_CONFIG:
+            if section in d:
+                setattr(config, section, {**getattr(config, section), **d[section]})
+        if "repo_path" in d:
+            config.repo_path = d["repo_path"]
+        if "verbose" in d:
+            config.verbose = d["verbose"]
+        return config
+
+    @classmethod
+    def from_file(cls, path: str) -> "Config":
+        with open(path) as f:
+            if path.endswith(".json"):
+                return cls.from_dict(json.load(f))
+            if path.endswith((".yaml", ".yml")):
+                import yaml
+                return cls.from_dict(yaml.safe_load(f))
+        return cls()
+
+    def save(self, path: str):
+        data = {
+            "embedding": self.embedding,
+            "chunking": self.chunking,
+            "vector_store": self.vector_store,
+            "knowledge_graph": self.knowledge_graph,
+            "repo_graph": self.repo_graph,
+            "retrieval": self.retrieval,
+            "llm": self.llm,
+            "indexing": self.indexing,
+            "repo_path": self.repo_path,
+            "verbose": self.verbose,
+        }
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        with open(path, "w") as f:
+            json.dump(data, f, indent=2)
