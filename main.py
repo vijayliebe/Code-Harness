@@ -51,6 +51,15 @@ def cmd_index(args):
     entities, _ = parser.parse_repository(repo_path)
     print(f"[*] Extracted {len(entities)} code entities")
 
+    try:
+        from harness.kg_enrich import collect_enrichment_entities
+        extra = collect_enrichment_entities(entities, repo_path, config)
+        if extra:
+            entities.extend(extra)
+            print(f"[*] KG enrichment entities: {len(extra)} (endpoints/gloss)")
+    except Exception as exc:
+        print(f"[!] KG enrichment entities skipped: {exc}")
+
     chunker = CodeChunker(config)
     chunks = chunker.chunk_entities(entities)
     # Tag each chunk with the repo name
@@ -380,6 +389,12 @@ def cmd_info(args):
     kg.load()
     print(f"Knowledge graph ({repo_name}): {kg.graph.number_of_nodes()} nodes, "
           f"{kg.graph.number_of_edges()} edges")
+    if getattr(args, "mermaid", False):
+        focus = getattr(args, "focus", None)
+        print()
+        print(kg.to_mermaid(focus=focus, max_nodes=getattr(args, "max_nodes", 40) or 40))
+        if not getattr(args, "stats", False):
+            return
 
     ext_counts: Dict[str, int] = {}
     for f in files:
@@ -812,6 +827,7 @@ Examples:
   %(prog)s interactive ./my-project                      # Interactive mode
    %(prog)s index ./my-project --embed-model all-MiniLM-L6-v2
    %(prog)s info ./my-project                             # Show repo stats
+   %(prog)s info ./my-project --mermaid --focus class:harness/context_builder.py:ContextBuilder
    %(prog)s watch ./my-project                            # Watch and auto re-index
   %(prog)s eval . --suite .docs/research/eval/code-harness.fixture.yaml
   %(prog)s eval . --suite .docs/research/eval/code-harness.fixture.yaml --loop
@@ -865,6 +881,23 @@ Examples:
 
     info = subparsers.add_parser("info", help="Show repository information")
     info.add_argument("repo", nargs="?", default=".", help="Repository path")
+    info.add_argument(
+        "--mermaid",
+        action="store_true",
+        help="Export a Mermaid subgraph from the knowledge graph (wiki precursor)",
+    )
+    info.add_argument(
+        "--focus",
+        default=None,
+        metavar="ENTITY_ID",
+        help="Center the Mermaid subgraph on this entity id",
+    )
+    info.add_argument(
+        "--max-nodes",
+        type=int,
+        default=40,
+        help="Cap Mermaid nodes (default: 40)",
+    )
     info.set_defaults(func=cmd_info)
 
     clear = subparsers.add_parser("clear", help="Clear indexed data")

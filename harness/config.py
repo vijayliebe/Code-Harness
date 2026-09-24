@@ -21,6 +21,11 @@ DEFAULT_CONFIG = {
     "knowledge_graph": {
         "enabled": True,
         "persist_path": ".code-harness/graph.json",
+        "enrich": True,
+        "extract_exposes": True,
+        "extract_tested_by": True,
+        "extract_gloss": True,
+        "gloss_dirs": [".code-harness/gloss", "knowledge/gloss"],
     },
     "repo_graph": {
         "enabled": True,
@@ -60,6 +65,9 @@ DEFAULT_CONFIG = {
         "top_k": 30,
         "rerank_top_k": 15,
         "expand_neighbors": 3,
+        "expand_mode": "beam",
+        "beam_width": 6,
+        "beam_depth": 2,
         "max_loops": 0,
         "grade_threshold": 0.35,
         "citation_threshold": 0.5,

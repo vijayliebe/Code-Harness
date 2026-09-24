@@ -216,6 +216,9 @@ class ContextBuilder:
             if r.chunk.docstring:
                 boost += 0.05
 
+            if (r.chunk.metadata or {}).get("kind") == "gloss":
+                boost += 0.12
+
             r.score = max(0, r.score + boost)
 
         results.sort(key=lambda r: r.score, reverse=True)

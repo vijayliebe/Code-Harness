@@ -65,3 +65,21 @@ fixtures:
     must_cite_paths:
       - harness/retriever.py
     difficulty: medium
+
+  - id: q-who-calls-build-context
+    query: Who calls ContextBuilder.build_context?
+    relevant_chunk_ids:
+      - method:harness/context_builder.py:ContextBuilder.build_context
+      - class:harness/context_builder.py:ContextBuilder
+    must_cite_paths:
+      - harness/context_builder.py
+    difficulty: hard
+
+  - id: q-what-exposes-query
+    query: What CLI commands are exposed in main.py?
+    relevant_chunk_ids:
+      - func:main.py:cmd_query
+      - file:main.py
+    must_cite_paths:
+      - main.py
+    difficulty: hard

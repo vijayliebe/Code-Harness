@@ -105,9 +105,13 @@ Eval always reports `prompt_tokens_full` vs `prompt_tokens_packed` so you can co
 
 ```bash
 python main.py info ./my-project
+python main.py info ./my-project --mermaid
+python main.py info ./my-project --mermaid --focus class:harness/context_builder.py:ContextBuilder
 ```
 
-Shows file count, chunk count, knowledge graph size, cross-repo relationships, and file type distribution.
+Shows file count, chunk count, knowledge graph size, cross-repo relationships, and file type distribution. `--mermaid` prints a `graph TD` subgraph from `graph_{repo}.json` (wiki precursor; no extra services). `--focus` centers the diagram on an entity id.
+
+Graph expansion defaults to **beam** (`retrieval.expand_mode: beam`, `beam_width: 6`, `beam_depth: 2`). `expand_neighbors: 3` is the added-chunk cap (`max_added = expand_neighbors * 2`). Set `expand_mode: bfs` to restore the old hop walk. Gloss notes live in `knowledge/gloss/*.md` or `.code-harness/gloss/*.md` with frontmatter `entity: class:path:Name`.
 
 ### `watch` — Watch and auto re-index
 
@@ -174,7 +178,7 @@ The corrective loop is **off by default** (`retrieval.max_loops: 0`) so one-shot
 
 1. **Dense retrieval**: query embedded with sentence-transformers/Voyage/Jina/OpenAI, top-K from ChromaDB (HNSW index, ef_search=256)
 2. **Sparse retrieval**: BM25 keyword search over all chunks — catches exact function/variable name matches
-3. **Graph expansion**: neighbors in knowledge graph (imports, calls, inheritance) — `max_depth=3`
+3. **Graph expansion**: beam walk over the knowledge graph (exposes / tested_by / gloss / calls / inheritance). Default `beam_width=6`, `beam_depth=2`; `expand_mode: bfs` keeps the old hop walk.
 4. **HyDE** (optional): hypothetical code document generation for query expansion
 5. **RRF fusion**: three signals combined via Reciprocal Rank Fusion
 6. **Cross-encoder reranking**: `cross-encoder/ms-marco-MiniLM-L-6-v2` re-scores top candidates
@@ -208,6 +212,10 @@ Key settings:
     "graph_weight": 0.2,
     "top_k": 30,
     "rerank_top_k": 15,
+    "expand_mode": "beam",
+    "beam_width": 6,
+    "beam_depth": 2,
+    "expand_neighbors": 3,
     "cross_encoder": { "enabled": true, "model": "cross-encoder/ms-marco-MiniLM-L-6-v2" },
     "hyde": { "enabled": false, "on_retry": true },
     "max_loops": 0,

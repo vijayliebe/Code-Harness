@@ -23,7 +23,8 @@ Every code entity becomes a graph node:
 | Property | Type | Description |
 |----------|------|-------------|
 | `name` | string | Entity name (function name, class name, filename) |
-| `type` | string | EntityType value: `file`, `class`, `function`, `method` |
+| `type` | string | EntityType value: `file`, `class`, `function`, `method`, `documentation`, `endpoint` |
+| `kind` | string | Optional. `gloss` for note nodes; `cli`/`http`/`mcp` for endpoints |
 | `file_path` | string | Relative path from repo root |
 | `start_line` | int | Starting line number |
 | `end_line` | int | Ending line number |
@@ -49,6 +50,9 @@ doc:README.md:Quick Start
 | `inherits` | CLASS → CLASS | Class inherits from another class |
 | `calls` | FUNC/METHOD → entity | Function calls or imports another entity |
 | `references` | FUNC/METHOD → entity | Function references a variable/function name |
+| `exposes` | FILE/FUNC → endpoint | HTTP/CLI/MCP surface (`add_parser`, FastAPI/Flask, click, MCP tools) |
+| `tested_by` | test file/func → code | Test entity covers a uniquely named production entity |
+| `gloss` | note → entity | Markdown note under `.code-harness/gloss/` or `knowledge/gloss/` |
 
 #### Edge Properties
 
@@ -56,7 +60,8 @@ Edges carry a single property:
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `relationship` | string | One of: `contains`, `inherits`, `calls`, `references` |
+| `relationship` | string | `contains`, `inherits`, `calls`, `references`, `exposes`, `tested_by`, `gloss` |
+| `confidence` | float | Optional extractor confidence (new edges only) |
 
 ### Construction
 
@@ -83,24 +88,39 @@ Links to entities matching the imported name.
 #### 6. Create `references` edges (FUNC/METHOD → entities)
 Extracts all identifier-like words from source code, filters out Python/reserved keywords, and links to matching entities by name.
 
+#### 7. Enrichment extractors (additive, fail-soft)
+
+When `knowledge_graph.enrich` is true (default):
+
+- **exposes** — argparse `add_parser("name")`, `@app.command()`, FastAPI/Flask decorators, Express routes, MCP `@tool`. Creates `endpoint:{file}:{name}` nodes.
+- **tested_by** — `test_*.py` / `*_test.py` / `tests/` files; imported names must uniquely identify a production entity. Common names (`get`, `main`, …) are dropped.
+- **gloss** — markdown under `.code-harness/gloss/` or `knowledge/gloss/` with frontmatter `entity: class:path:Name`.
+
+Each extractor is isolated: a failure skips that edge family and still writes `contains`/`calls`.
+
 ### Retrieval Usage
 
 #### Neighbor Expansion
 
-During query, when entities are matched via dense or sparse search, the graph finds their neighbors:
+Default is **beam** (score-ordered), not fixed BFS. `expand_mode: bfs` restores the old walk.
 
 ```
 matched entities (from dense/sparse search)
     │
     ▼
-[get_related_chunks(entity_ids, max_depth=3)]
-    │ Breadth-first traversal up to 3 hops
+[expand_beam(seed_scores, width=6, depth=2, max_added=expand_neighbors*2)]
+    │ score = edge_prior[type] * seed_score * 0.85^hop
+    │ priors: gloss/exposes/calls/tested_by > contains > references
     ▼
-related entity IDs (neighbors, neighbors-of-neighbors)
+related entity IDs (capped, FILE nodes skipped unless the seed is a file)
     │
     ▼
 matched against available chunks → graph retrieval results
 ```
+
+BFS fallback: `get_related_chunks(entity_ids, max_depth=expand_neighbors)` when `retrieval.expand_mode=bfs`.
+
+Mermaid export (wiki precursor): `python main.py info <repo> --mermaid [--focus entity_id]`.
 
 #### Scoring
 
@@ -233,6 +253,6 @@ repo-b --[shared_import: requests]--> repo-c
 
 - **Imports on functions only**: Import detection runs on function/method source code, not at file level. Cross-file imports are only captured when referenced within a function body.
 - **Name-based linking**: Entity matching is by name string only. If two entities share a name (e.g., `Config` in different modules), the first match wins. No namespace resolution.
-- **No transitive closure**: Graph expansion uses `max_depth=3` (default). Deeply indirect relationships (5+ hops) are not captured.
+- **No unbounded closure**: Default beam is width 6 / depth 2 / cap `expand_neighbors * 2`. Deeper walks stay opt-in via config or loop `deepen_graph`.
 - **Static analysis only**: The graph is built from source text, not execution traces. Dynamic calls, monkey-patching, and runtime dispatch are invisible.
 - **Repo-level dedup**: The inter-repo graph is built from aggregate imports/exports per repo, not per file. Within-repo namespace collisions are not resolved.

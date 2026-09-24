@@ -151,7 +151,10 @@ build(entities)
   ├── CLASS → inherits → parent class (from bases metadata)
   ├── CLASS → contains → methods
   ├── FUNC/METHOD → calls → referenced entities (regex-detected imports)
-  └── FUNC/METHOD → references → identifier references
+  ├── FUNC/METHOD → references → identifier references
+  ├── FILE/FUNC → exposes → endpoint (CLI/HTTP/MCP; fail-soft)
+  ├── test → tested_by → code (unique imported names)
+  └── gloss note → gloss → entity (`.code-harness/gloss/`, `knowledge/gloss/`)
 ```
 
 ### 6. RepoGraph (`harness/repo_graph.py`)
@@ -178,7 +181,7 @@ build_cross_repo_edges()
 retrieve(query, debug=False)
   ├── Dense (30%): vector_store.search(embed_query(query))
   ├── Sparse (25%): BM25 keyword scoring
-  ├── Graph (20%): neighbor expansion (max_depth=3)
+  ├── Graph (20%): beam neighbor expansion (width=6, depth=2; `expand_mode=bfs` for old BFS)
   ├── Fusion: RRF with k=60
   ├── Cross-encoder rerank: cross-encoder/ms-marco-MiniLM-L-6-v2
   └── Return top-k (default: 30)

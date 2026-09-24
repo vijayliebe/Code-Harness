@@ -192,6 +192,8 @@ class CodeChunker:
             if is_header and current_section:
                 content = '\n'.join(current_section)
                 chunk_id = f"{entity.id}:section:{uuid.uuid4().hex[:8]}"
+                meta = dict(entity.metadata or {})
+                meta["section"] = current_section[0].strip('#').strip()
                 chunks.append(Chunk(
                     id=chunk_id,
                     content=content,
@@ -201,7 +203,7 @@ class CodeChunker:
                     file_path=entity.file_path,
                     start_line=section_start,
                     end_line=section_start + len(current_section) - 1,
-                    metadata={"section": current_section[0].strip('#').strip()},
+                    metadata=meta,
                 ))
                 current_section = []
                 section_start = entity.start_line + i
@@ -221,7 +223,7 @@ class CodeChunker:
                     file_path=entity.file_path,
                     start_line=section_start,
                     end_line=entity.start_line + i,
-                    metadata={},
+                    metadata=dict(entity.metadata or {}),
                 ))
                 overlap = current_section[-(self.overlap_lines):]
                 current_section = overlap
@@ -240,7 +242,7 @@ class CodeChunker:
                 file_path=entity.file_path,
                 start_line=section_start,
                 end_line=entity.end_line,
-                metadata={},
+                metadata=dict(entity.metadata or {}),
             ))
 
         return chunks

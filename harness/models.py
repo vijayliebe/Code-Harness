@@ -12,6 +12,7 @@ class EntityType(str, Enum):
     VARIABLE = "variable"
     IMPORT = "import"
     DOCUMENTATION = "documentation"
+    ENDPOINT = "endpoint"
 
 
 class RelationshipType(str, Enum):
@@ -20,6 +21,9 @@ class RelationshipType(str, Enum):
     CALLS = "calls"
     INHERITS = "inherits"
     REFERENCES = "references"
+    EXPOSES = "exposes"
+    TESTED_BY = "tested_by"
+    GLOSS = "gloss"
     # Cross-repo relationships
     SHARED_IMPORT = "shared_import"
     SHARED_ENTITY = "shared_entity"
