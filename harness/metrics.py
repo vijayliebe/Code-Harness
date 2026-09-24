@@ -28,11 +28,26 @@ def _path_eq(a: str, b: str) -> bool:
     return left == right or left.endswith("/" + right) or right.endswith("/" + left)
 
 
+def _entity_key(eid: Optional[str]) -> Optional[tuple]:
+    """(path, unqualified_name) from `kind:path:Name` or `kind:path:Class.name[:extra]`."""
+    if not eid:
+        return None
+    parts = eid.split(":")
+    if len(parts) < 3:
+        return None
+    path = normalize_path(parts[1])
+    short = parts[2].split(".")[-1]
+    if not path or not short:
+        return None
+    return path, short
+
+
 def match_gold_id(chunk_id: Optional[str], entity_id: Optional[str], gold: str) -> bool:
     """Match a retrieved chunk to a gold id.
 
     Chunk ids are `{entity_id}:{uuid}` and change on re-index. Gold labels may be
-    the full chunk id or the stable entity id prefix.
+    the full chunk id, the stable entity id, or `func:path:name` matching a
+    treesitter `method:path:Class.name`.
     """
     if not gold:
         return False
@@ -42,6 +57,12 @@ def match_gold_id(chunk_id: Optional[str], entity_id: Optional[str], gold: str) 
         return True
     if entity_id and entity_id.startswith(gold + ":"):
         return True
+    gold_key = _entity_key(gold)
+    if gold_key:
+        for candidate in (entity_id, chunk_id):
+            cand_key = _entity_key(candidate)
+            if cand_key and cand_key == gold_key:
+                return True
     return False
 
 
@@ -87,12 +108,19 @@ def ndcg_at_k(retrieved: Sequence[str], relevant: Sequence[str], k: int) -> Opti
     if not relevant:
         return None
     relevant_set = set(relevant)
-    gains = [1.0 if item in relevant_set else 0.0 for item in retrieved[:k]]
+    seen: Set[str] = set()
+    gains = []
+    for item in retrieved[:k]:
+        if item in relevant_set and item not in seen:
+            gains.append(1.0)
+            seen.add(item)
+        else:
+            gains.append(0.0)
     ideal = [1.0] * min(len(relevant_set), k)
     denom = _dcg(ideal)
     if denom == 0.0:
         return 0.0
-    return _dcg(gains) / denom
+    return min(1.0, _dcg(gains) / denom)
 
 
 def _dcg(gains: Sequence[float]) -> float:
