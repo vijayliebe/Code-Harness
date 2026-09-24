@@ -26,6 +26,7 @@ GRAPH_WORDS = frozenset({
     "caller", "callers", "callee", "callees",
     "exposes", "expose", "unused", "dead",
     "inherits", "calls", "called",
+    "tested",
 })
 PATH_EXTENSIONS = frozenset({"py", "js", "ts", "tsx", "jsx", "go", "rs", "java", "rb", "md"})
 STOPWORDS = frozenset({

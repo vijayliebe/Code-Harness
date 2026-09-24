@@ -34,6 +34,9 @@ class Retriever:
         self.top_k = ret_cfg.get("top_k", 30)
         self.rerank_top_k = ret_cfg.get("rerank_top_k", 15)
         self.expand_neighbors = ret_cfg.get("expand_neighbors", 3)
+        self.expand_mode = (ret_cfg.get("expand_mode") or "beam").lower()
+        self.beam_width = int(ret_cfg.get("beam_width") or 6)
+        self.beam_depth = int(ret_cfg.get("beam_depth") or 2)
         self.ce_config = ret_cfg.get("cross_encoder", {})
         self.ce_enabled = self.ce_config.get("enabled", True)
         self.ce_model_name = self.ce_config.get("model", "cross-encoder/ms-marco-MiniLM-L-6-v2")
@@ -170,6 +173,9 @@ class Retriever:
             [dense_results, sparse_results],
             weights=[self.dense_weight, self.sparse_weight],
         )
+        for r in fused:
+            if (r.chunk.metadata or {}).get("kind") == "gloss":
+                r.score = r.score + 0.12
 
         if graph_results and self.knowledge_graph.enabled:
             max_fused = max((r.score for r in fused), default=0)
@@ -280,9 +286,31 @@ class Retriever:
                 if name and (name in query_lower or name in query_tokens):
                     matched_entity_ids.add(chunk.entity_id)
 
-        graph_ids = self.knowledge_graph.get_related_chunks(
-            list(matched_entity_ids), max_depth=self.expand_neighbors
-        )
+        seed_scores: Dict[str, float] = {}
+        for r in existing:
+            eid = r.chunk.entity_id
+            seed_scores[eid] = max(seed_scores.get(eid, 0.0), float(r.score or 0.0))
+        for eid in matched_entity_ids:
+            seed_scores.setdefault(eid, 0.35)
+
+        if self.expand_mode == "bfs":
+            graph_ids = self.knowledge_graph.get_related_chunks(
+                list(matched_entity_ids), max_depth=self.expand_neighbors
+            )
+        else:
+            width = self.beam_width
+            depth = self.beam_depth
+            max_added = max(self.expand_neighbors * 2, width)
+            if deepen:
+                width = max(width, self.expand_neighbors)
+                depth = max(depth, 2)
+                max_added = max(max_added, self.expand_neighbors * 2)
+            graph_ids = self.knowledge_graph.expand_beam(
+                seed_scores,
+                width=width,
+                depth=depth,
+                max_added=max_added,
+            )
 
         if not graph_ids:
             return []
@@ -295,6 +323,8 @@ class Retriever:
                 chunk_tokens = set(self._tokenize(chunk.content))
                 overlap = len(query_tokens & chunk_tokens)
                 score = min(0.8, 0.3 + (overlap / max(len(query_tokens), 1)) * 0.5)
+                if (chunk.metadata or {}).get("kind") == "gloss":
+                    score = min(0.95, score + 0.15)
                 results.append(RetrievalResult(
                     chunk=chunk, score=score, source="graph"
                 ))

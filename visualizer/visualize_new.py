@@ -160,11 +160,11 @@ def main():
                     "imports": node.get("imports", []),
                     "exports": node.get("exports", []),
                 })
-            for link in raw_graph.get("links", []):
+            for link in raw_graph.get("links") or raw_graph.get("edges") or []:
                 repo_graph_data["edges"].append({
                     "source": link.get("source", ""),
                     "target": link.get("target", ""),
-                    "relationship": link.get("relationship", "related"),
+                    "relationship": link.get("relationship") or "related",
                     "modules": link.get("modules", []),
                     "shared_entities": link.get("shared_entities", []),
                     "depends_on_modules": link.get("depends_on_modules", []),
