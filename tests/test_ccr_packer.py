@@ -154,22 +154,36 @@ class TestContextBuilderPackModes(unittest.TestCase):
             self.assertGreaterEqual(arch_pos, 0)
             self.assertGreater(hit_pos, arch_pos)
             self.assertEqual(builder.cache.get(long_chunk.id), long_chunk.content)
+            spilled = os.path.join(tmp, "ccr", sanitize_chunk_id(long_chunk.id) + ".txt")
+            self.assertTrue(os.path.isfile(spilled), spilled)
 
     def test_expand_chunk_materializes_original(self):
-        config = Config.from_dict({"context": {"pack_mode": "ccr_lite"}})
-        builder = ContextBuilder(config)
-        chunk = _chunk()
-        report = builder.build_context_report("explain", [_rr(chunk)])
-        self.assertNotIn("value_40", report.context)
-        expanded = builder.expand_into_context(report.context, [chunk.id])
-        self.assertIn("value_40", expanded)
-        self.assertIn(chunk.content.split("\n")[5], expanded)
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Config.from_dict(
+                {
+                    "context": {"pack_mode": "ccr_lite"},
+                    "ccr": {"spill_dir": tmp},
+                }
+            )
+            builder = ContextBuilder(config)
+            chunk = _chunk()
+            report = builder.build_context_report("explain", [_rr(chunk)])
+            self.assertNotIn("value_40", report.context)
+            expanded = builder.expand_into_context(report.context, [chunk.id])
+            self.assertIn("value_40", expanded)
+            self.assertIn(chunk.content.split("\n")[5], expanded)
 
     def test_prefix_hash_is_stable_for_same_docs(self):
         with tempfile.TemporaryDirectory() as tmp:
             with open(os.path.join(tmp, "AGENTS.md"), "w") as fh:
                 fh.write("Be careful.\n")
-            config = Config.from_dict({"repo_path": tmp, "context": {"pack_mode": "ccr_lite"}})
+            config = Config.from_dict(
+                {
+                    "repo_path": tmp,
+                    "context": {"pack_mode": "ccr_lite"},
+                    "ccr": {"spill_dir": os.path.join(tmp, "ccr")},
+                }
+            )
             config.repo_path = tmp
             builder = ContextBuilder(config)
             a = builder.build_context_report("q1", [_rr(_chunk())])

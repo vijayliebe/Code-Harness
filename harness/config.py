@@ -49,7 +49,7 @@ DEFAULT_CONFIG = {
         "last_lines": 8,
         "omit_threshold": 8,
         "spill_dir": ".code-harness/ccr",
-        "spill": False,
+        "spill": None,
         "expand_on": [],
     },
 

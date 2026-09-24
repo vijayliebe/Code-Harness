@@ -76,7 +76,7 @@ Type questions continuously. Commands within the session:
 
 Default pack mode is **`full`**: every MMR survivor is sent as complete chunk text (no behavior change).
 
-`ccr_lite` is a reversible post-retrieval packer. After MMR it sends **signatures + docstrings + first/last lines** to the LLM and keeps originals in a process-local cache (optionally spilled to `.code-harness/ccr/{chunk_id}.txt` for multi-turn retrieve-back). Retrieval ranking is unchanged.
+`ccr_lite` is a reversible post-retrieval packer. After MMR it sends **signatures + docstrings + first/last lines** to the LLM and keeps originals in a process-local cache, spilled to `.code-harness/ccr/` so `retrieve-chunk` works in a later process. Set `"ccr": { "spill": false }` to keep memory-only. Retrieval ranking is unchanged.
 
 Enable it:
 
