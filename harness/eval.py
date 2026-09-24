@@ -232,6 +232,10 @@ def run_eval(
             "retrieved_chunk_ids": _result_ids(results),
             "packed_chunk_ids": list(packed.packed_chunk_ids),
             "prompt_tokens": packed.prompt_tokens,
+            "prompt_tokens_full": getattr(packed, "prompt_tokens_full", 0) or packed.prompt_tokens,
+            "prompt_tokens_packed": getattr(packed, "prompt_tokens_packed", 0) or packed.prompt_tokens,
+            "pack_mode": getattr(packed, "pack_mode", None) or "full",
+            "prefix_hash": getattr(packed, "prefix_hash", "") or "",
             "latencies_ms": latencies,
             "failures": failures,
             "trace": {
@@ -276,7 +280,13 @@ def _aggregate(cases: Sequence[Dict[str, Any]], k: int) -> Dict[str, Any]:
     ndcgs = [c["ndcg_at_k"] for c in cases if c["ndcg_at_k"] is not None]
     cites = [c["citation_path_hit_rate"] for c in cases if c["citation_path_hit_rate"] is not None]
     tokens = [c["prompt_tokens"] for c in cases]
+    tokens_full = [c.get("prompt_tokens_full") or c["prompt_tokens"] for c in cases]
+    tokens_packed = [c.get("prompt_tokens_packed") or c["prompt_tokens"] for c in cases]
     full_hits = [1.0 if c["citation_path_full_hit"] else 0.0 for c in cases if c["citation_path_full_hit"] is not None]
+
+    drop = None
+    if tokens_full and sum(tokens_full) > 0:
+        drop = round(1.0 - (mean(tokens_packed) / mean(tokens_full)), 4)
 
     latency_keys = set()
     for case in cases:
@@ -299,6 +309,9 @@ def _aggregate(cases: Sequence[Dict[str, Any]], k: int) -> Dict[str, Any]:
         "citation_path_hit_rate": None if not cites else round(mean(cites), 4),
         "citation_path_full_hit_rate": None if not full_hits else round(mean(full_hits), 4),
         "prompt_tokens_mean": None if not tokens else round(mean(tokens), 1),
+        "prompt_tokens_full_mean": None if not tokens_full else round(mean(tokens_full), 1),
+        "prompt_tokens_packed_mean": None if not tokens_packed else round(mean(tokens_packed), 1),
+        "prompt_token_drop": drop,
         "latencies_ms": latencies,
         "failure_counts": failure_counts,
     }
@@ -313,7 +326,10 @@ def print_summary(report: Dict[str, Any]) -> None:
         f"  Recall@{k}: {metrics.get('recall_at_k')}   "
         f"nDCG@{k}: {metrics.get('ndcg_at_k')}   "
         f"cite: {metrics.get('citation_path_hit_rate')}   "
-        f"tokens: {metrics.get('prompt_tokens_mean')}"
+        f"tokens: {metrics.get('prompt_tokens_mean')}   "
+        f"full: {metrics.get('prompt_tokens_full_mean')}   "
+        f"packed: {metrics.get('prompt_tokens_packed_mean')}   "
+        f"drop: {metrics.get('prompt_token_drop')}"
     )
     latencies = metrics.get("latencies_ms") or {}
     if latencies:
