@@ -45,11 +45,23 @@ fixtures:
 | Recall@k | Fraction of gold ids (or paths) in the top-k retrieved chunks |
 | nDCG@k | Binary-relevance ranking quality over the same gold set |
 | citation-path hit rate | Fraction of `must_cite_paths` present in packed `ContextBuilder` context |
-| prompt tokens | `len(context) // 4` after `build_context` |
+| prompt tokens | `len(context) // 4` after `build_context` (active pack mode) |
+| prompt_tokens_full | Same estimate for the legacy full assembly |
+| prompt_tokens_packed | Same estimate for the CCR-lite assembly (signatures + key spans) |
+| prompt_token_drop | `1 - packed_mean / full_mean` (packer is post-retrieval; Recall@k must not move) |
 | stage latency | dense / BM25 / graph / CE / MMR when that stage ran |
 
 Failure labels (same vocabulary as `--debug` source misses):
 
 `dense_miss | bm25_miss | graph_miss | rerank_drop | packer_drop`
 
-`packer_drop` is recorded when a gold item was retrieved but omitted from the assembled context (token-budget truncation today; CCR-lite will use the same label).
+`packer_drop` is recorded when a gold item was retrieved but omitted from the assembled context (token-budget truncation in `full`; CCR-lite keeps MMR ids in headers and uses the same label only if a survivor is dropped).
+
+Default pack mode is `full`. Compare token columns without changing ranking:
+
+```bash
+python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml
+python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --pack-mode ccr_lite
+```
+
+**Citation-path vs one expand:** citation-path hit rate is computed from packed file-path headers, not omitted bodies, so it does not require an LLM `retrieve_chunk` to stay within 5% of `full`. To manually check answer quality after one expand, run `query --pack-mode ccr_lite --expand-chunk <id>` (or `retrieve-chunk <id>`) on a fixture whose packed header still names the must-cite path.

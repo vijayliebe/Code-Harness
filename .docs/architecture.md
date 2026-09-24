@@ -203,9 +203,17 @@ build_context(query, results)
   ├── deduplicate(): remove overlapping line ranges, keep higher-scored
   ├── rerank(): boost for term overlap, entity type, docstrings
   ├── diversity_rerank(): MMR with lambda=0.3
-  └── assemble_context(): group by file, format as markdown, enforce token budget
+  └── assemble_context(): full text (default) or CCR-lite signatures + key spans
 build_context_report(...) → context + prompt_tokens + packed ids/paths + MMR ms
+                           + prompt_tokens_full / prompt_tokens_packed + prefix_hash
 ```
+
+Pack modes (`context.pack_mode`, default **`full`**):
+
+- `full` — today's file-grouped assembly (golden-string compatible).
+- `ccr_lite` — KV-cache-friendly order: `ARCHITECTURE.md` / `AGENTS.md` / `CLAUDE.md` first, then the query and packed hits. Bodies collapse to first/last lines with `retrieve_chunk <id>`; originals live in `CCRCache` (optional `.code-harness/ccr/` spill).
+
+Ranking (dense / BM25 / graph / CE / MMR) is unchanged. Expand via `python main.py retrieve-chunk <id>` or `query --expand-chunk <id>`.
 
 MMR diversity: `MMR_score = relevance - lambda * max(similarity_to_selected)` prevents the same file from dominating the context window.
 

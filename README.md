@@ -38,6 +38,8 @@ python main.py query ./my-project -q "how does the chunker work?" --no-llm
 python main.py query ./my-project -q "explain the data flow" --stream
 python main.py query --cross-repo -q "how do repos relate?"  # cross-repo search
 python main.py query ./my-project -q "auth logic" --debug   # per-source breakdown
+python main.py query ./my-project --no-llm --pack-mode ccr_lite -q "how does the chunker work?"
+python main.py retrieve-chunk 'func:harness/chunker.py:CodeChunker.chunk_entities:abcd1234'
 ```
 
 Hybrid retrieval: dense vector search (semantic), BM25 keyword index (exact name matches), knowledge graph neighbor expansion. Results are fused via RRF, cross-encoder reranked, diversified via MMR, and assembled into optimal LLM context.
@@ -49,6 +51,8 @@ Hybrid retrieval: dense vector search (semantic), BM25 keyword index (exact name
 | `--stream` | Stream the AI response token by token |
 | `--cross-repo` | Search across all indexed repositories |
 | `--debug` | Show per-source retrieval breakdown (dense/BM25/graph/cross-encoder) |
+| `--pack-mode` | `full` (default) or `ccr_lite` — pack signatures + key spans after MMR |
+| `--expand-chunk ID` | Inject a cached original chunk into the prompt (repeatable) |
 
 ### `interactive` — Interactive REPL mode
 
@@ -60,12 +64,42 @@ python main.py interactive --cross-repo ./my-project
 Type questions continuously. Commands within the session:
 
 ```
-/help       Show available commands
-/llm on|off Enable/disable AI responses
-/context    Show the last retrieved context
-/clear      Clear the screen
-/quit       Exit
+/help           Show available commands
+/llm on|off     Enable/disable AI responses
+/context        Show the last retrieved context
+/retrieve <id>  Print a CCR-cached original chunk (`/expand` is an alias)
+/clear          Clear the screen
+/quit           Exit
 ```
+
+### CCR-lite packer (`--pack-mode ccr_lite`)
+
+Default pack mode is **`full`**: every MMR survivor is sent as complete chunk text (no behavior change).
+
+`ccr_lite` is a reversible post-retrieval packer. After MMR it sends **signatures + docstrings + first/last lines** to the LLM and keeps originals in a process-local cache (optionally spilled to `.code-harness/ccr/{chunk_id}.txt` for multi-turn retrieve-back). Retrieval ranking is unchanged.
+
+Enable it:
+
+```bash
+# CLI flag (highest precedence)
+python main.py query . --pack-mode ccr_lite --no-llm -q "how does the chunker work?"
+
+# or environment
+CODEHARNESS_PACK_MODE=ccr_lite python main.py query . --no-llm -q "how does the chunker work?"
+
+# or config
+# { "context": { "pack_mode": "ccr_lite" },
+#   "ccr": { "first_lines": 12, "last_lines": 8, "spill_dir": ".code-harness/ccr" } }
+```
+
+Expand a packed body (same process cache, or the on-disk spill after a `ccr_lite` query):
+
+```bash
+python main.py query . --pack-mode ccr_lite --expand-chunk 'CHUNK_ID' -q "explain this algorithm"
+python main.py retrieve-chunk 'CHUNK_ID'
+```
+
+Eval always reports `prompt_tokens_full` vs `prompt_tokens_packed` so you can compare modes without flipping the default. Recall@k is computed on retriever hits, so the packer cannot change it.
 
 ### `info` — Show repository statistics
 
@@ -102,7 +136,7 @@ python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml
 python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --dry-run
 ```
 
-Reports Recall@k, nDCG@k, citation-path hit rate, stage latency (dense / BM25 / graph / CE / MMR), and estimated prompt tokens after context assembly. Writes `.code-harness/eval/{suite}-{timestamp}.json`.
+Reports Recall@k, nDCG@k, citation-path hit rate, stage latency (dense / BM25 / graph / CE / MMR), and estimated prompt tokens after context assembly (`prompt_tokens_full` vs `prompt_tokens_packed`). Writes `.code-harness/eval/{suite}-{timestamp}.json`. Use `--pack-mode ccr_lite` to score citation paths against packed headers (Recall@k is unchanged).
 
 See [`.docs/research/eval/README.md`](.docs/research/eval/README.md) for the fixture schema and failure taxonomy (`dense_miss | bm25_miss | graph_miss | rerank_drop | packer_drop`).
 
@@ -128,7 +162,7 @@ Query → Embed Query (HyDE optional) → Dense Search (40%)
                                      → RRF Fusion
                                      → Cross-Encoder Rerank
                                      → MMR Diversity Ranking
-                                     → Context Assembly (ARCHITECTURE.md injection)
+                                     → Context Assembly (ARCHITECTURE.md prefix; optional CCR-lite pack)
                                      → LLM → Answer
 ```
 
@@ -141,7 +175,7 @@ Query → Embed Query (HyDE optional) → Dense Search (40%)
 5. **RRF fusion**: three signals combined via Reciprocal Rank Fusion
 6. **Cross-encoder reranking**: `cross-encoder/ms-marco-MiniLM-L-6-v2` re-scores top candidates
 7. **MMR diversity**: Maximum Marginal Relevance prevents file dominance
-8. **Context injection**: `ARCHITECTURE.md`, `AGENTS.md`, `CLAUDE.md` prepended when present
+8. **Context injection**: `ARCHITECTURE.md`, `AGENTS.md`, `CLAUDE.md` as a stable prefix when present; optional CCR-lite pack (`--pack-mode ccr_lite`) after MMR
 
 ## Configuration
 
@@ -171,6 +205,14 @@ Key settings:
     "rerank_top_k": 15,
     "cross_encoder": { "enabled": true, "model": "cross-encoder/ms-marco-MiniLM-L-6-v2" },
     "hyde": { "enabled": false }
+  },
+  "context": {
+    "pack_mode": "full"
+  },
+  "ccr": {
+    "first_lines": 12,
+    "last_lines": 8,
+    "spill_dir": ".code-harness/ccr"
   },
   "vector_store": {
     "hnsw_ef_search": 256,
@@ -291,6 +333,7 @@ python main.py query --cross-repo -q "how do these projects interact?"
 ├── bm25_{repo}.pkl        # Per-repo BM25 serialized index
 ├── repo_graph.json        # Inter-repo relationship graph
 ├── eval/                  # Retrieval eval reports ({suite}-{timestamp}.json)
+├── ccr/                   # Optional CCR-lite originals ({sanitized_chunk_id}.txt)
 ```
 
 ## Research
@@ -317,7 +360,8 @@ code-harness/
 │   ├── knowledge_graph.py         NetworkX code relationship graph (intra-repo)
 │   ├── repo_graph.py              Inter-repo relationship graph
 │   ├── retriever.py               Hybrid retrieval (dense + sparse + graph + cross-encoder)
-│   ├── context_builder.py         Context assembly (MMR diversity, ARCHITECTURE.md injection)
+│   ├── context_builder.py         Context assembly (MMR, prefix docs, full | ccr_lite pack)
+│   ├── ccr.py                     CCR-lite pack + retrieve-back cache
 │   ├── eval.py                    Golden-suite loader, eval runner, JSON reports
 │   ├── metrics.py                 Recall@k, nDCG@k, citation hit, failure taxonomy
 │   ├── llm.py                     LLM integration layer (OpenAI/Anthropic/Gemini/Ollama)

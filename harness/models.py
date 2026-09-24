@@ -80,3 +80,12 @@ class RetrievalResult:
     chunk: Chunk
     score: float
     source: str
+
+
+@dataclass
+class PackedChunk:
+    id: str
+    preview: str
+    omitted: bool
+    omitted_line_count: int = 0
+    original: str = ""

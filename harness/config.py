@@ -40,6 +40,19 @@ DEFAULT_CONFIG = {
         "max_tokens": 4096,
     },
 
+    "context": {
+        "pack_mode": "full",
+        "prefix_files": ["ARCHITECTURE.md", "AGENTS.md", "CLAUDE.md"],
+    },
+    "ccr": {
+        "first_lines": 12,
+        "last_lines": 8,
+        "omit_threshold": 8,
+        "spill_dir": ".code-harness/ccr",
+        "spill": False,
+        "expand_on": [],
+    },
+
     "retrieval": {
         "dense_weight": 0.3,
         "sparse_weight": 0.25,
@@ -97,6 +110,8 @@ class Config:
     retrieval: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["retrieval"]))
     llm: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["llm"]))
     indexing: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["indexing"]))
+    context: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["context"]))
+    ccr: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["ccr"]))
     repo_path: str = "."
     verbose: bool = False
 
@@ -132,6 +147,8 @@ class Config:
             "retrieval": self.retrieval,
             "llm": self.llm,
             "indexing": self.indexing,
+            "context": self.context,
+            "ccr": self.ccr,
             "repo_path": self.repo_path,
             "verbose": self.verbose,
         }

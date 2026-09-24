@@ -147,6 +147,8 @@ def cmd_query(args):
     query = args.query
 
     print(f"\n[*] Retrieving context for: {query}\n")
+    if context_builder.pack_mode != "full":
+        print(f"[*] Pack mode: {context_builder.pack_mode}")
 
     debug = getattr(args, 'debug', False)
     if debug:
@@ -166,7 +168,15 @@ def cmd_query(args):
                   f"({r.chunk.file_path}:{r.chunk.start_line}) "
                   f"score={r.score:.3f}")
 
-    context = context_builder.build_context(query, results)
+    report = context_builder.build_context_report(query, results)
+    context = report.context
+    expand_ids = getattr(args, "expand_chunks", None) or []
+    if expand_ids:
+        context = context_builder.expand_into_context(context, expand_ids)
+        print(f"[*] Expanded {len(expand_ids)} chunk(s)")
+    if debug:
+        print(f"[*] Context pack={report.pack_mode} tokens_full={report.prompt_tokens_full} "
+              f"tokens_packed={report.prompt_tokens_packed} prefix={report.prefix_hash}")
 
     if args.no_llm:
         print(context)
@@ -225,7 +235,7 @@ def cmd_interactive(args):
 
     print("=" * 60)
     print("  Code Harness - Interactive Mode")
-    print("  Commands: /help, /context, /llm on|off, /clear, /quit")
+    print("  Commands: /help, /context, /retrieve <id>, /llm on|off, /clear, /quit")
     print("=" * 60)
     print()
 
@@ -247,12 +257,14 @@ def cmd_interactive(args):
                 break
             elif cmd[0] == "/help":
                 print("Commands:")
-                print("  /help           - Show this help")
-                print("  /llm on|off     - Enable/disable LLM responses")
-                print("  /context        - Show current context")
-                print("  /clear          - Clear screen")
-                print("  /quit           - Exit")
-                print("  Any other text  - Query the codebase")
+                print("  /help             - Show this help")
+                print("  /llm on|off       - Enable/disable LLM responses")
+                print("  /context          - Show current context")
+                print("  /retrieve <id>    - Print a cached original chunk")
+                print("  /expand <id>      - Alias for /retrieve")
+                print("  /clear            - Clear screen")
+                print("  /quit             - Exit")
+                print("  Any other text    - Query the codebase")
             elif cmd[0] == "/llm":
                 if len(cmd) > 1:
                     llm_available = cmd[1] == "on"
@@ -263,6 +275,20 @@ def cmd_interactive(args):
                     print(context_history[-1][:2000])
                 else:
                     print("No context yet")
+            elif cmd[0] in ("/retrieve", "/expand"):
+                raw = query.split(None, 1)
+                if len(raw) < 2:
+                    print("[!] Usage: /retrieve <chunk_id>")
+                else:
+                    from harness.ccr import retrieve_chunk
+                    text = context_builder.cache.get(raw[1]) or retrieve_chunk(
+                        raw[1],
+                        spill_dir=(config.ccr or {}).get("spill_dir"),
+                    )
+                    if text is None:
+                        print(f"[!] chunk not in cache: {raw[1]}")
+                    else:
+                        print(text)
             elif cmd[0] == "/clear":
                 os.system("clear" if os.name == "posix" else "cls")
             continue
@@ -278,7 +304,8 @@ def cmd_interactive(args):
                 query, top_k=config.retrieval.get("top_k", 20)
             )
 
-        context = context_builder.build_context(query, results)
+        report = context_builder.build_context_report(query, results)
+        context = report.context
         context_history.append(context)
 
         if not llm_available or not llm:
@@ -397,6 +424,34 @@ def cmd_clear(args):
     print("[+] Index cleared")
 
 
+def cmd_retrieve_chunk(args):
+    from harness.ccr import retrieve_chunk
+
+    spill_dir = args.spill_dir or ".code-harness/ccr"
+    text = retrieve_chunk(args.chunk_id, spill_dir=spill_dir)
+    if text is None:
+        print(f"[!] chunk not in cache: {args.chunk_id}")
+        print(f"    looked in {os.path.abspath(spill_dir)}")
+        sys.exit(1)
+    print(text)
+
+
+def _add_pack_flags(parser):
+    parser.add_argument(
+        "--pack-mode",
+        choices=["full", "ccr_lite"],
+        default=None,
+        help="Context pack mode (default: full; override config/CODEHARNESS_PACK_MODE)",
+    )
+    parser.add_argument(
+        "--expand-chunk",
+        action="append",
+        dest="expand_chunks",
+        metavar="ID",
+        help="Materialize a cached original chunk into the prompt (repeatable)",
+    )
+
+
 def cmd_eval(args):
     from harness.eval import load_suite, print_summary, run_eval, write_report
 
@@ -453,6 +508,9 @@ def cmd_eval(args):
             "max_tokens": config.llm.get("max_tokens"),
         },
         "chunking": dict(config.chunking),
+        "context": dict(config.context),
+        "ccr": dict(config.ccr),
+        "pack_mode": context_builder.pack_mode,
     }
 
     print(f"[*] Scoring {len(fixtures)} queries at k={k} (retrieval only, no LLM)\n")
@@ -585,6 +643,14 @@ def _load_config(args) -> Config:
     if hasattr(args, 'verbose'):
         config.verbose = args.verbose
 
+    env_mode = os.environ.get("CODEHARNESS_PACK_MODE")
+    if env_mode in ("full", "ccr_lite"):
+        config.context["pack_mode"] = env_mode
+    if getattr(args, "pack_mode", None):
+        config.context["pack_mode"] = args.pack_mode
+    if getattr(args, "spill_ccr", False):
+        config.ccr["spill"] = True
+
     if not args.llm_provider:
         config.llm["provider"] = os.environ.get("LLM_PROVIDER", config.llm["provider"])
     else:
@@ -648,6 +714,8 @@ Examples:
    %(prog)s info ./my-project                             # Show repo stats
    %(prog)s watch ./my-project                            # Watch and auto re-index
   %(prog)s eval . --suite .docs/research/eval/code-harness.fixture.yaml
+  %(prog)s query . --no-llm --pack-mode ccr_lite -q "how does the chunker work?"
+  %(prog)s retrieve-chunk class:harness/chunker.py:CodeChunker:abcd1234
         """
     )
     parser.add_argument("--config", "-c", help="Config file path")
@@ -675,6 +743,7 @@ Examples:
                    help="Search across all indexed repositories")
     q.add_argument("--debug", action="store_true",
                    help="Show per-source retrieval breakdown (dense/sparse/graph/cross-encoder)")
+    _add_pack_flags(q)
     q.set_defaults(func=cmd_query)
 
     int_p = subparsers.add_parser("interactive", aliases=["i"],
@@ -687,6 +756,7 @@ Examples:
                       help="Search across all indexed repositories")
     int_p.add_argument("--debug", action="store_true",
                       help="Show per-source retrieval breakdown (dense/sparse/graph/cross-encoder)")
+    _add_pack_flags(int_p)
     int_p.set_defaults(func=cmd_interactive)
 
     info = subparsers.add_parser("info", help="Show repository information")
@@ -715,7 +785,25 @@ Examples:
     ev.add_argument("--k", type=int, default=None, help="Recall/nDCG cutoff (default: suite k or config top_k)")
     ev.add_argument("--output", "-o", help="JSON report path (default: .code-harness/eval/{suite}-{timestamp}.json)")
     ev.add_argument("--dry-run", action="store_true", help="Validate the suite without retrieving")
+    ev.add_argument(
+        "--pack-mode",
+        choices=["full", "ccr_lite"],
+        default=None,
+        help="Context pack mode used for citation/token columns (default: full)",
+    )
     ev.set_defaults(func=cmd_eval)
+
+    rc = subparsers.add_parser(
+        "retrieve-chunk",
+        help="Print a CCR-cached original chunk by id",
+    )
+    rc.add_argument("chunk_id", help="Chunk id from a packed context header")
+    rc.add_argument(
+        "--spill-dir",
+        default=".code-harness/ccr",
+        help="CCR cache directory (default: .code-harness/ccr)",
+    )
+    rc.set_defaults(func=cmd_retrieve_chunk)
 
     args = parser.parse_args()
 
