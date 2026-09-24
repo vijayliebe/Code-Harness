@@ -52,6 +52,11 @@ class TestNdcgAtK(unittest.TestCase):
         expected = (1.0 / math.log2(3)) / (1.0 / math.log2(2))
         self.assertAlmostEqual(ndcg_at_k(["x", "a"], ["a"], k=2), expected)
 
+    def test_duplicate_hits_do_not_exceed_one(self):
+        score = ndcg_at_k(["a", "a", "a"], ["a", "b"], k=3)
+        self.assertIsNotNone(score)
+        self.assertLessEqual(score, 1.0)
+
 
 class TestCitationPathHit(unittest.TestCase):
     def test_all_paths_present(self):
@@ -102,6 +107,22 @@ class TestNormalizeAndMatch(unittest.TestCase):
                 "class:harness/retriever.py:Retriever:ffff",
                 "class:harness/retriever.py:Retriever",
                 gold,
+            )
+        )
+
+    def test_match_func_gold_to_treesitter_method(self):
+        self.assertTrue(
+            match_gold_id(
+                "method:harness/retriever.py:Retriever.index_chunks:74759c2d",
+                "method:harness/retriever.py:Retriever.index_chunks",
+                "func:harness/retriever.py:index_chunks",
+            )
+        )
+        self.assertFalse(
+            match_gold_id(
+                "method:harness/retriever.py:Retriever.retrieve:aaaa",
+                "method:harness/retriever.py:Retriever.retrieve",
+                "func:harness/retriever.py:index_chunks",
             )
         )
 

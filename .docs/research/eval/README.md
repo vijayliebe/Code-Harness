@@ -36,7 +36,7 @@ fixtures:
     difficulty: easy              # easy | medium | hard
 ```
 
-`relevant_chunk_ids` may be full chunk ids or parser entity ids (`class:path:Name`, `func:path:name`). Chunk UUIDs change on re-index; entity ids do not. If chunk ids are omitted, Recall@k / nDCG@k fall back to `must_cite_paths`.
+`relevant_chunk_ids` may be full chunk ids or parser entity ids (`class:path:Name`, `func:path:name`, or treesitter `method:path:Class.name`). `func:path:name` also matches `method:path:Class.name`. Chunk UUIDs change on re-index; entity ids do not. If chunk ids are omitted, Recall@k / nDCG@k fall back to `must_cite_paths`.
 
 ## Metrics
 

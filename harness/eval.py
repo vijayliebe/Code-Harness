@@ -141,11 +141,18 @@ def _ranked_for_metrics(results: Sequence, gold_ids: Sequence[str], must_paths: 
     """Return (retrieved_labels, relevant_labels) for recall/nDCG."""
     if gold_ids:
         retrieved = []
+        seen_gold: set = set()
         for chunk in _chunks_of(results):
+            matched = None
             for gold in gold_ids:
+                if gold in seen_gold:
+                    continue
                 if match_gold_id(chunk.id, getattr(chunk, "entity_id", None), gold):
-                    retrieved.append(gold)
+                    matched = gold
                     break
+            if matched:
+                retrieved.append(matched)
+                seen_gold.add(matched)
             else:
                 retrieved.append(chunk.id)
         return retrieved, list(gold_ids)
