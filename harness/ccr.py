@@ -123,7 +123,12 @@ def pack_chunk(
     fence = f"```{lang}" if lang else "```"
     keep = first_lines + last_lines + omit_threshold
     char_keep = keep * 16
-    if len(lines) <= keep and len(chunk.content or "") <= char_keep:
+    # Never overlap first/last spans — that produced "(-1 lines omitted)".
+    can_split = len(lines) > first_lines + last_lines
+    should_omit = can_split and (
+        len(lines) > keep or len(chunk.content or "") > char_keep
+    )
+    if not should_omit:
         omitted = False
         omitted_n = 0
         code = f"{fence}\n{chunk.content}\n```"

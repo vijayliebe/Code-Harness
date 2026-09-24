@@ -76,6 +76,14 @@ class TestPackChunk(unittest.TestCase):
         packed = pack_chunk(_chunk(docstring="Smart code chunking (entity-type aware)."))
         self.assertIn("Smart code chunking", packed.preview)
 
+    def test_short_wide_chunk_does_not_report_negative_omit(self):
+        content = "long_line_a = '" + ("x" * 400) + "'\nlong_line_b = '" + ("y" * 400) + "'\n"
+        packed = pack_chunk(_chunk(content=content, name="wide"))
+        self.assertGreaterEqual(packed.omitted_line_count, 0)
+        self.assertFalse(packed.omitted)
+        self.assertNotIn("(-1 lines", packed.preview)
+        self.assertIn("long_line_a", packed.preview)
+
 
 class TestCCRCache(unittest.TestCase):
     def test_memory_retrieve_back_returns_original(self):
