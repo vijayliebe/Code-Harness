@@ -22,7 +22,7 @@ Target project: [vijayliebe/Code-Harness](https://github.com/vijayliebe/Code-Har
 | 13 | forgecode | [forgecode.md](forgecode.md) | Resolved | https://github.com/tailcallhq/forgecode | Terminal coding agent with `:sync` semantic search, sage/muse agents, compact. | **High** |
 | 14 | code graph | [code-graph.md](code-graph.md) | Resolved | https://github.com/vitali87/code-graph-rag (+ papers) | Tree-sitter→Memgraph RAG + MCP; richer edges, NL→Cypher, dynamic traces. | **High** |
 | 15 | turboVec | [turbovec.md](turbovec.md) | Resolved | https://github.com/RyanCodrai/turbovec | TurboQuant compressed vector index; RAM↓ + SIMD search + allowlist hybrid. | **High** |
-| 16 | OKF | [okf.md](okf.md) | Resolved | https://docs.memanto.ai/integrations/okf | Markdown/YAML portable memory interchange — git-diffable project knowledge. | **High** |
+| 16 | OKF | [okf.md](okf.md) | Resolved | https://github.com/GoogleCloudPlatform/open-knowledge-format/blob/main/SPEC.md | **Google SPEC** (v0.2) for markdown+YAML knowledge bundles; Memanto implements export/import. | **High** |
 | 17 | AirLLM | [airllm.md](airllm.md) | Resolved | https://github.com/lyogavin/airllm | Layer-streamed local inference for huge models on tiny VRAM. | **Low** |
 | 18 | Prompt→Loop→Graph | [prompt-loop-graph-engineering.md](prompt-loop-graph-engineering.md) | Resolved | Learn Harness Eng. L14 + DesignGurus | Stack: prompt ⊂ context ⊂ loop ⊂ graph; retrieval should become a graded loop. | **High** |
 | 19 | AI governance | [ai-governance.md](ai-governance.md) | Resolved | Agent Control Plane / OPA patterns / gateways | Budgets, redaction, audit, approval — progressive for CLI→agent. | **Med** |
@@ -40,3 +40,21 @@ Target project: [vijayliebe/Code-Harness](https://github.com/vijayliebe/Code-Har
 
 ## See also
 - [SYNTHESIS.md](SYNTHESIS.md) — prioritized Code-Harness roadmap
+- [deep/README.md](deep/README.md) — HIGH-source design notes
+- [deep/INTEGRATION_PLAN.md](deep/INTEGRATION_PLAN.md) — sequenced PRs (`eval metrics → CCR-lite packer → query loop → KG enrichment`)
+
+### Deep dives (HIGH only)
+
+| Item | Deep dive |
+|------|-----------|
+| headroom | [deep/headroom.md](deep/headroom.md) |
+| strands harness | [deep/strands-harness.md](deep/strands-harness.md) |
+| Memanto | [deep/memanto.md](deep/memanto.md) |
+| forgecode | [deep/forgecode.md](deep/forgecode.md) |
+| code graph | [deep/code-graph.md](deep/code-graph.md) |
+| turboVec | [deep/turbovec.md](deep/turbovec.md) |
+| OKF | [deep/okf.md](deep/okf.md) |
+| Prompt→Loop→Graph | [deep/prompt-loop-graph-engineering.md](deep/prompt-loop-graph-engineering.md) |
+| Google Code Wiki | [deep/google-code-wiki.md](deep/google-code-wiki.md) |
+
+**Correction:** OKF is a Google Cloud specification, not a Memanto-owned format. First-pass `okf.md` was updated.

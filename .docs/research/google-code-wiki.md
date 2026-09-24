@@ -31,3 +31,6 @@ Google product (public preview ~Nov 13, 2025): AI-maintained **living wiki** for
 
 ## Open questions
 - Minimum viable wiki: single ARCHITECTURE.md vs multi-page tree?
+
+## Deep dive
+Design note: [deep/google-code-wiki.md](deep/google-code-wiki.md)

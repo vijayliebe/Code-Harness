@@ -32,3 +32,6 @@ Official **Strands Agents** “fully assembled” agent harness from AWS/communi
 
 ## Open questions
 - Integrate as MCP tool behind Strands, or reimplement a thin subset of harness patterns?
+
+## Deep dive
+Design note: [deep/strands-harness.md](deep/strands-harness.md)

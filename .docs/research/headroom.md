@@ -41,3 +41,6 @@ Published directional savings (own benches): code search ~21%, SRE logs ~57%, co
 ## Open questions
 - Best default: signature+docstring compression vs full-chunk CCR?
 - Does CCR round-trip add more tokens (tool calls) than it saves on average for code Q&A?
+
+## Deep dive
+Design note: [deep/headroom.md](deep/headroom.md)

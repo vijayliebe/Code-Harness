@@ -280,7 +280,7 @@ python main.py query --cross-repo -q "how do these projects interact?"
 
 ## Research
 
-External research informing performance, accuracy, and token-cost improvements is in [`.docs/research/INDEX.md`](.docs/research/INDEX.md) (source catalog) and [`.docs/research/SYNTHESIS.md`](.docs/research/SYNTHESIS.md) (prioritized recommendations).
+External research informing performance, accuracy, and token-cost improvements is in [`.docs/research/INDEX.md`](.docs/research/INDEX.md) (source catalog) and [`.docs/research/SYNTHESIS.md`](.docs/research/SYNTHESIS.md) (prioritized recommendations). Deep design notes for the HIGH sources, plus a sequenced PR plan (`eval metrics → CCR-lite packer → query loop → KG enrichment`), are in [`.docs/research/deep/README.md`](.docs/research/deep/README.md) and [`.docs/research/deep/INTEGRATION_PLAN.md`](.docs/research/deep/INTEGRATION_PLAN.md).
 
 ## Project Structure
 
@@ -311,5 +311,5 @@ code-harness/
     ├── architecture.md            System architecture
     ├── walkthrough.md             End-to-end pipeline walkthrough
     ├── knowledge-graph.md         Graph schema and usage
-    └── research/                  External research (INDEX + SYNTHESIS + source notes)
+    └── research/                  External research (INDEX + SYNTHESIS + source notes + deep/)
 ```

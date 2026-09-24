@@ -35,3 +35,6 @@ Rust vector index with Python bindings implementing Google Research **TurboQuant
 
 ## Open questions
 - Recall@k on voyage-code-2 / code embeddings specifically?
+
+## Deep dive
+Design note: [deep/turbovec.md](deep/turbovec.md)

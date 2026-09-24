@@ -32,3 +32,6 @@ Open-source **Rust AI coding agent for the terminal** by Tailcall: interactive T
 
 ## Open questions
 - Position Code-Harness as MCP behind Forge/Claude vs own TUI?
+
+## Deep dive
+Design note: [deep/forgecode.md](deep/forgecode.md)

@@ -38,3 +38,6 @@ Harness sits as the foundation these layers run on.
 
 ## Open questions
 - Minimal viable loop before any multi-agent graph?
+
+## Deep dive
+Design note: [deep/prompt-loop-graph-engineering.md](deep/prompt-loop-graph-engineering.md)
