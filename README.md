@@ -92,6 +92,20 @@ python main.py visualize --output viz.html
 
 Generates an interactive 3D HTML visualization of the embedding space using PCA/t-SNE projection.
 
+### `eval` — Score retrieval against a golden suite
+
+Local, retrieval-only (no LLM, no API keys). Requires a prior `index` of the repo.
+
+```bash
+python main.py index .
+python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml
+python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --dry-run
+```
+
+Reports Recall@k, nDCG@k, citation-path hit rate, stage latency (dense / BM25 / graph / CE / MMR), and estimated prompt tokens after context assembly. Writes `.code-harness/eval/{suite}-{timestamp}.json`.
+
+See [`.docs/research/eval/README.md`](.docs/research/eval/README.md) for the fixture schema and failure taxonomy (`dense_miss | bm25_miss | graph_miss | rerank_drop | packer_drop`).
+
 ### `clear` — Clear all indexed data
 
 ```bash
@@ -276,6 +290,7 @@ python main.py query --cross-repo -q "how do these projects interact?"
 ├── graph.json             # Fallback single-repo graph
 ├── bm25_{repo}.pkl        # Per-repo BM25 serialized index
 ├── repo_graph.json        # Inter-repo relationship graph
+├── eval/                  # Retrieval eval reports ({suite}-{timestamp}.json)
 ```
 
 ## Research
@@ -303,8 +318,11 @@ code-harness/
 │   ├── repo_graph.py              Inter-repo relationship graph
 │   ├── retriever.py               Hybrid retrieval (dense + sparse + graph + cross-encoder)
 │   ├── context_builder.py         Context assembly (MMR diversity, ARCHITECTURE.md injection)
+│   ├── eval.py                    Golden-suite loader, eval runner, JSON reports
+│   ├── metrics.py                 Recall@k, nDCG@k, citation hit, failure taxonomy
 │   ├── llm.py                     LLM integration layer (OpenAI/Anthropic/Gemini/Ollama)
 │   └── utils.py                   Shared utilities (retry, import/export extraction)
+├── tests/                         Offline unit tests for eval metrics
 ├── visualizer/
 │   └── visualize.py               Embedding space visualization (PCA/t-SNE)
 └── .docs/
