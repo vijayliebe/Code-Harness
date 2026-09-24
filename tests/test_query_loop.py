@@ -277,6 +277,7 @@ class TestQueryLoopBounds(unittest.TestCase):
         outcome = loop.run(original, top_k=10, must_cite_paths=["main.py"])
         self.assertEqual(len(retriever.calls), 2)
         self.assertNotEqual(retriever.calls[1]["query"], original)
+        self.assertEqual(retriever.calls[1].get("mode"), "bm25")
         self.assertEqual(outcome.attempts, 2)
         self.assertIn(outcome.action, ("rewrite", "hyde", "deepen_graph", "stop"))
 
@@ -289,6 +290,38 @@ class TestQueryLoopBounds(unittest.TestCase):
         outcome = loop.run("totally unknown widget", top_k=5)
         self.assertLessEqual(len(retriever.calls), 3)
         self.assertLessEqual(outcome.attempts, 3)
+
+    def test_identifier_focus_requires_snake_name_not_just_class(self):
+        from harness.loop import identifier_focus_hit
+
+        only_class = [_rr("class:harness/retriever.py:Retriever:1", "harness/retriever.py", "Retriever")]
+        self.assertFalse(
+            identifier_focus_hit("Who calls Retriever index_chunks?", only_class)
+        )
+        with_method = only_class + [
+            _rr("method:harness/retriever.py:Retriever.index_chunks:2", "harness/retriever.py", "index_chunks")
+        ]
+        self.assertTrue(
+            identifier_focus_hit("Who calls Retriever index_chunks?", with_method)
+        )
+
+    def test_missing_must_cite_retries_even_if_grade_is_high(self):
+        from harness.loop import LoopConfig, QueryLoop
+
+        decoy = _rr(
+            "method:tests/test_query_loop.py:TestQueryLoopBounds.test_x:1",
+            "tests/test_query_loop.py",
+            "test_x",
+            score=8.0,
+            source="reranked",
+        )
+        hit = _rr("func:main.py:cmd_query:1", "main.py", "cmd_query")
+        original = "Where is the query CLI command defined in main.py?"
+        retriever = RecordingRetriever({original: {"final": [decoy]}}, default=[hit])
+        loop = QueryLoop(retriever, RecordingBuilder(), LoopConfig(max_loops=1))
+        outcome = loop.run(original, top_k=10, must_cite_paths=["main.py"])
+        self.assertEqual(len(retriever.calls), 2)
+        self.assertTrue(any(r.chunk.entity_name == "cmd_query" for r in outcome.results))
 
 
 class TestEvalLoopWiring(unittest.TestCase):
