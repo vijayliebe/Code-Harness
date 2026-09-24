@@ -100,26 +100,71 @@ class Retriever:
     def retrieve(self, query: str,
                  entity_id_map: Optional[Dict[str, str]] = None,
                  top_k: Optional[int] = None,
-                 debug: bool = False) -> List[RetrievalResult]:
+                 debug: bool = False,
+                 mode: str = "hybrid",
+                 hyde: Optional[bool] = None,
+                 expand_neighbors: Optional[int] = None) -> List[RetrievalResult]:
         k = top_k or self.top_k
         latencies_ms: Dict[str, float] = {}
+        mode = (mode or "hybrid").lower()
+        prev_hyde = None
+        if hyde is not None and getattr(self, "embedder", None) is not None:
+            prev_hyde = getattr(self.embedder, "hyde_enabled", None)
+            self.embedder.hyde_enabled = bool(hyde)
+        neighbor_override = self.expand_neighbors if expand_neighbors is None else int(expand_neighbors)
+        deepen = expand_neighbors is not None and neighbor_override > self.expand_neighbors
 
-        started = time.perf_counter()
-        query_embedding = self.embedder.embed_query(query, expand=True)
+        if mode == "bm25":
+            try:
+                started = time.perf_counter()
+                sparse_results = self._bm25_search(query, top_k=k * 3) if self._bm25_index else []
+                latencies_ms["bm25"] = (time.perf_counter() - started) * 1000.0
+                latencies_ms["dense"] = 0.0
+                latencies_ms["graph"] = 0.0
+                latencies_ms["ce"] = 0.0
+                top = sparse_results[:k]
+                if debug:
+                    return top, {
+                        "dense": [],
+                        "sparse": sparse_results,
+                        "graph": [],
+                        "fused": list(sparse_results),
+                        "reranked": [],
+                        "latencies_ms": latencies_ms,
+                        "mode": "bm25",
+                    }
+                return top
+            finally:
+                if prev_hyde is not None:
+                    self.embedder.hyde_enabled = prev_hyde
 
-        dense_results = self.vector_store.search(
-            query_embedding, top_k=k * 2, repo_name=self.repo_name or None
-        )
-        latencies_ms["dense"] = (time.perf_counter() - started) * 1000.0
+        old_neighbors = self.expand_neighbors
+        self.expand_neighbors = neighbor_override
+        try:
+            started = time.perf_counter()
+            query_embedding = self.embedder.embed_query(query, expand=True)
 
-        started = time.perf_counter()
-        sparse_results = self._bm25_search(query, top_k=k * 3) if self._bm25_index else []
-        latencies_ms["bm25"] = (time.perf_counter() - started) * 1000.0
+            dense_results = self.vector_store.search(
+                query_embedding, top_k=k * 2, repo_name=self.repo_name or None
+            )
+            latencies_ms["dense"] = (time.perf_counter() - started) * 1000.0
 
-        started = time.perf_counter()
-        graph_results = self._graph_search(query, dense_results + sparse_results,
-                                           entity_id_map)
-        latencies_ms["graph"] = (time.perf_counter() - started) * 1000.0
+            started = time.perf_counter()
+            sparse_results = self._bm25_search(query, top_k=k * 3) if self._bm25_index else []
+            latencies_ms["bm25"] = (time.perf_counter() - started) * 1000.0
+
+            started = time.perf_counter()
+            graph_results = self._graph_search(
+                query,
+                dense_results + sparse_results,
+                entity_id_map,
+                deepen=deepen,
+            )
+            latencies_ms["graph"] = (time.perf_counter() - started) * 1000.0
+        finally:
+            self.expand_neighbors = old_neighbors
+            if prev_hyde is not None:
+                self.embedder.hyde_enabled = prev_hyde
 
         fused = self._reciprocal_rank_fusion(
             [dense_results, sparse_results],
@@ -160,6 +205,7 @@ class Retriever:
                 "fused": fused_pre_ce,
                 "reranked": reranked[:k] if self.ce_enabled else [],
                 "latencies_ms": latencies_ms,
+                "mode": mode,
             }
         return top
 
@@ -215,7 +261,8 @@ class Retriever:
 
     def _graph_search(self, query: str,
                       existing: List[RetrievalResult],
-                      entity_id_map: Optional[Dict[str, str]] = None) -> List[RetrievalResult]:
+                      entity_id_map: Optional[Dict[str, str]] = None,
+                      deepen: bool = False) -> List[RetrievalResult]:
         if not self.knowledge_graph.enabled:
             return []
 
@@ -227,6 +274,11 @@ class Retriever:
             matched_entity_ids.add(r.chunk.entity_id)
             if entity_id_map and r.chunk.entity_id in entity_id_map:
                 matched_entity_ids.add(entity_id_map[r.chunk.entity_id])
+        if deepen:
+            for chunk in self._all_chunks:
+                name = (chunk.entity_name or "").lower()
+                if name and (name in query_lower or name in query_tokens):
+                    matched_entity_ids.add(chunk.entity_id)
 
         graph_ids = self.knowledge_graph.get_related_chunks(
             list(matched_entity_ids), max_depth=self.expand_neighbors

@@ -60,12 +60,18 @@ DEFAULT_CONFIG = {
         "top_k": 30,
         "rerank_top_k": 15,
         "expand_neighbors": 3,
+        "max_loops": 0,
+        "grade_threshold": 0.35,
+        "citation_threshold": 0.5,
+        "verify": False,
+        "deepen_neighbors": 8,
         "cross_encoder": {
             "enabled": True,
             "model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
         },
         "hyde": {
             "enabled": False,
+            "on_retry": True,
         },
     },
 

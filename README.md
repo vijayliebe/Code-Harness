@@ -134,9 +134,10 @@ Local, retrieval-only (no LLM, no API keys). Requires a prior `index` of the rep
 python main.py index .
 python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml
 python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --dry-run
+python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --loop
 ```
 
-Reports Recall@k, nDCG@k, citation-path hit rate, stage latency (dense / BM25 / graph / CE / MMR), and estimated prompt tokens after context assembly (`prompt_tokens_full` vs `prompt_tokens_packed`). Writes `.code-harness/eval/{suite}-{timestamp}.json`. Use `--pack-mode ccr_lite` to score citation paths against packed headers (Recall@k is unchanged).
+Reports Recall@k, nDCG@k, citation-path hit rate, stage latency (dense / BM25 / graph / CE / MMR), estimated prompt tokens after context assembly (`prompt_tokens_full` vs `prompt_tokens_packed`), and easy/hard splits. Writes `.code-harness/eval/{suite}-{timestamp}.json`. Use `--pack-mode ccr_lite` to score citation paths against packed headers (Recall@k is unchanged). `--loop` / `--max-loops N` is opt-in; default remains one-shot.
 
 See [`.docs/research/eval/README.md`](.docs/research/eval/README.md) for the fixture schema and failure taxonomy (`dense_miss | bm25_miss | graph_miss | rerank_drop | packer_drop`).
 
@@ -156,15 +157,18 @@ Repository → Tree-sitter/Regex Parse → Entities → Chunk → Embed → Vect
                                                → Build → Knowledge Graph
                                                → Build → BM25 Lexical Index
 
-Query → Embed Query (HyDE optional) → Dense Search (40%)
+Query → [optional loop] retrieve → grade → (rewrite | HyDE | deepen | proceed)
+      → Embed Query (HyDE optional) → Dense Search (40%)
                                      → BM25 Search (30%)
                                      → Graph Expansion (30%)
                                      → RRF Fusion
                                      → Cross-Encoder Rerank
                                      → MMR Diversity Ranking
                                      → Context Assembly (ARCHITECTURE.md prefix; optional CCR-lite pack)
-                                     → LLM → Answer
+                                     → LLM → Answer → citation check (maybe re-retrieve)
 ```
+
+The corrective loop is **off by default** (`retrieval.max_loops: 0`) so one-shot latency is unchanged. Enable with `--loop` (one extra retrieve) or `--max-loops N` (0–2 extra). Identifier-like queries short-circuit to BM25-only. `--verify` adds an independent LLM citation check (off by default).
 
 ### Retrieval Pipeline
 
@@ -176,6 +180,7 @@ Query → Embed Query (HyDE optional) → Dense Search (40%)
 6. **Cross-encoder reranking**: `cross-encoder/ms-marco-MiniLM-L-6-v2` re-scores top candidates
 7. **MMR diversity**: Maximum Marginal Relevance prevents file dominance
 8. **Context injection**: `ARCHITECTURE.md`, `AGENTS.md`, `CLAUDE.md` as a stable prefix when present; optional CCR-lite pack (`--pack-mode ccr_lite`) after MMR
+9. **Corrective loop** (opt-in): heuristic grade → rewrite / HyDE-on-retry / graph deepen, then citation-coverage stop. Default is one-shot.
 
 ## Configuration
 
@@ -204,7 +209,10 @@ Key settings:
     "top_k": 30,
     "rerank_top_k": 15,
     "cross_encoder": { "enabled": true, "model": "cross-encoder/ms-marco-MiniLM-L-6-v2" },
-    "hyde": { "enabled": false }
+    "hyde": { "enabled": false, "on_retry": true },
+    "max_loops": 0,
+    "grade_threshold": 0.35,
+    "citation_threshold": 0.5
   },
   "context": {
     "pack_mode": "full"
