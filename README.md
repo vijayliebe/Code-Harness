@@ -278,6 +278,10 @@ python main.py query --cross-repo -q "how do these projects interact?"
 ├── repo_graph.json        # Inter-repo relationship graph
 ```
 
+## Research
+
+External research informing performance, accuracy, and token-cost improvements is in [`.docs/research/INDEX.md`](.docs/research/INDEX.md) (source catalog) and [`.docs/research/SYNTHESIS.md`](.docs/research/SYNTHESIS.md) (prioritized recommendations).
+
 ## Project Structure
 
 ```
@@ -306,5 +310,6 @@ code-harness/
 └── .docs/
     ├── architecture.md            System architecture
     ├── walkthrough.md             End-to-end pipeline walkthrough
-    └── knowledge-graph.md         Graph schema and usage
+    ├── knowledge-graph.md         Graph schema and usage
+    └── research/                  External research (INDEX + SYNTHESIS + source notes)
 ```
