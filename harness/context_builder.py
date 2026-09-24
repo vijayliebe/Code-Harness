@@ -1,8 +1,19 @@
 import os
+import time
+from dataclasses import dataclass, field
 from typing import List, Dict, Optional
 
 from .models import Chunk, RetrievalResult
 from .config import Config
+
+
+@dataclass
+class ContextReport:
+    context: str
+    prompt_tokens: int
+    packed_chunk_ids: List[str] = field(default_factory=list)
+    packed_paths: List[str] = field(default_factory=list)
+    mmr_latency_ms: float = 0.0
 
 CONTEXT_FILE_NAMES = ["ARCHITECTURE.md", "AGENTS.md", "CLAUDE.md"]
 
@@ -42,15 +53,44 @@ class ContextBuilder:
         self.config = config
         self.max_context_tokens = config.llm.get("max_tokens", 4096) * 2
 
+    def estimate_tokens(self, text: str) -> int:
+        return self._estimate_tokens(text)
+
     def build_context(self, query: str, results: List[RetrievalResult]) -> str:
+        return self.build_context_report(query, results).context
+
+    def build_context_report(self, query: str, results: List[RetrievalResult]) -> ContextReport:
         if not results:
-            return "No relevant code found."
+            empty = "No relevant code found."
+            return ContextReport(
+                context=empty,
+                prompt_tokens=self.estimate_tokens(empty),
+            )
 
         project_docs = self._load_project_context()
         deduplicated = self._deduplicate(results)
+        started = time.perf_counter()
         scored = self._rerank(query, deduplicated)
-        context = self._assemble_context(query, scored, project_docs)
-        return context
+        mmr_ms = (time.perf_counter() - started) * 1000.0
+        packed: List[RetrievalResult] = []
+        context = self._assemble_context(query, scored, project_docs, packed=packed)
+        packed_ids = [r.chunk.id for r in packed]
+        packed_paths: List[str] = []
+        seen = set()
+        for result in packed:
+            path = result.chunk.file_path.replace("\\", "/")
+            while path.startswith("./"):
+                path = path[2:]
+            if path and path not in seen:
+                seen.add(path)
+                packed_paths.append(path)
+        return ContextReport(
+            context=context,
+            prompt_tokens=self.estimate_tokens(context),
+            packed_chunk_ids=packed_ids,
+            packed_paths=packed_paths,
+            mmr_latency_ms=mmr_ms,
+        )
 
     def _load_project_context(self) -> Dict[str, str]:
         repo_root = self.config.repo_path
@@ -144,7 +184,8 @@ class ContextBuilder:
 
     def _assemble_context(self, query: str,
                           results: List[RetrievalResult],
-                          project_docs: Optional[Dict[str, str]] = None) -> str:
+                          project_docs: Optional[Dict[str, str]] = None,
+                          packed: Optional[List[RetrievalResult]] = None) -> str:
         sections = []
         total_estimate = 0
         max_estimate = self.max_context_tokens
@@ -206,10 +247,14 @@ class ContextBuilder:
                         max_chars = remaining * 4
                         entry = header + f"```\n{r.chunk.content[:max_chars]}...\n```\n"
                         sections.append(entry)
+                        if packed is not None:
+                            packed.append(r)
                     break
 
                 sections.append(entry)
                 total_estimate += estimated_tokens
+                if packed is not None:
+                    packed.append(r)
 
         return "\n".join(sections)
 

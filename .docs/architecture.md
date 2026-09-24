@@ -8,7 +8,7 @@ Code Harness is a RAG (Retrieval-Augmented Generation) system purpose-built for 
 ┌─────────────────────────────────────────────────────────┐
 │                     CLI (main.py)                        │
 │   index | query | interactive | info | clear             │
-│   watch | visualize                                      │
+│   watch | visualize | eval                               │
 └──────┬──────────────────┬──────────────────────────────┘
        │                  │
        ▼                  ▼
@@ -182,7 +182,8 @@ retrieve(query, debug=False)
   ├── Fusion: RRF with k=60
   ├── Cross-encoder rerank: cross-encoder/ms-marco-MiniLM-L-6-v2
   └── Return top-k (default: 30)
-       debug=True → returns (results, trace) tuple with per-source breakdown
+       debug=True → returns (results, trace) tuple with per-source breakdown,
+                    fused pre-CE list, and latencies_ms (dense/bm25/graph/ce)
 ```
 
 Key design:
@@ -190,7 +191,7 @@ Key design:
 - **Cross-encoder**: cached as global singleton; reranks top `rerank_top_k*2` candidates; falls through silently on import failure
 - **RRF formula**: `score = Σ weight * 1/(k + rank)` for each result list
 - **Graph boost**: graph-matched results get `score + graph_weight * max_fused_score`
-- **Debug mode**: when `debug=True`, returns `(results, {dense, sparse, graph, reranked})` tuple showing raw scores per source before fusion — used by `--debug` CLI flag
+- **Debug mode**: when `debug=True`, returns `(results, {dense, sparse, graph, fused, reranked, latencies_ms})` — used by `--debug` and `eval`
 
 ### 8. Context Builder (`harness/context_builder.py`)
 
@@ -203,6 +204,7 @@ build_context(query, results)
   ├── rerank(): boost for term overlap, entity type, docstrings
   ├── diversity_rerank(): MMR with lambda=0.3
   └── assemble_context(): group by file, format as markdown, enforce token budget
+build_context_report(...) → context + prompt_tokens + packed ids/paths + MMR ms
 ```
 
 MMR diversity: `MMR_score = relevance - lambda * max(similarity_to_selected)` prevents the same file from dominating the context window.

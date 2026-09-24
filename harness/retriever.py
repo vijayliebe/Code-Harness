@@ -2,6 +2,7 @@ import math
 import os
 import pickle
 import re
+import time
 from collections import defaultdict
 from typing import Dict, List, Optional, Set
 
@@ -101,17 +102,24 @@ class Retriever:
                  top_k: Optional[int] = None,
                  debug: bool = False) -> List[RetrievalResult]:
         k = top_k or self.top_k
+        latencies_ms: Dict[str, float] = {}
 
+        started = time.perf_counter()
         query_embedding = self.embedder.embed_query(query, expand=True)
 
         dense_results = self.vector_store.search(
             query_embedding, top_k=k * 2, repo_name=self.repo_name or None
         )
+        latencies_ms["dense"] = (time.perf_counter() - started) * 1000.0
 
+        started = time.perf_counter()
         sparse_results = self._bm25_search(query, top_k=k * 3) if self._bm25_index else []
+        latencies_ms["bm25"] = (time.perf_counter() - started) * 1000.0
 
+        started = time.perf_counter()
         graph_results = self._graph_search(query, dense_results + sparse_results,
                                            entity_id_map)
+        latencies_ms["graph"] = (time.perf_counter() - started) * 1000.0
 
         fused = self._reciprocal_rank_fusion(
             [dense_results, sparse_results],
@@ -129,13 +137,17 @@ class Retriever:
                     r.score = r.score * max_fused if max_fused > 0 else r.score * 0.5
                     fused.append(r)
 
+        fused_pre_ce = list(fused)
+
         rerank_k = self.rerank_top_k
+        started = time.perf_counter()
         if self.ce_enabled:
             reranked = self._cross_encoder_rerank(query, fused[:rerank_k * 2])
             tail = fused[rerank_k * 2:]
             fused = reranked + tail
         else:
             reranked = []
+        latencies_ms["ce"] = (time.perf_counter() - started) * 1000.0
 
         fused.sort(key=lambda r: r.score, reverse=True)
         top = fused[:k]
@@ -145,7 +157,9 @@ class Retriever:
                 "dense": dense_results,
                 "sparse": sparse_results,
                 "graph": graph_results,
+                "fused": fused_pre_ce,
                 "reranked": reranked[:k] if self.ce_enabled else [],
+                "latencies_ms": latencies_ms,
             }
         return top
 

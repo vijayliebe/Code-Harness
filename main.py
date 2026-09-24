@@ -397,6 +397,81 @@ def cmd_clear(args):
     print("[+] Index cleared")
 
 
+def cmd_eval(args):
+    from harness.eval import load_suite, print_summary, run_eval, write_report
+
+    suite_path = args.suite
+    try:
+        fixtures, meta = load_suite(suite_path)
+    except (OSError, ValueError) as exc:
+        print(f"[!] Failed to load suite: {exc}")
+        sys.exit(1)
+
+    print(f"[*] Eval suite: {meta['suite']} ({len(fixtures)} fixtures)")
+    print(f"[*] Suite path: {os.path.abspath(suite_path)}")
+
+    if getattr(args, "dry_run", False):
+        for fixture in fixtures:
+            print(f"  - {fixture.id} [{fixture.difficulty}] {fixture.query}")
+        print("[+] Dry-run OK (suite valid; no retrieval)")
+        return
+
+    config = _load_config(args)
+    config.repo_path = args.repo or "."
+    repo_name = _derive_repo_name(args)
+
+    vs = VectorStore(config)
+    count = vs.count()
+    print(f"[*] Vector store: {count} chunks (total)")
+    if count == 0:
+        print("[!] No indexed data. Run 'python main.py index <repo>' first, then re-run eval.")
+        sys.exit(1)
+
+    embedder = Embedder(config)
+    print(f"[*] Loading index for: {os.path.abspath(config.repo_path)} (repo: {repo_name})")
+    kg = KnowledgeGraph(config, repo_name=repo_name)
+    kg.load()
+    retriever = Retriever(config, embedder, vs, kg, repo_name=repo_name)
+    if retriever.try_load_bm25():
+        print("[*] BM25 index loaded from disk")
+    else:
+        chunks = vs.get_all(repo_name=repo_name)
+        retriever.index_chunks(chunks, persist=False)
+        print("[*] BM25 index rebuilt from vector store")
+
+    context_builder = ContextBuilder(config)
+    k = args.k or meta.get("k") or config.retrieval.get("top_k", 10)
+    k = int(k)
+
+    snapshot = {
+        "retrieval": dict(config.retrieval),
+        "embedding": {
+            "provider": config.embedding.get("provider"),
+            "model": config.embedding.get("model"),
+        },
+        "llm": {
+            "max_tokens": config.llm.get("max_tokens"),
+        },
+        "chunking": dict(config.chunking),
+    }
+
+    print(f"[*] Scoring {len(fixtures)} queries at k={k} (retrieval only, no LLM)\n")
+    report = run_eval(
+        fixtures=fixtures,
+        retriever=retriever,
+        context_builder=context_builder,
+        k=k,
+        suite_name=meta["suite"],
+        suite_path=suite_path,
+        repo_path=config.repo_path,
+        repo_name=repo_name,
+        config_snapshot=snapshot,
+    )
+    out_path = write_report(report, args.output)
+    print_summary(report)
+    print(f"[+] Wrote eval report: {out_path}")
+
+
 def cmd_visualize(args):
     config = _load_config(args)
     output = args.output
@@ -552,6 +627,10 @@ def _print_debug_trace(query: str, trace: dict):
             print(f"    {i+1}. {r.chunk.entity_name}{repo}")
             print(f"        {r.chunk.file_path}:{r.chunk.start_line}-{r.chunk.end_line}")
             print(f"        score={r.score:.4f}  type={r.chunk.entity_type.value}")
+    latencies = trace.get("latencies_ms") or {}
+    if latencies:
+        parts = [f"{name}={value:.1f}ms" for name, value in latencies.items()]
+        print("  [LATENCY] " + "  ".join(parts))
     print("=" * 70 + "\n")
 
 
@@ -568,6 +647,7 @@ Examples:
    %(prog)s index ./my-project --embed-model all-MiniLM-L6-v2
    %(prog)s info ./my-project                             # Show repo stats
    %(prog)s watch ./my-project                            # Watch and auto re-index
+  %(prog)s eval . --suite .docs/research/eval/code-harness.fixture.yaml
         """
     )
     parser.add_argument("--config", "-c", help="Config file path")
@@ -625,6 +705,17 @@ Examples:
     watch_p = subparsers.add_parser("watch", help="Watch repo and auto re-index on file changes")
     watch_p.add_argument("repo", nargs="?", default=".", help="Repository path")
     watch_p.set_defaults(func=cmd_watch)
+
+    ev = subparsers.add_parser(
+        "eval",
+        help="Score retrieval against a golden suite (no LLM)",
+    )
+    ev.add_argument("repo", nargs="?", default=".", help="Repository path")
+    ev.add_argument("--suite", required=True, help="Path to YAML/JSON golden suite")
+    ev.add_argument("--k", type=int, default=None, help="Recall/nDCG cutoff (default: suite k or config top_k)")
+    ev.add_argument("--output", "-o", help="JSON report path (default: .code-harness/eval/{suite}-{timestamp}.json)")
+    ev.add_argument("--dry-run", action="store_true", help="Validate the suite without retrieving")
+    ev.set_defaults(func=cmd_eval)
 
     args = parser.parse_args()
 

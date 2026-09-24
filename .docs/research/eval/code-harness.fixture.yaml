@@ -1,0 +1,67 @@
+# Golden retrieval suite for this repository.
+#
+# Precondition: index first so a local Chroma/BM25/KG exists:
+#   python main.py index .
+# Then:
+#   python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml
+# Dry-run (no index required):
+#   python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --dry-run
+#
+# relevant_chunk_ids use stable parser entity ids. Chunk ids are
+# `{entity_id}:{uuid}` and change on every re-index, so do not gold
+# those UUIDs unless you just indexed and dump ids from a report.
+
+suite: code-harness
+k: 10
+fixtures:
+  - id: q-context-builder
+    query: How does ContextBuilder assemble MMR context?
+    relevant_chunk_ids:
+      - class:harness/context_builder.py:ContextBuilder
+      - func:harness/context_builder.py:build_context
+    must_cite_paths:
+      - harness/context_builder.py
+    difficulty: easy
+
+  - id: q-who-calls-index-chunks
+    query: Who calls Retriever index_chunks?
+    relevant_chunk_ids:
+      - func:harness/retriever.py:index_chunks
+    must_cite_paths:
+      - harness/retriever.py
+    difficulty: hard
+
+  - id: q-parser-discover
+    query: How does CodeParser discover and parse repository files?
+    relevant_chunk_ids:
+      - class:harness/parser.py:CodeParser
+      - func:harness/parser.py:discover_files
+    must_cite_paths:
+      - harness/parser.py
+    difficulty: easy
+
+  - id: q-chunker
+    query: How does CodeChunker split entities into chunks?
+    relevant_chunk_ids:
+      - class:harness/chunker.py:CodeChunker
+      - func:harness/chunker.py:chunk_entities
+    must_cite_paths:
+      - harness/chunker.py
+    difficulty: easy
+
+  - id: q-cli-query
+    query: Where is the query CLI command defined in main.py?
+    relevant_chunk_ids:
+      - func:main.py:cmd_query
+    must_cite_paths:
+      - main.py
+    difficulty: medium
+
+  - id: q-rrf-fusion
+    query: How does reciprocal rank fusion combine dense and BM25 results?
+    relevant_chunk_ids:
+      - func:harness/retriever.py:_reciprocal_rank_fusion
+      - func:harness/retriever.py:retrieve
+    must_cite_paths:
+      - harness/retriever.py
+    difficulty: medium
