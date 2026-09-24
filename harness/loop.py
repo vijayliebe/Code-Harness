@@ -18,10 +18,14 @@ from .metrics import citation_path_hit_rate, normalize_path
 MAX_EXTRA_LOOPS = 2
 
 EXPLAIN_WORDS = frozenset({"explain", "why", "how", "compare", "design", "tradeoff"})
+PROPER_STOP = frozenset({
+    "How", "Who", "Where", "What", "Why", "The", "This", "That",
+    "And", "For", "With", "CLI", "API", "When", "Which",
+})
 GRAPH_WORDS = frozenset({
     "caller", "callers", "callee", "callees",
     "exposes", "expose", "unused", "dead",
-    "inherits", "calls", "called", "unused",
+    "inherits", "calls", "called",
 })
 PATH_EXTENSIONS = frozenset({"py", "js", "ts", "tsx", "jsx", "go", "rs", "java", "rb", "md"})
 STOPWORDS = frozenset({
@@ -40,6 +44,7 @@ _FILE_PATH = re.compile(
     re.IGNORECASE,
 )
 _CAMEL = re.compile(r"\b[A-Z][a-z0-9]+(?:[A-Z][a-z0-9]+)+\b")
+_PROPER = re.compile(r"\b[A-Z][A-Za-z0-9_]{2,}\b")
 _SNAKE = re.compile(r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b")
 _DOTTED = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+\b")
 _CITED_PATH = re.compile(
@@ -132,6 +137,53 @@ def _normalize_ce(score: float) -> float:
     return 1.0 / (1.0 + math.exp(-float(score)))
 
 
+def _path_segments(path: str) -> set:
+    text = normalize_path(path).lower()
+    parts = re.split(r"[/\\.\-]+", text)
+    return {p for p in parts if p and p not in PATH_EXTENSIONS}
+
+
+def native_identifiers(query: str) -> List[str]:
+    """Identifiers that appear in the query itself (not generated expansions)."""
+    terms: List[str] = []
+    for tick in _TICKED.findall(query or ""):
+        if tick.strip():
+            terms.append(tick.strip())
+    terms.extend(_CAMEL.findall(query or ""))
+    terms.extend(_SNAKE.findall(query or ""))
+    terms.extend(_DOTTED.findall(query or ""))
+    terms.extend(t for t in _PROPER.findall(query or "") if t not in PROPER_STOP)
+    seen = set()
+    ordered: List[str] = []
+    for term in terms:
+        key = term.lower()
+        if key in seen or _FILE_PATH.search(term):
+            continue
+        seen.add(key)
+        ordered.append(term)
+    return ordered
+
+
+def identifier_focus_hit(query: str, results: Sequence[Any]) -> bool:
+    """True when query-native identifiers appear in retrieved names, or none exist."""
+    idents = [term.lower() for term in native_identifiers(query)]
+    if not idents:
+        return True
+    names = []
+    for item in results or []:
+        chunk = _chunk_of(item)
+        name = (getattr(chunk, "entity_name", "") or "").lower()
+        path = normalize_path(getattr(chunk, "file_path", "") or "")
+        stem = os.path.splitext(os.path.basename(path))[0].lower()
+        names.append(name)
+        names.append(name.split(".")[-1])
+        names.append(stem)
+    blob = " ".join(names)
+    specific = [ident for ident in idents if "_" in ident or "." in ident]
+    check = specific or idents
+    return any(ident in blob or ident.split(".")[-1] in blob for ident in check)
+
+
 def heuristic_grade(
     query: str,
     results: Sequence[Any],
@@ -140,7 +192,7 @@ def heuristic_grade(
     """Lexical grade: name/path overlap, plus a bounded CE term if present."""
     q_tokens = set(tokenize(query))
     q_norm = (query or "").strip().strip("`").lower()
-    name_tokens: set = set()
+    name_pool: set = set()
     name_hits = 0
     path_hit = False
     for item in results or []:
@@ -148,19 +200,18 @@ def heuristic_grade(
         name = getattr(chunk, "entity_name", "") or ""
         path = normalize_path(getattr(chunk, "file_path", "") or "")
         stem = os.path.splitext(os.path.basename(path))[0]
-        name_tokens.update(tokenize(name))
-        name_tokens.update(tokenize(stem))
-        name_tokens.update(_split_ident(name))
-        name_tokens.update(_split_ident(stem))
         lowered_name = name.lower()
+        name_pool.add(lowered_name)
+        name_pool.add(lowered_name.split(".")[-1])
+        name_pool.add(stem.lower())
         if q_norm and (q_norm == lowered_name or q_norm in lowered_name.split(".")):
             name_hits = max(name_hits, 2)
-        for tok in q_tokens:
-            if len(tok) < 3 or tok in STOPWORDS or tok in PATH_EXTENSIONS:
-                continue
-            if tok in path.lower():
-                path_hit = True
-    name_hits = max(name_hits, len(q_tokens & name_tokens))
+        segs = _path_segments(path)
+        if any(tok in segs for tok in q_tokens if len(tok) >= 3 and tok not in STOPWORDS):
+            path_hit = True
+    name_hits = max(name_hits, len(q_tokens & name_pool))
+    if any(term.lower() in name_pool for term in extract_focus_terms(query)):
+        name_hits = max(name_hits, 1)
     ce = _normalize_ce(_infer_ce_max(results, ce_max))
     grade = 0.45 * min(1.0, name_hits / 2.0) + (0.25 if path_hit else 0.0) + 0.30 * ce
     return max(0.0, min(1.0, grade))
@@ -233,6 +284,7 @@ def extract_focus_terms(query: str) -> List[str]:
         stem = os.path.splitext(os.path.basename(path))[0]
         if stem:
             terms.append(stem)
+    terms.extend(t for t in _PROPER.findall(query or "") if t not in PROPER_STOP)
     tokens = tokenize(query)
     if set(tokens) & CLI_HINTS:
         for tok in tokens:
@@ -241,7 +293,13 @@ def extract_focus_terms(query: str) -> List[str]:
             if len(tok) < 3:
                 continue
             terms.append(f"cmd_{tok}")
-            terms.append(f"{tok}_command")
+            break
+    content = [
+        t for t in tokens
+        if t not in STOPWORDS and t not in EXPLAIN_WORDS and t not in PATH_EXTENSIONS and len(t) > 2
+    ]
+    if len(content) >= 2:
+        terms.append("_".join(content[:3]))
     seen = set()
     ordered: List[str] = []
     for term in terms:
@@ -253,9 +311,40 @@ def extract_focus_terms(query: str) -> List[str]:
     return ordered
 
 
+def _compact_focus(terms: Sequence[str], limit: int = 5) -> List[str]:
+    cmds = [term for term in terms if term.startswith("cmd_")]
+    if cmds:
+        terms = cmds
+    ranked: List[str] = []
+    rest: List[str] = []
+    for term in terms:
+        if (
+            _FILE_PATH.search(term)
+            or term.startswith("cmd_")
+            or _CAMEL.match(term)
+            or _PROPER.match(term)
+            or _SNAKE.match(term)
+            or _DOTTED.match(term)
+        ):
+            ranked.append(term)
+        else:
+            rest.append(term)
+    seen = set()
+    ordered: List[str] = []
+    for term in ranked + rest:
+        key = term.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        ordered.append(term)
+        if len(ordered) >= limit:
+            break
+    return ordered
+
+
 def rewrite_query(query: str, attempt: int, mode: str) -> Tuple[str, str]:
     """Rule-based rewrite; HyDE is a retry *action* (embed-time), not new text."""
-    focus = extract_focus_terms(query)
+    focus = _compact_focus(extract_focus_terms(query))
     if mode == "graph":
         rewritten = " ".join(focus) if focus else query
         return rewritten, "deepen_graph"
@@ -328,9 +417,31 @@ def merge_results(prior: Sequence[Any], incoming: Sequence[Any], top_k: int) -> 
             continue
         seen.add(cid)
         ordered.append(item)
-        if len(ordered) >= top_k:
-            break
     return ordered
+
+
+def promote_identifier_hits(results: Sequence[Any], query: str, top_k: int) -> List[Any]:
+    """Prefer chunks whose entity name matches extracted identifiers."""
+    idents = {
+        term.lower()
+        for term in extract_focus_terms(query)
+        if term not in PROPER_STOP and (
+            "_" in term or "." in term or term.startswith("cmd_")
+            or _CAMEL.match(term) or _PROPER.match(term)
+        )
+    }
+    if not idents:
+        return list(results or [])[:top_k]
+    promoted: List[Any] = []
+    rest: List[Any] = []
+    for item in results or []:
+        name = (getattr(_chunk_of(item), "entity_name", "") or "").lower()
+        short = name.split(".")[-1]
+        if name in idents or short in idents:
+            promoted.append(item)
+        else:
+            rest.append(item)
+    return (promoted + rest)[:top_k]
 
 
 def _ids_of(results: Sequence[Any]) -> List[str]:
@@ -448,16 +559,19 @@ class QueryLoop:
             elif next_action == "hyde":
                 hyde = bool(self.config.hyde_on_retry)
                 used_hyde = used_hyde or hyde
-            elif next_action == "rewrite" and detected == "bm25":
+            elif next_action == "rewrite":
                 retrieve_mode = "bm25"
             elif attempt > 1 and detected == "graph":
                 retrieve_mode = "hybrid"
                 expand = self.config.deepen_neighbors
 
+            pool_k = top_k
+            if attempt > 1 or first_mode == "bm25":
+                pool_k = min(int(top_k) * 4, 50)
             raw = call_retrieve(
                 self.retriever,
                 effective,
-                top_k,
+                pool_k,
                 True,
                 mode=retrieve_mode,
                 hyde=hyde if hyde else None,
@@ -467,7 +581,11 @@ class QueryLoop:
                 new_results, raw_trace = raw
             else:
                 new_results, raw_trace = raw, {}
-            results = merge_results(results, new_results, top_k)
+            results = promote_identifier_hits(
+                merge_results(results, new_results, pool_k),
+                query,
+                top_k,
+            )
             packed = self.context_builder.build_context_report(query, results)
             grade = heuristic_grade(
                 query,
@@ -479,9 +597,16 @@ class QueryLoop:
                 getattr(packed, "packed_paths", []) or [],
                 must_cite_paths,
             )
+            grade_for_stop = grade
+            coverage_for_stop = coverage
+            if not identifier_focus_hit(query, results):
+                grade_for_stop = min(grade_for_stop, self.config.grade_threshold - 1e-6)
+                coverage_for_stop = min(coverage_for_stop, self.config.citation_threshold - 1e-6)
+            if must_cite_paths and coverage < self.config.citation_threshold:
+                grade_for_stop = min(grade_for_stop, self.config.grade_threshold - 1e-6)
             stop, reason = should_stop(
-                grade,
-                coverage,
+                grade_for_stop,
+                coverage_for_stop,
                 attempt,
                 max_extra,
                 self.config.grade_threshold,
@@ -531,7 +656,7 @@ class QueryLoop:
                 raw = call_retrieve(
                     self.retriever,
                     effective,
-                    top_k,
+                    min(int(top_k) * 4, 50),
                     True,
                     mode=retrieve_mode,
                     hyde=(next_action == "hyde" and self.config.hyde_on_retry),
@@ -543,7 +668,11 @@ class QueryLoop:
                     new_results, raw_trace = raw
                 else:
                     new_results, raw_trace = raw, {}
-                results = merge_results(results, new_results, top_k)
+                results = promote_identifier_hits(
+                    merge_results(results, new_results, min(int(top_k) * 4, 50)),
+                    query,
+                    top_k,
+                )
                 packed = self.context_builder.build_context_report(query, results)
                 grade = heuristic_grade(query, results)
                 traces.append(_trace_record(
