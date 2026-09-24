@@ -104,15 +104,21 @@ Golden Q→chunk_id / answer suites per sample repo; stage latency + token trace
 
 ---
 
+## Recommended first PRs (deep pack)
+
+Eval **before** packer/loop/KG so later diffs have anchors. Details: [deep/INTEGRATION_PLAN.md](deep/INTEGRATION_PLAN.md).
+
+`eval metrics → CCR-lite packer → query loop → KG enrichment`
+
 ## Suggested 90-day sequence
 
 | Phase | Weeks | Deliverables |
 |-------|-------|--------------|
-| A | 1–3 | CCR-style context packer + cache-friendly prompt layout; token metrics in `/cost` |
+| A | 1–3 | Eval suite + token/stage traces; then CCR-lite packer + cache-friendly prompt layout |
 | B | 2–5 | CRAG-style grade+retry loop; adaptive BM25-only path; citation check |
 | C | 4–8 | KG edge enrichment + gloss notes + Mermaid; wiki generate MVP |
-| D | 6–10 | Typed memory + OKF export; interactive bootstrap brief |
-| E | 8–12 | TurboVec experimental backend + allowlist hybrid; recall eval suite |
+| D | 6–10 | Typed memory + OKF export (Google SPEC subset); interactive bootstrap brief |
+| E | 8–12 | TurboVec experimental backend + allowlist hybrid (blocked on recall@k) |
 | F | ongoing | MCP serve + doctor; optional Firecrawl/Jina ingest |
 
 ---
@@ -128,4 +134,4 @@ GAPS:   graded loop | reversible compression | richer KG/wiki | typed memory
 ---
 
 ## File map
-All item write-ups live beside this file; start at [INDEX.md](INDEX.md).
+All first-pass write-ups live beside this file; start at [INDEX.md](INDEX.md). HIGH-source design notes and the sequenced PR plan are under [deep/](deep/README.md).

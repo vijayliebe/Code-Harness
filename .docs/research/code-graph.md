@@ -44,3 +44,6 @@ RANGER: Cypher + MCTS for retrieval.
 
 ## Open questions
 - When to graduate from NetworkX to a graph DB?
+
+## Deep dive
+Design note: [deep/code-graph.md](deep/code-graph.md)

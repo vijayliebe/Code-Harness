@@ -37,3 +37,6 @@ Mem0 v3: ADD-only extraction; hybrid search (semantic+BM25+entity); built-in ent
 
 ## Open questions
 - Build thin native memory or integrate Memanto/Mem0 via MCP?
+
+## Deep dive
+Design note: [deep/memanto.md](deep/memanto.md)
