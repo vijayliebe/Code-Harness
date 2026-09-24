@@ -149,26 +149,41 @@ def cmd_query(args):
     print(f"\n[*] Retrieving context for: {query}\n")
     if context_builder.pack_mode != "full":
         print(f"[*] Pack mode: {context_builder.pack_mode}")
+    if config.retrieval.get("max_loops", 0):
+        print(f"[*] Query loop: max_loops={config.retrieval.get('max_loops')}")
+
+    from harness.loop import LoopConfig, QueryLoop, verify_answer
+
+    loop = QueryLoop(retriever, context_builder, LoopConfig.from_mapping(config.retrieval))
+    generate = None
+    if llm is not None and not args.no_llm:
+        if args.stream:
+            generate = lambda system, context, user_q: llm.stream_query(system, context, user_q)
+        else:
+            generate = lambda system, context, user_q: llm.query(system, context, user_q)
+    verifier = None
+    if config.retrieval.get("verify") and llm is not None:
+        verifier = lambda q, a, packed: verify_answer(llm, q, a, packed)
 
     debug = getattr(args, 'debug', False)
+    outcome = loop.run(
+        query,
+        top_k=config.retrieval.get("top_k", 20),
+        generate=generate,
+        verifier=verifier,
+    )
+    results = outcome.results
+    report = outcome.packed or context_builder.build_context_report(query, results)
     if debug:
-        results, trace = retriever.retrieve(
-            query, top_k=config.retrieval.get("top_k", 20), debug=True
-        )
-        _print_debug_trace(query, trace)
-    else:
-        results = retriever.retrieve(
-            query, top_k=config.retrieval.get("top_k", 20)
-        )
+        _print_loop_debug(outcome)
 
     if args.verbose:
-        print(f"[*] Retrieved {len(results)} chunks")
+        print(f"[*] Retrieved {len(results)} chunks (attempts={outcome.attempts})")
         for i, r in enumerate(results[:5]):
             print(f"  {i+1}. [{r.source}] {r.chunk.entity_name} "
                   f"({r.chunk.file_path}:{r.chunk.start_line}) "
                   f"score={r.score:.3f}")
 
-    report = context_builder.build_context_report(query, results)
     context = report.context
     expand_ids = getattr(args, "expand_chunks", None) or []
     if expand_ids:
@@ -183,15 +198,20 @@ def cmd_query(args):
         return
 
     print("[*] Generating AI response...\n")
-
-    system_prompt = context_builder.build_system_prompt()
-
-    if args.stream:
-        response = llm.stream_query(system_prompt, context, query)
-    else:
-        response = llm.query(system_prompt, context, query)
+    response = outcome.answer
+    if response is None:
+        system_prompt = context_builder.build_system_prompt()
+        if args.stream:
+            response = llm.stream_query(system_prompt, context, query)
+        else:
+            response = llm.query(system_prompt, context, query)
+    if not args.stream:
         print(response)
         print()
+    if outcome.verify:
+        supported = outcome.verify.get("supported")
+        missing = outcome.verify.get("missing_paths") or []
+        print(f"[*] Verify: supported={supported} missing={missing}")
 
 
 def cmd_interactive(args):
@@ -293,18 +313,28 @@ def cmd_interactive(args):
                 os.system("clear" if os.name == "posix" else "cls")
             continue
 
+        from harness.loop import LoopConfig, QueryLoop, verify_answer
+
+        loop = QueryLoop(retriever, context_builder, LoopConfig.from_mapping(config.retrieval))
+        generate = None
+        if llm_available and llm:
+            if args.stream:
+                generate = lambda system, context, user_q: llm.stream_query(system, context, user_q)
+            else:
+                generate = lambda system, context, user_q: llm.query(system, context, user_q)
+        verifier = None
+        if config.retrieval.get("verify") and llm:
+            verifier = lambda q, a, packed: verify_answer(llm, q, a, packed)
+        outcome = loop.run(
+            query,
+            top_k=config.retrieval.get("top_k", 20),
+            generate=generate,
+            verifier=verifier,
+        )
         debug = getattr(args, 'debug', False)
         if debug:
-            results, trace = retriever.retrieve(
-                query, top_k=config.retrieval.get("top_k", 20), debug=True
-            )
-            _print_debug_trace(query, trace)
-        else:
-            results = retriever.retrieve(
-                query, top_k=config.retrieval.get("top_k", 20)
-            )
-
-        report = context_builder.build_context_report(query, results)
+            _print_loop_debug(outcome)
+        report = outcome.packed or context_builder.build_context_report(query, outcome.results)
         context = report.context
         context_history.append(context)
 
@@ -312,13 +342,17 @@ def cmd_interactive(args):
             print(context[:3000] + ("..." if len(context) > 3000 else ""))
             continue
 
-        system_prompt = context_builder.build_system_prompt()
-
-        if args.stream:
-            response = llm.stream_query(system_prompt, context, query)
-        else:
-            response = llm.query(system_prompt, context, query)
+        response = outcome.answer
+        if response is None:
+            system_prompt = context_builder.build_system_prompt()
+            if args.stream:
+                response = llm.stream_query(system_prompt, context, query)
+            else:
+                response = llm.query(system_prompt, context, query)
+        if not args.stream and response:
             print(response)
+        if outcome.verify:
+            print(f"[*] Verify: supported={outcome.verify.get('supported')}")
         print()
 
 
@@ -452,6 +486,58 @@ def _add_pack_flags(parser):
     )
 
 
+def _add_loop_flags(parser, include_verify: bool = False):
+    parser.add_argument(
+        "--loop",
+        action="store_true",
+        help="Enable one extra corrective retrieve (opt-in; default is one-shot)",
+    )
+    parser.add_argument(
+        "--max-loops",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Extra retrieve rounds (0-2). Default 0 preserves one-shot retrieval",
+    )
+    if include_verify:
+        parser.add_argument(
+            "--verify",
+            action="store_true",
+            help="Independent LLM citation check on {query, answer, packed chunks} (off by default)",
+        )
+
+
+def _apply_loop_args(config, args):
+    max_loops = int(config.retrieval.get("max_loops") or 0)
+    if getattr(args, "max_loops", None) is not None:
+        max_loops = int(args.max_loops)
+    elif getattr(args, "loop", False):
+        max_loops = max(max_loops, 1)
+    config.retrieval["max_loops"] = max(0, min(max_loops, 2))
+    if getattr(args, "verify", False):
+        config.retrieval["verify"] = True
+    return config
+
+
+def _print_loop_debug(outcome):
+    print("\n" + "=" * 70)
+    print("  QUERY LOOP TRACE")
+    print("=" * 70)
+    print(
+        f"  attempts={outcome.attempts}  grade={outcome.grade:.3f}  "
+        f"coverage={outcome.coverage:.3f}  stop={outcome.stop_reason}  "
+        f"mode={outcome.mode}"
+    )
+    for trace in outcome.traces or []:
+        print(
+            f"  [{trace.get('attempt')}] mode={trace.get('mode')}  "
+            f"grade={trace.get('grade')}  action={trace.get('action')}  "
+            f"q={trace.get('query')}"
+        )
+        _print_debug_trace(trace.get("query") or "", trace)
+    print("=" * 70 + "\n")
+
+
 def cmd_eval(args):
     from harness.eval import load_suite, print_summary, run_eval, write_report
 
@@ -511,7 +597,18 @@ def cmd_eval(args):
         "context": dict(config.context),
         "ccr": dict(config.ccr),
         "pack_mode": context_builder.pack_mode,
+        "loop": {
+            "max_loops": config.retrieval.get("max_loops", 0),
+            "grade_threshold": config.retrieval.get("grade_threshold", 0.35),
+            "citation_threshold": config.retrieval.get("citation_threshold", 0.5),
+        },
     }
+
+    from harness.loop import LoopConfig
+
+    loop_config = LoopConfig.from_mapping(config.retrieval)
+    if loop_config.max_loops:
+        print(f"[*] Query loop: max_loops={loop_config.max_loops}")
 
     print(f"[*] Scoring {len(fixtures)} queries at k={k} (retrieval only, no LLM)\n")
     report = run_eval(
@@ -524,6 +621,7 @@ def cmd_eval(args):
         repo_path=config.repo_path,
         repo_name=repo_name,
         config_snapshot=snapshot,
+        loop_config=loop_config,
     )
     out_path = write_report(report, args.output)
     print_summary(report)
@@ -651,6 +749,8 @@ def _load_config(args) -> Config:
     if getattr(args, "spill_ccr", False):
         config.ccr["spill"] = True
 
+    _apply_loop_args(config, args)
+
     if not args.llm_provider:
         config.llm["provider"] = os.environ.get("LLM_PROVIDER", config.llm["provider"])
     else:
@@ -714,7 +814,9 @@ Examples:
    %(prog)s info ./my-project                             # Show repo stats
    %(prog)s watch ./my-project                            # Watch and auto re-index
   %(prog)s eval . --suite .docs/research/eval/code-harness.fixture.yaml
+  %(prog)s eval . --suite .docs/research/eval/code-harness.fixture.yaml --loop
   %(prog)s query . --no-llm --pack-mode ccr_lite -q "how does the chunker work?"
+  %(prog)s query . --no-llm --loop -q "Who calls Retriever index_chunks?"
   %(prog)s retrieve-chunk class:harness/chunker.py:CodeChunker:abcd1234
         """
     )
@@ -744,6 +846,7 @@ Examples:
     q.add_argument("--debug", action="store_true",
                    help="Show per-source retrieval breakdown (dense/sparse/graph/cross-encoder)")
     _add_pack_flags(q)
+    _add_loop_flags(q, include_verify=True)
     q.set_defaults(func=cmd_query)
 
     int_p = subparsers.add_parser("interactive", aliases=["i"],
@@ -757,6 +860,7 @@ Examples:
     int_p.add_argument("--debug", action="store_true",
                       help="Show per-source retrieval breakdown (dense/sparse/graph/cross-encoder)")
     _add_pack_flags(int_p)
+    _add_loop_flags(int_p, include_verify=True)
     int_p.set_defaults(func=cmd_interactive)
 
     info = subparsers.add_parser("info", help="Show repository information")
@@ -791,6 +895,7 @@ Examples:
         default=None,
         help="Context pack mode used for citation/token columns (default: full)",
     )
+    _add_loop_flags(ev, include_verify=False)
     ev.set_defaults(func=cmd_eval)
 
     rc = subparsers.add_parser(

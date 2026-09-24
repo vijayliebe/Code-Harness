@@ -159,6 +159,20 @@ def _ranked_for_metrics(results: Sequence, gold_ids: Sequence[str], must_paths: 
     return paths_in_order(_chunks_of(results)), [normalize_path(p) for p in must_paths]
 
 
+def _union_stage(traces: Sequence[Dict[str, Any]], key: str) -> List[Any]:
+    seen = set()
+    merged: List[Any] = []
+    for trace in traces or []:
+        for item in trace.get(key) or []:
+            chunk = getattr(item, "chunk", item)
+            cid = getattr(chunk, "id", id(item))
+            if cid in seen:
+                continue
+            seen.add(cid)
+            merged.append(item)
+    return merged
+
+
 def run_eval(
     fixtures: Sequence[EvalFixture],
     retriever,
@@ -169,27 +183,41 @@ def run_eval(
     repo_path: str,
     repo_name: str,
     config_snapshot: Optional[Dict[str, Any]] = None,
+    loop_config=None,
 ) -> Dict[str, Any]:
+    from .loop import LoopConfig, QueryLoop
+
     cases: List[Dict[str, Any]] = []
     ce_enabled = bool(getattr(retriever, "ce_enabled", False))
+    loop = QueryLoop(retriever, context_builder, loop_config or LoopConfig(max_loops=0))
 
     for fixture in fixtures:
-        retrieved = retriever.retrieve(fixture.query, top_k=k, debug=True)
-        if isinstance(retrieved, tuple):
-            results, trace = retrieved
-        else:
-            results, trace = retrieved, {}
-
-        packed = context_builder.build_context_report(fixture.query, results)
-        latencies = dict(trace.get("latencies_ms") or {})
-        if packed.mmr_latency_ms is not None:
+        outcome = loop.run(
+            fixture.query,
+            top_k=k,
+            must_cite_paths=fixture.must_cite_paths,
+        )
+        results = outcome.results
+        packed = outcome.packed
+        traces = outcome.traces or []
+        last = traces[-1] if traces else {}
+        latencies = dict(last.get("latencies_ms") or {})
+        if packed is not None and packed.mmr_latency_ms is not None:
             latencies["mmr"] = packed.mmr_latency_ms
+        for extra in traces[:-1]:
+            extra_ms = extra.get("latencies_ms") or {}
+            for key, value in extra_ms.items():
+                if value is None:
+                    continue
+                latencies[key] = latencies.get(key, 0.0) + float(value)
 
-        dense = trace.get("dense") or []
-        sparse = trace.get("sparse") or []
-        graph = trace.get("graph") or []
-        fused = trace.get("fused") or []
-        reranked = trace.get("reranked") or []
+        dense = _union_stage(traces, "dense")
+        sparse = _union_stage(traces, "sparse")
+        graph = _union_stage(traces, "graph")
+        fused = _union_stage(traces, "fused")
+        reranked = _union_stage(traces, "reranked")
+        if packed is None:
+            packed = context_builder.build_context_report(fixture.query, results)
 
         ranked, relevant = _ranked_for_metrics(
             results, fixture.relevant_chunk_ids, fixture.must_cite_paths
@@ -238,18 +266,27 @@ def run_eval(
             "prefix_hash": getattr(packed, "prefix_hash", "") or "",
             "latencies_ms": latencies,
             "failures": failures,
+            "loop": {
+                "attempts": outcome.attempts,
+                "grade": outcome.grade,
+                "coverage": outcome.coverage,
+                "stop_reason": outcome.stop_reason,
+                "action": outcome.action,
+                "mode": outcome.mode,
+                "queries": [t.get("query") for t in traces],
+            },
             "trace": {
                 "query": fixture.query,
-                "mode": "hybrid",
-                "attempt": 1,
+                "mode": last.get("mode") or outcome.mode or "hybrid",
+                "attempt": outcome.attempts,
                 "dense_ids": _result_ids(dense),
                 "bm25_ids": _result_ids(sparse),
                 "graph_ids": _result_ids(graph),
                 "fused_ids": _result_ids(fused),
                 "reranked_ids": _result_ids(reranked),
                 "packed_ids": list(packed.packed_chunk_ids),
-                "grade": None,
-                "action": "stop",
+                "grade": outcome.grade,
+                "action": last.get("action") or outcome.action or "stop",
                 "ms": {
                     "dense": latencies.get("dense"),
                     "bm25": latencies.get("bm25"),
@@ -301,6 +338,29 @@ def _aggregate(cases: Sequence[Dict[str, Any]], k: int) -> Dict[str, Any]:
         for label in case.get("failures") or []:
             failure_counts[label] = failure_counts.get(label, 0) + 1
 
+    attempts = [float((c.get("loop") or {}).get("attempts") or 1) for c in cases]
+
+    def _subset_metrics(subset: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+        sub_recalls = [c["recall_at_k"] for c in subset if c["recall_at_k"] is not None]
+        sub_ndcgs = [c["ndcg_at_k"] for c in subset if c["ndcg_at_k"] is not None]
+        sub_cites = [c["citation_path_hit_rate"] for c in subset if c["citation_path_hit_rate"] is not None]
+        sub_tokens = [c.get("prompt_tokens") for c in subset if c.get("prompt_tokens") is not None]
+        sub_attempts = [float((c.get("loop") or {}).get("attempts") or 1) for c in subset]
+        return {
+            "n": len(subset),
+            "recall_at_k": None if not sub_recalls else round(mean(sub_recalls), 4),
+            "ndcg_at_k": None if not sub_ndcgs else round(mean(sub_ndcgs), 4),
+            "citation_path_hit_rate": None if not sub_cites else round(mean(sub_cites), 4),
+            "prompt_tokens_mean": None if not sub_tokens else round(mean(sub_tokens), 1),
+            "loop_attempts_mean": None if not sub_attempts else round(mean(sub_attempts), 3),
+        }
+
+    by_difficulty: Dict[str, Any] = {}
+    for difficulty in ("easy", "medium", "hard"):
+        subset = [c for c in cases if c.get("difficulty") == difficulty]
+        if subset:
+            by_difficulty[difficulty] = _subset_metrics(subset)
+
     return {
         "k": k,
         "n": len(cases),
@@ -314,6 +374,8 @@ def _aggregate(cases: Sequence[Dict[str, Any]], k: int) -> Dict[str, Any]:
         "prompt_token_drop": drop,
         "latencies_ms": latencies,
         "failure_counts": failure_counts,
+        "loop_attempts_mean": None if not attempts else round(mean(attempts), 3),
+        "by_difficulty": by_difficulty,
     }
 
 
@@ -338,6 +400,21 @@ def print_summary(report: Dict[str, Any]) -> None:
     failures = metrics.get("failure_counts") or {}
     if failures:
         print("  failures: " + ", ".join(f"{k}={v}" for k, v in sorted(failures.items())))
+    by_diff = metrics.get("by_difficulty") or {}
+    if by_diff:
+        parts = []
+        for name in ("easy", "medium", "hard"):
+            row = by_diff.get(name)
+            if not row:
+                continue
+            parts.append(
+                f"{name}: R={row.get('recall_at_k')} cite={row.get('citation_path_hit_rate')} "
+                f"tok={row.get('prompt_tokens_mean')} loops={row.get('loop_attempts_mean')}"
+            )
+        if parts:
+            print("  by difficulty: " + "  |  ".join(parts))
+    if metrics.get("loop_attempts_mean") is not None:
+        print(f"  loop attempts mean: {metrics.get('loop_attempts_mean')}")
     print()
     header = f"{'id':<28} {'R@k':>6} {'nDCG':>6} {'cite':>6} {'tok':>6}  failures"
     print(header)
