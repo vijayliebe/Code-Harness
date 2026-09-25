@@ -1,6 +1,6 @@
 # Steal matrix — every INDEX resource
 
-Inventory of [../INDEX.md](../INDEX.md) (23 items, including fuzzy-resolved names). Status is judged against **this branch tip**: eval harness, CCR-lite packer, corrective query loop, KG enrichment, wiki, typed memory+OKF, session `/compact`/`/cost`, secret redaction + audit JSONL, doctor + localhost MCP / `POST /v1/retrieve`, **experimental TurboVec backend (recall-gated)**.
+Inventory of [../INDEX.md](../INDEX.md) (23 items, including fuzzy-resolved names). Status is judged against **this branch tip**: eval harness, CCR-lite packer, corrective query loop, KG enrichment, wiki, typed memory+OKF + heuristic `memory extract` (opt-in auto), session `/compact`/`/cost`, secret redaction + audit JSONL, doctor + localhost MCP / `POST /v1/retrieve`, **experimental TurboVec backend (recall-gated)**.
 
 **This is not a claim that fusion is complete.** Rows marked `done` mean the *stealable mechanism* is in-tree; siblings on the same card may still be `gap`.
 
@@ -91,7 +91,7 @@ Mini-deepens for thin cards: [notes/](notes/).
 - **Best stealable ideas:** (1) Typed memories (`decision` / `error` / `preference` / `fact`) **beside** the code index. (2) Conflict **supersession** + `as-of`, not silent overwrite. (3) `memory brief` on interactive start (≤800 tokens).
 - **Why it matters:** Accuracy on “why did we…?” without polluting chunk embeddings. Tokens: brief ≪ re-retrieving narrative docs. Ops: git-reviewable facts.
 - **Map to module:** NEW `harness/memory.py` + CLI `memory`; context builder prefix (semi-stable, after ARCHITECTURE, before packed hits).
-- **Status:** `partial` — `harness/memory.py` + CLI `memory add|list|brief|export|import` shipped: four types, supersede/tombstone, `memory brief` ≤800 tokens, OKF markdown under `knowledge/memory/`. Query-path inject is default-off (`--include-memory-brief`). **Delta:** no observe/auto-extract from sessions; no BM25-over-memory index; no eval “why did we…?” fixtures yet. Do not vendor Memanto. OKF is the interchange (Google SPEC; Memanto is implementer).
+- **Status:** `partial` — `harness/memory.py` + CLI `memory add|list|brief|export|import|extract` shipped: four types, supersede/tombstone, `memory brief` ≤800 tokens, OKF markdown under `knowledge/memory/`. Heuristic `memory extract` (session JSONL / last session, `--dry-run`, optional `--llm` no-op without client+key). `memory.auto_extract` default **false**; when true, runs after `/compact` or session exit. Query-path inject is default-off (`--include-memory-brief`). **Delta:** no BM25-over-memory index; no eval “why did we…?” fixtures yet. Do not vendor Memanto. OKF is the interchange (Google SPEC; Memanto is implementer).
 - **Fusion priority:** P0
 - **Evidence:** deep-dive
 
@@ -293,7 +293,7 @@ Mini-deepens for thin cards: [notes/](notes/).
 Sources with the most **material delta** still on the table (not rejects):
 
 1. **Google Code Wiki + OKF** — `wiki generate` + WikiPage emit + `--dirty` / watch hook + opt-in RRF `wiki_weight` shipped; remaining: chat-over-wiki via CCR, prefix-load of `knowledge/**/*.md`, LLM polish.
-2. **Memanto** — typed store + supersession + brief shipped; remaining: observe/auto-extract and eval “why” fixtures.
+2. **Memanto** — typed store + supersession + brief + heuristic auto-extract shipped (opt-in); remaining: BM25-over-memory and eval “why” fixtures.
 3. **Strands + Forge + Claurst** — session `/compact` `/cost` sage + localhost MCP retrieve shipped; remaining: caveman, graph-explorer digest.
 4. **Agent-Reach + Proxima + OpenHuman** — doctor + query cache + MCP/`POST /v1/retrieve` **shipped** (loopback). Remainder: Jina ingest, stdio MCP, serve-cache on eval/interactive.
 5. **TurboVec** — protocol + opt-in backend + eval A/B gate shipped; still experimental, not default. Remainder: dual-write, TQ+ calibrate, default flip.
