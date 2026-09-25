@@ -25,6 +25,6 @@ Fusion PR #3 (interactive session) adds `chat` / `session` / `repl` aliases, JSO
 
 Fusion PR #4 (secret redaction + audit) adds `harness/redact.py` + append-only `.code-harness/audit/audit.jsonl`. Packed/LLM text is redacted by default; `audit show --last N` prints fingerprint hashes, never raw secrets. Disable only via `--no-redact` / `CODEHARNESS_REDACT=0`.
 
-Fusion PR #5 (`doctor` + localhost MCP / `POST /v1/retrieve`) adds `harness/doctor.py` + `harness/serve.py`. `doctor` probes Python/deps/index/graph/embed/redact/audit/LLM-key (no network). `serve` / `mcp serve` / `api serve` bind **127.0.0.1** only unless `--allow-public` (dangerous, no auth). `mcp stdio` speaks the same tools over stdin/stdout (no bind). Response bodies go through `redact_and_audit`. Optional SQLite query-hash cache.
+Fusion PR #5 (`doctor` + localhost MCP / `POST /v1/retrieve`) adds `harness/doctor.py` + `harness/serve.py`. `doctor` probes Python/deps/index/graph/embed/redact/audit/LLM-key (no network). `serve` / `mcp serve` / `api serve` bind **127.0.0.1** only unless `--allow-public` (dangerous, no auth). `mcp stdio` speaks the same tools over stdin/stdout (no bind). Response bodies go through `redact_and_audit`. Query-hash cache lives in `harness/query_cache.py` (serve default-on; `query` / `chat` / `eval` opt-in via `--query-cache`).
 
 Read [../INDEX.md](../INDEX.md) → this pack → [../deep/INTEGRATION_PLAN.md](../deep/INTEGRATION_PLAN.md) for the original sequence.

@@ -130,8 +130,8 @@ Mini-deepens for thin cards: [notes/](notes/).
 - **Links:** https://github.com/Zen4-bit/Proxima · [notes/proxima.md](notes/proxima.md)
 - **Best stealable ideas:** (1) Local OpenAI-shaped HTTP — **our** `POST /v1/retrieve`, not their chat-gateway `/v1`. (2) Query-hash → chunk_id SQLite cache. (3) Self-heal retrieve (shipped). (4) Strip secrets on assemble.
 - **Why it matters:** Latency on repeated questions; product drop-in for agents; ops/safety. Browser session routing is ToS/Non-Commercial — **reject**.
-- **Map to module:** query loop **done**; `harness/serve.py` `POST /v1/retrieve` + optional SQLite query-hash cache; context builder redaction **done**.
-- **Status:** `partial` — local OpenAI-shaped **retrieve** + query cache **shipped** (localhost only). **Delta:** cache is serve-path only (not eval/interactive). Browser session routing **reject**.
+- **Map to module:** query loop **done**; `harness/serve.py` `POST /v1/retrieve` + `harness/query_cache.py` retrieve/pack cache (serve + query/chat/eval); context builder redaction **done**.
+- **Status:** `partial` — local OpenAI-shaped **retrieve** + query cache **shipped** (localhost serve default-on; query/chat/eval opt-in). **Delta:** none on cache wiring. Browser session routing **reject**.
 - **Fusion priority:** P1
 - **Evidence:** fusion-note (README v5 skim — they are an LLM gateway, not a retriever)
 
@@ -295,7 +295,7 @@ Sources with the most **material delta** still on the table (not rejects):
 1. **Google Code Wiki + OKF** — `wiki generate` + WikiPage emit + `--dirty` / watch hook + opt-in RRF `wiki_weight` + full-vault `knowledge export|import` + opt-in packer prefix-load of `knowledge/**/*.md` + chat-over-wiki via CCR shipped; remaining: LLM polish.
 2. **Memanto** — typed store + supersession + brief + heuristic auto-extract + opt-in BM25-over-memory RRF shipped; remaining: eval “why” fixtures.
 3. **Strands + Forge + Claurst** — session `/compact` `/cost` sage + localhost HTTP + stdio MCP retrieve shipped; remaining: caveman, graph-explorer digest.
-4. **Agent-Reach + Proxima + OpenHuman** — doctor + query cache + MCP/`POST /v1/retrieve` + **stdio MCP** **shipped** (loopback HTTP / no-bind stdio). Remainder: Jina ingest, serve-cache on eval/interactive.
+4. **Agent-Reach + Proxima + OpenHuman** — doctor + query cache + MCP/`POST /v1/retrieve` + **stdio MCP** **shipped** (loopback HTTP / no-bind stdio). Query cache now covers serve + opt-in query/chat/eval. Remainder: Jina ingest.
 5. **TurboVec** — protocol + opt-in backend + eval A/B gate + **fixture-suite A/B table** shipped; still experimental, not default. Remainder: dual-write, TQ+ calibrate, default flip.
 6. **Headroom remainder** — expand-on-explain, stable cache key, type-aware pack.
 7. **Code-graph remainder** — path templates, `calls` quality (regex is the real accuracy bug).

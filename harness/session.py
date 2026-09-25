@@ -233,6 +233,7 @@ class Session:
         self._redact = redact
         self._audit_path = audit_path
         self.wiki_mode = bool((getattr(config, "chat", None) or {}).get("wiki_mode"))
+        self.query_cache = None
         self.turns: List[SessionTurn] = []
         self._prompt_tokens = 0
         self._packed_tokens = 0
@@ -338,12 +339,20 @@ class Session:
             usd_line = "approx $: rate unknown"
         else:
             usd_line = f"approx $: ${cost.approx_usd:.4f}"
+        cache_line = ""
+        cache = getattr(self, "query_cache", None)
+        if cache is not None:
+            cache_line = (
+                f"  query cache:            {int(getattr(cache, 'hits', 0) or 0)} hit / "
+                f"{int(getattr(cache, 'misses', 0) or 0)} miss\n"
+            )
         return (
             "session cost\n"
             f"  prompt tokens (packed): {cost.prompt_tokens}\n"
             f"  prompt tokens (full):   {cost.full_tokens}\n"
             f"  completion tokens:      {cost.completion_tokens}\n"
             f"  loop attempts:          {cost.loop_attempts}\n"
+            f"{cache_line}"
             f"  {usd_line}"
         )
 

@@ -184,19 +184,35 @@ def run_eval(
     repo_name: str,
     config_snapshot: Optional[Dict[str, Any]] = None,
     loop_config=None,
+    cache=None,
+    config=None,
 ) -> Dict[str, Any]:
     from .loop import LoopConfig, QueryLoop
+    from .query_cache import run_with_query_cache
 
     cases: List[Dict[str, Any]] = []
     ce_enabled = bool(getattr(retriever, "ce_enabled", False))
     loop = QueryLoop(retriever, context_builder, loop_config or LoopConfig(max_loops=0))
+    eval_config = config
 
     for fixture in fixtures:
-        outcome = loop.run(
-            fixture.query,
-            top_k=k,
-            must_cite_paths=fixture.must_cite_paths,
-        )
+        if cache is not None and eval_config is not None:
+            outcome = run_with_query_cache(
+                loop,
+                fixture.query,
+                top_k=k,
+                cache=cache,
+                config=eval_config,
+                repo_name=repo_name,
+                repo_path=repo_path,
+                must_cite_paths=fixture.must_cite_paths,
+            )
+        else:
+            outcome = loop.run(
+                fixture.query,
+                top_k=k,
+                must_cite_paths=fixture.must_cite_paths,
+            )
         results = outcome.results
         packed = outcome.packed
         traces = outcome.traces or []
@@ -275,6 +291,7 @@ def run_eval(
                 "mode": outcome.mode,
                 "queries": [t.get("query") for t in traces],
             },
+            "cached": bool(getattr(outcome, "cached", False)),
             "trace": {
                 "query": fixture.query,
                 "mode": last.get("mode") or outcome.mode or "hybrid",
@@ -299,6 +316,12 @@ def run_eval(
         cases.append(case)
 
     metrics = _aggregate(cases, k)
+    if cache is not None:
+        metrics["query_cache"] = {
+            "enabled": True,
+            "hits": int(getattr(cache, "hits", 0) or 0),
+            "misses": int(getattr(cache, "misses", 0) or 0),
+        }
     return {
         "suite": suite_name,
         "suite_path": os.path.abspath(suite_path) if suite_path else "",
@@ -415,6 +438,9 @@ def print_summary(report: Dict[str, Any]) -> None:
             print("  by difficulty: " + "  |  ".join(parts))
     if metrics.get("loop_attempts_mean") is not None:
         print(f"  loop attempts mean: {metrics.get('loop_attempts_mean')}")
+    qc = metrics.get("query_cache") or {}
+    if qc.get("enabled"):
+        print(f"  query cache: hits={qc.get('hits', 0)} misses={qc.get('misses', 0)}")
     print()
     header = f"{'id':<28} {'R@k':>6} {'nDCG':>6} {'cite':>6} {'tok':>6}  failures"
     print(header)

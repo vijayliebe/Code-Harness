@@ -117,6 +117,13 @@ def cmd_index(args):
         config.save(config_path)
         print(f"[*] Config saved to: {config_path}")
 
+    try:
+        from harness.query_cache import notify_retrieval_changed
+
+        notify_retrieval_changed(repo_path)
+    except Exception:
+        pass
+
     print(f"[+] Indexing complete!")
 
 
@@ -170,6 +177,7 @@ def cmd_query(args):
         print(f"[*] Query loop: max_loops={config.retrieval.get('max_loops')}")
 
     from harness.loop import LoopConfig, QueryLoop, verify_answer
+    from harness.query_cache import run_with_query_cache
 
     loop = QueryLoop(retriever, context_builder, LoopConfig.from_mapping(config.retrieval))
     generate = None
@@ -183,12 +191,20 @@ def cmd_query(args):
         verifier = lambda q, a, packed: verify_answer(llm, q, a, packed)
 
     debug = getattr(args, 'debug', False)
-    outcome = loop.run(
+    cache = _build_query_cache(args, config, print)
+    outcome = run_with_query_cache(
+        loop,
         query,
         top_k=config.retrieval.get("top_k", 20),
+        cache=cache,
+        config=config,
+        repo_name=repo_name,
+        repo_path=config.repo_path,
         generate=generate,
         verifier=verifier,
     )
+    if cache is not None and getattr(outcome, "cached", False):
+        print("[*] query cache: hit")
     results = outcome.results
     report = outcome.packed or context_builder.build_context_report(query, results)
     if debug:
@@ -302,6 +318,8 @@ def cmd_interactive(args):
         redact=config.redaction.get("enabled", True) and config.redaction.get("session", True),
         audit_path=config.redaction.get("audit_path"),
     )
+    query_cache = _build_query_cache(args, config, print)
+    session.query_cache = query_cache
 
     print("=" * 60)
     print("  Code Harness - Interactive Session")
@@ -377,6 +395,7 @@ def cmd_interactive(args):
             continue
 
         from harness.loop import LoopConfig, QueryLoop, verify_answer
+        from harness.query_cache import run_with_query_cache
 
         loop = QueryLoop(retriever, context_builder, LoopConfig.from_mapping(config.retrieval))
         generate = None
@@ -389,9 +408,14 @@ def cmd_interactive(args):
         verifier = None
         if config.retrieval.get("verify") and can_generate:
             verifier = lambda q, a, packed: verify_answer(llm, q, a, packed)
-        outcome = loop.run(
+        outcome = run_with_query_cache(
+            loop,
             query,
             top_k=config.retrieval.get("top_k", 20),
+            cache=query_cache,
+            config=config,
+            repo_name=repo_name,
+            repo_path=config.repo_path,
             generate=generate,
             verifier=verifier,
         )
@@ -1012,6 +1036,17 @@ def _wants_stdio(args) -> bool:
     return bool(getattr(args, "stdio", False))
 
 
+def _build_query_cache(args, config, log=None):
+    from harness.query_cache import resolve_query_cache
+
+    cache = resolve_query_cache(args=args, config=config, environ=os.environ)
+    if cache is None:
+        return None
+    if log:
+        log(f"[*] query cache: {cache.path or 'memory'}")
+    return cache
+
+
 def _build_serve_cache(args, config, log):
     from harness.serve import QueryCache
 
@@ -1168,6 +1203,26 @@ def _add_mcp_stdio_flags(parser):
     parser.set_defaults(func=cmd_serve, mcp_cmd="stdio")
 
 
+def _add_query_cache_flags(parser):
+    parser.add_argument(
+        "--query-cache",
+        action="store_true",
+        dest="query_cache",
+        help="Enable retrieve/pack query cache (default off for query/chat/eval; env CODEHARNESS_QUERY_CACHE=1)",
+    )
+    parser.add_argument(
+        "--no-query-cache",
+        action="store_true",
+        dest="no_query_cache",
+        help="Disable retrieve/pack query cache (CODEHARNESS_QUERY_CACHE=0)",
+    )
+    parser.add_argument(
+        "--cache-path",
+        default=None,
+        help="SQLite query cache path (default: <repo>/.code-harness/query_cache.sqlite)",
+    )
+
+
 def _add_redact_flag(parser):
     parser.add_argument(
         "--no-redact",
@@ -1305,7 +1360,7 @@ def _eval_snapshot(config, context_builder, backend_name: str) -> Dict:
     }
 
 
-def _run_eval_backend(config, fixtures, meta, suite_path, repo_name, k, loop_config):
+def _run_eval_backend(config, fixtures, meta, suite_path, repo_name, k, loop_config, cache=None):
     from harness.eval import run_eval
     from harness.vector_store import BackendUnavailable, describe_backend
 
@@ -1347,6 +1402,8 @@ def _run_eval_backend(config, fixtures, meta, suite_path, repo_name, k, loop_con
         repo_name=repo_name,
         config_snapshot=_eval_snapshot(config, context_builder, vs.backend_name),
         loop_config=loop_config,
+        cache=cache,
+        config=config,
     )
     return report, None
 
@@ -1390,6 +1447,7 @@ def cmd_eval(args):
 
     k = args.k or meta.get("k") or config.retrieval.get("top_k", 10)
     k = int(k)
+    cache = _build_query_cache(args, config, print)
     selected = selected_backend_name(config)
     compare_names = parse_backend_list(getattr(args, "compare_backends", None))
     if selected == "turbovec" and "chromadb" not in compare_names:
@@ -1420,12 +1478,13 @@ def cmd_eval(args):
             "session": dict(config.session),
             "redaction": dict(config.redaction),
             "serve": dict(config.serve),
+            "query_cache": dict(getattr(config, "query_cache", None) or {}),
             "repo_path": config.repo_path,
             "verbose": config.verbose,
         })
         apply_vector_backend(cfg_one, name)
         report, err = _run_eval_backend(
-            cfg_one, fixtures, meta, suite_path, repo_name, k, loop_config
+            cfg_one, fixtures, meta, suite_path, repo_name, k, loop_config, cache=cache
         )
         if err:
             print(f"[!] Skipping {name}: {err}")
@@ -1865,6 +1924,7 @@ Examples:
     _add_loop_flags(q, include_verify=True)
     _add_profile_flag(q)
     _add_redact_flag(q)
+    _add_query_cache_flags(q)
     q.set_defaults(func=cmd_query)
 
     int_p = subparsers.add_parser(
@@ -1884,6 +1944,7 @@ Examples:
     _add_loop_flags(int_p, include_verify=True)
     _add_profile_flag(int_p)
     _add_redact_flag(int_p)
+    _add_query_cache_flags(int_p)
     int_p.set_defaults(func=cmd_interactive)
 
     info = subparsers.add_parser("info", help="Show repository information")
@@ -1967,6 +2028,7 @@ Examples:
         help="Context pack mode used for citation/token columns (default: full)",
     )
     _add_loop_flags(ev, include_verify=False)
+    _add_query_cache_flags(ev)
     ev.set_defaults(func=cmd_eval)
 
     from harness.eval_ab import (

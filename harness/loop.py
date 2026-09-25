@@ -399,6 +399,7 @@ class LoopOutcome:
     mode: str = "hybrid"
     answer: Optional[str] = None
     verify: Optional[Dict[str, Any]] = None
+    cached: bool = False
 
 
 def call_retrieve(retriever, query: str, top_k: int, debug: bool = True, **opts):
