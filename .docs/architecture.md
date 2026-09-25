@@ -183,6 +183,7 @@ retrieve(query, debug=False)
   ├── Sparse (25%): BM25 keyword scoring
   ├── Graph (20%): beam neighbor expansion (width=6, depth=2; `expand_mode=bfs` for old BFS)
   ├── Wiki (opt-in): `kind=wiki` / `knowledge/wiki/` channel via RRF when `wiki_weight` > 0 (default 0.0)
+  ├── Chat-over-wiki (opt-in): `chat.wiki_mode` / `--wiki` prefers wiki hits then falls back to code; CCR expands linked `path:symbol`
   ├── Fusion: RRF with k=60
   ├── Cross-encoder rerank: cross-encoder/ms-marco-MiniLM-L-6-v2
   └── Return top-k (default: 30)
@@ -205,7 +206,7 @@ Key design:
 build_context(query, results)
   ├── load_project_context(): inject ARCHITECTURE.md / AGENTS.md / CLAUDE.md
   ├── load_memory_brief(): opt-in typed memory (default off)
-  ├── load_knowledge_prefix(): opt-in knowledge/** slice (default off, 800-token budget)
+  ├── load_knowledge_prefix(): opt-in knowledge/** slice (default off, 800-token budget; wiki mode turns this on)
   ├── deduplicate(): remove overlapping line ranges, keep higher-scored
   ├── rerank(): boost for term overlap, entity type, docstrings
   ├── diversity_rerank(): MMR with lambda=0.3

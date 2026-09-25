@@ -111,6 +111,13 @@ class ContextBuilder:
         deduplicated = self._deduplicate(results)
         started = time.perf_counter()
         scored = self._rerank(query, deduplicated)
+        try:
+            from .wiki_chat import prefer_wiki_results, wiki_mode_enabled
+
+            if wiki_mode_enabled(self.config):
+                scored = prefer_wiki_results(scored)
+        except Exception:
+            pass
         mmr_ms = (time.perf_counter() - started) * 1000.0
         packed_full: List[RetrievalResult] = []
         packed_lite: List[RetrievalResult] = []
@@ -337,6 +344,15 @@ class ContextBuilder:
             if (r.chunk.metadata or {}).get("kind") == "gloss":
                 boost += 0.12
 
+            try:
+                from .retriever import is_wiki_chunk
+                from .wiki_chat import wiki_mode_enabled
+
+                if wiki_mode_enabled(self.config) and is_wiki_chunk(r.chunk):
+                    boost += 0.35
+            except Exception:
+                pass
+
             r.score = max(0, r.score + boost)
 
         results.sort(key=lambda r: r.score, reverse=True)
@@ -421,7 +437,19 @@ class ContextBuilder:
                 by_file[fp] = []
             by_file[fp].append(r)
 
-        for file_path, file_results in sorted(by_file.items()):
+        wiki_first = False
+        try:
+            from .wiki_chat import pack_file_sort_key, wiki_mode_enabled
+
+            wiki_first = wiki_mode_enabled(self.config)
+            file_items = sorted(
+                by_file.items(),
+                key=lambda item: pack_file_sort_key(item[0], wiki_first),
+            )
+        except Exception:
+            file_items = sorted(by_file.items())
+
+        for file_path, file_results in file_items:
             if total_estimate >= max_estimate:
                 break
 
@@ -507,6 +535,14 @@ class ContextBuilder:
         sections.append("Packed: signatures + key spans. retrieve_chunk <id> loads originals.\n")
         total_estimate += 20
 
+        try:
+            from .wiki_chat import prefer_wiki_results, wiki_mode_enabled
+
+            if wiki_mode_enabled(self.config):
+                results = prefer_wiki_results(results)
+        except Exception:
+            pass
+
         for r in results:
             packed_chunk = pack_chunk(r.chunk, first, last, omit)
             self.cache.put(r.chunk.id, r.chunk.content)
@@ -543,6 +579,14 @@ class ContextBuilder:
         from .session import CITATION_INSTRUCTION as SESSION_CITE
 
         cite = SESSION_CITE
+        wiki_line = ""
+        try:
+            from .wiki_chat import WIKI_ANSWER_LINE, wiki_mode_enabled
+
+            if wiki_mode_enabled(self.config):
+                wiki_line = f"\n{WIKI_ANSWER_LINE}"
+        except Exception:
+            pass
         return f"""You are an expert code analyst. Your task is to answer questions about a codebase using the provided context.
 
 Guidelines:
@@ -557,4 +601,4 @@ Guidelines:
 
 The context below contains relevant code snippets from the repository, including file paths and line numbers.
 Project-level documentation files (ARCHITECTURE.md, AGENTS.md, CLAUDE.md) may be included for high-level understanding.
-When a knowledge vault prefix is present, cite wiki pages as `knowledge/wiki/<page>` and keep source cites as `path:symbol`."""
+When a knowledge vault prefix is present, cite wiki pages as `knowledge/wiki/<page>` and keep source cites as `path:symbol`.{wiki_line}"""

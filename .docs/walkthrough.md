@@ -297,7 +297,7 @@ New entities discovered: `hash_password`, `User.__init__`, `auth.py`
 
 ### Step 5e: RRF Fusion
 
-Three ranked lists combined via Reciprocal Rank Fusion (optional fourth list when `wiki_weight` > 0):
+Three ranked lists combined via Reciprocal Rank Fusion (optional fourth list when `wiki_weight` > 0, including chat `--wiki` which applies weight `0.15` when the configured weight is still `0.0`):
 
 ```
 RRF score = dense_weight * Σ 1/(60 + rank_dense)

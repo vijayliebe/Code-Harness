@@ -19,7 +19,7 @@ Fusion PR #2 (typed memory) adds `memory add|list|brief|export|import|extract` â
 
 Full-vault OKF: `knowledge export|import` (alias `okf`) copies wiki + memory + gloss (plus `.code-harness/gloss`) into a bundle with `okf-manifest.yaml`. Packer prefix-load of `knowledge/**/*.md` is opt-in (`context.knowledge_prefix`, default off, `context.knowledge_token_budget=800`).
 
-Wiki remainders now closer: `wiki generate --dirty` + watch hook + opt-in RRF `retrieval.wiki_weight` (default 0.0). Chat-over-wiki via CCR and LLM polish stay open.
+Wiki remainders now closer: `wiki generate --dirty` + watch hook + opt-in RRF `retrieval.wiki_weight` (default 0.0) + chat-over-wiki (`chat --wiki` / `query --wiki` / `/wiki` / `chat.wiki_mode`) via CCR pack/expand. LLM polish stays open.
 
 Fusion PR #3 (interactive session) adds `chat` / `session` / `repl` aliases, JSONL under `.code-harness/sessions/`, heuristic `/compact` + `/cost`, `--profile sage`, and a `path:symbol` system line. Expand-on-explain is session/sage-scoped.
 
