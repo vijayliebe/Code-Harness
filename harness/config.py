@@ -95,6 +95,11 @@ DEFAULT_CONFIG = {
         "cache_path": ".code-harness/query_cache.sqlite",
     },
 
+    "query_cache": {
+        "enabled": False,
+        "path": ".code-harness/query_cache.sqlite",
+    },
+
     "retrieval": {
         "dense_weight": 0.3,
         "sparse_weight": 0.25,
@@ -175,6 +180,7 @@ class Config:
     memory: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["memory"]))
     redaction: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["redaction"]))
     serve: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["serve"]))
+    query_cache: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["query_cache"]))
     repo_path: str = "."
     verbose: bool = False
 
@@ -223,6 +229,7 @@ class Config:
             "memory": self.memory,
             "redaction": self.redaction,
             "serve": self.serve,
+            "query_cache": self.query_cache,
             "repo_path": self.repo_path,
             "verbose": self.verbose,
         }

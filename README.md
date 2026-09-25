@@ -67,7 +67,7 @@ python main.py session ./my-project --profile sage
 python main.py interactive --cross-repo ./my-project   # same command
 ```
 
-Turns are stored as JSONL under `.code-harness/sessions/` (ephemeral dialogue — not typed memory and not the code index). `/compact` is extractive conversation compression (keep user lines + the latest pack ids); it is not the CCR packer. `/cost` prints packed vs full prompt tokens, completion tokens, loop attempts, and approx $ when `llm.input_usd_per_1m` / `llm.output_usd_per_1m` are set. Without an LLM key the session still retrieves, packs, and prints context.
+Turns are stored as JSONL under `.code-harness/sessions/` (ephemeral dialogue — not typed memory and not the code index). `/compact` is extractive conversation compression (keep user lines + the latest pack ids); it is not the CCR packer. `/cost` prints packed vs full prompt tokens, completion tokens, loop attempts, query-cache hit/miss when `--query-cache` is on, and approx $ when `llm.input_usd_per_1m` / `llm.output_usd_per_1m` are set. Without an LLM key the session still retrieves, packs, and prints context.
 
 `--profile sage` (or `CODEHARNESS_PROFILE=sage`, or `/profile sage`) is a flag pack: `pack_mode=ccr_lite`, `max_loops=1`, larger graph expand, higher pack budget. It does **not** retune RRF weights. One-shot `query` stays unchanged unless you pass `--profile`.
 
@@ -215,7 +215,7 @@ Checks: Python 3.9+, importable deps, Chroma persist + `graph_{repo}.json`, embe
 
 ### `serve` / `mcp serve` / `api serve` — Localhost retrieve + MCP
 
-Binds **127.0.0.1 only** by default (no auth). Refuses `0.0.0.0` / `::` / non-loopback hosts unless you pass `--allow-public` (dangerous: no authentication). Response bodies are redacted via `harness.redact.redact_and_audit`. Optional SQLite query-hash cache under `.code-harness/query_cache.sqlite`.
+Binds **127.0.0.1 only** by default (no auth). Refuses `0.0.0.0` / `::` / non-loopback hosts unless you pass `--allow-public` (dangerous: no authentication). Response bodies are redacted via `harness.redact.redact_and_audit`. Optional SQLite query-hash cache under `.code-harness/query_cache.sqlite` (serve default-on, `--no-cache` to disable). The same cache is **opt-in** on `query` / `chat` / `eval` via `--query-cache` or `CODEHARNESS_QUERY_CACHE=1` (`--no-query-cache` / `CODEHARNESS_QUERY_CACHE=0` disables).
 
 ```bash
 python main.py serve .
@@ -317,10 +317,11 @@ python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml
 python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --dry-run
 python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --loop
 python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --compare-backends chromadb,turbovec
+python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --query-cache
 python main.py eval-ab .
 ```
 
-Reports Recall@k, nDCG@k, citation-path hit rate, stage latency (dense / BM25 / graph / CE / MMR), estimated prompt tokens after context assembly (`prompt_tokens_full` vs `prompt_tokens_packed`), and easy/hard splits. Writes `.code-harness/eval/{suite}-{timestamp}.json`. Use `--pack-mode ccr_lite` to score citation paths against packed headers (Recall@k is unchanged). `--loop` / `--max-loops N` is opt-in; default remains one-shot.
+Reports Recall@k, nDCG@k, citation-path hit rate, stage latency (dense / BM25 / graph / CE / MMR), estimated prompt tokens after context assembly (`prompt_tokens_full` vs `prompt_tokens_packed`), and easy/hard splits. Writes `.code-harness/eval/{suite}-{timestamp}.json`. Use `--pack-mode ccr_lite` to score citation paths against packed headers (Recall@k is unchanged). `--loop` / `--max-loops N` is opt-in; default remains one-shot. `--query-cache` reuses retrieve/pack on identical queries (hit/miss in the summary); Recall@k stays identical.
 
 `--compare-backends chromadb,turbovec` prints a side-by-side Recall@k / nDCG@k table and writes `.code-harness/eval/{suite}-ab-{timestamp}.json` (override with `--compare-output` / `--compare-markdown`). `eval-ab` indexes both persist dirs and writes [`.docs/research/eval/RESULTS.md`](.docs/research/eval/RESULTS.md). If `turbovec` is the selected backend and it misses the gate (more than 5% relative drop, or the deep-dive point limits: Recall@10 −2 pts / Recall@30 −1), eval exits non-zero unless `--force-experimental`. Missing `turbovec` extra is an honest skip, not a silent FAISS swap.
 
@@ -495,6 +496,7 @@ Global flags:
 | `--repo-name` | Override auto-derived repository name |
 | `--profile` | `default` or `sage` (query/chat). Env: `CODEHARNESS_PROFILE` |
 | `--wiki` | Chat-over-wiki (query/chat). Config: `chat.wiki_mode`. Env: `CODEHARNESS_WIKI_MODE` |
+| `--query-cache` | Opt-in retrieve/pack cache for `query` / `chat` / `eval` (default off). Env: `CODEHARNESS_QUERY_CACHE=1`. `--no-query-cache` disables. Serve stays default-on (`--no-cache`). |
 
 ## Embedding Providers
 
@@ -595,7 +597,7 @@ python main.py query --cross-repo -q "how do these projects interact?"
 ├── eval/                  # Retrieval eval reports ({suite}-{timestamp}.json)
 ├── ccr/                   # Optional CCR-lite originals ({sanitized_chunk_id}.txt)
 ├── audit/                 # Append-only redaction/LLM audit JSONL
-├── query_cache.sqlite     # Optional serve query-hash cache
+├── query_cache.sqlite     # Optional query-hash cache (serve default-on; query/chat/eval opt-in)
 ├── wiki/                  # Optional generated wiki (`--out .code-harness/wiki`)
 ├── okf-bundle/            # Default `knowledge export` destination
 

@@ -8,18 +8,16 @@ stdin/stdout and never binds a port. Response bodies go through
 
 from __future__ import annotations
 
-import hashlib
 import io
 import json
 import os
-import sqlite3
 import sys
-from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, List, Optional, TextIO
 from urllib.parse import urlparse
 
 from .config import Config
+from .query_cache import QueryCache, index_fingerprint, make_cache_key
 from .redact import redact_and_audit, redaction_enabled
 
 
@@ -122,52 +120,6 @@ def handle_health(config: Optional[Config] = None, host: str = DEFAULT_HOST) -> 
     }
 
 
-class QueryCache:
-    """Optional SQLite query-hash → redacted retrieve payload."""
-
-    def __init__(self, path: str):
-        self.path = path
-        parent = os.path.dirname(path)
-        if parent:
-            os.makedirs(parent, exist_ok=True)
-        self._conn = sqlite3.connect(path)
-        self._conn.execute(
-            "CREATE TABLE IF NOT EXISTS retrieve_cache ("
-            " cache_key TEXT PRIMARY KEY,"
-            " payload TEXT NOT NULL,"
-            " created_at TEXT NOT NULL)"
-        )
-        self._conn.commit()
-
-    def get(self, key: str) -> Optional[Dict[str, Any]]:
-        if not key:
-            return None
-        row = self._conn.execute(
-            "SELECT payload FROM retrieve_cache WHERE cache_key = ?",
-            (key,),
-        ).fetchone()
-        if not row:
-            return None
-        try:
-            return json.loads(row[0])
-        except json.JSONDecodeError:
-            return None
-
-    def put(self, key: str, payload: Dict[str, Any]) -> None:
-        if not key:
-            return
-        self._conn.execute(
-            "INSERT OR REPLACE INTO retrieve_cache(cache_key, payload, created_at) "
-            "VALUES (?, ?, ?)",
-            (
-                key,
-                json.dumps(payload, ensure_ascii=False),
-                datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            ),
-        )
-        self._conn.commit()
-
-
 class RetrieveService:
     """Retrieve + pack. Retriever is injectable for tests."""
 
@@ -218,9 +170,11 @@ class RetrieveService:
         if cache_key:
             hit = self.cache.get(cache_key)
             if hit is not None:
+                self.cache.hits += 1
                 payload = dict(hit)
                 payload["cached"] = True
                 return self._redact_payload(payload, query)
+            self.cache.misses += 1
 
         if self.retriever is None:
             raise RuntimeError("retrieve service has no retriever")
@@ -257,29 +211,13 @@ class RetrieveService:
         return redacted
 
     def _cache_key(self, query: str, top_k: Optional[int]) -> str:
-        emb = getattr(self.config, "embedding", None) or {}
-        ret = getattr(self.config, "retrieval", None) or {}
-        ctx = getattr(self.config, "context", None) or {}
-        fingerprint = _index_fingerprint(self.config, self.repo_path, self.repo_name)
-        blob = json.dumps(
-            {
-                "q": query,
-                "repo": self.repo_name,
-                "embed": {"provider": emb.get("provider"), "model": emb.get("model")},
-                "retrieval": {
-                    "top_k": top_k or ret.get("top_k"),
-                    "dense_weight": ret.get("dense_weight"),
-                    "sparse_weight": ret.get("sparse_weight"),
-                    "graph_weight": ret.get("graph_weight"),
-                    "max_loops": ret.get("max_loops"),
-                    "expand_mode": ret.get("expand_mode"),
-                },
-                "pack_mode": ctx.get("pack_mode"),
-                "index": fingerprint,
-            },
-            sort_keys=True,
+        return make_cache_key(
+            query,
+            self.config,
+            top_k=top_k,
+            repo_name=self.repo_name,
+            repo_path=self.repo_path,
         )
-        return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
     def _redact_payload(self, payload: Dict[str, Any], query: str) -> Dict[str, Any]:
         raw = json.dumps(payload, ensure_ascii=False)
@@ -315,28 +253,7 @@ def _result_dict(result) -> Dict[str, Any]:
     }
 
 
-def _index_fingerprint(config: Config, repo_path: str, repo_name: str) -> str:
-    parts: List[str] = []
-    from .vector_store import normalize_backend_name, resolved_persist_directory
-
-    persist = resolved_persist_directory(config)
-    if not os.path.isabs(persist):
-        persist = os.path.join(repo_path or ".", persist)
-    kind = normalize_backend_name((config.vector_store or {}).get("type", "chromadb"))
-    sqlite = os.path.join(persist, "chroma.sqlite3")
-    if os.path.isfile(sqlite):
-        parts.append(f"chroma:{os.path.getmtime(sqlite)}")
-    for name in ("index.tvim", "sidecar.json", "store.json", "manifest.json"):
-        path = os.path.join(persist, name)
-        if os.path.isfile(path):
-            parts.append(f"{kind}:{name}:{os.path.getmtime(path)}")
-            break
-    from .knowledge_graph import KnowledgeGraph
-
-    kg_path = KnowledgeGraph(config, repo_name=repo_name).persist_path
-    if os.path.isfile(kg_path):
-        parts.append(f"graph:{os.path.getmtime(kg_path)}")
-    return "|".join(parts) or "none"
+_index_fingerprint = index_fingerprint
 
 
 def handle_mcp(message: Dict[str, Any], service: RetrieveService) -> Dict[str, Any]:

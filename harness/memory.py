@@ -421,6 +421,12 @@ class MemoryStore:
         dest = Path(self.memory_dir) / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(dump_okf_markdown(entry.to_page()), encoding="utf-8")
+        try:
+            from .query_cache import notify_retrieval_changed
+
+            notify_retrieval_changed(self.repo_path)
+        except Exception:
+            pass
         return dest
 
     def _roots(self) -> List[str]:

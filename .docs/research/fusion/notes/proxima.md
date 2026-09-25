@@ -24,11 +24,11 @@ Do **not** steal: browser session emulation, 40 MCP chat tools, crew/consensus m
 |-------|--------|--------|
 | Corrective retrieve loop | **done** (`harness/loop.py`, opt-in `--loop`) | query loop |
 | `POST /v1/retrieve` + MCP retrieve | **done** (`serve` / `mcp serve` on 127.0.0.1; `mcp stdio` no bind) | `harness/serve.py` |
-| SQLite `(query_hash, repo, config) → chunk_ids` | **partial** — serve path only | `QueryCache` beside Chroma |
+| SQLite `(query_hash, repo, config) → chunk_ids` | **done** — serve + opt-in query/chat/eval | `harness/query_cache.py` |
 | Secret strip on assemble | **done** (`harness/redact.py`, default-on pack/LLM) | context builder |
 | Browser session LLM routing | **reject** — ToS + not retrieval | — |
 
 ## Fusion call
 
-**P1** for retrieve API + MCP **shipped** (`POST /v1/retrieve` on 127.0.0.1). Query cache **partial** (serve path).  
+**P1** for retrieve API + MCP **shipped** (`POST /v1/retrieve` on 127.0.0.1). Query cache **shipped** (serve default-on; query/chat/eval opt-in).  
 Measure cache with eval p50 on a warm second pass of the same suite; Recall@k must be identical to cold (same ids).
