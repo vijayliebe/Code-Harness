@@ -178,7 +178,11 @@ python main.py knowledge import ./okf-bundle --repo ./other-repo
 python main.py okf export . --out ./okf-bundle --redact
 ```
 
-`harness.okf.load_knowledge_docs` prefix-loads `knowledge/**/*.md` for retrieve/packer later; it is not injected into context assembly by default.
+`harness.okf.load_knowledge_docs` prefix-loads `knowledge/**/*.md` into the packer when **`context.knowledge_prefix`** is on (CLI `--include-knowledge-prefix`, env `CODEHARNESS_KNOWLEDGE_PREFIX=1`). **Default is off** (eval-safe, same posture as `wiki_weight` and `--include-memory-brief`). When enabled, a keyword-ranked slice is capped at **`context.knowledge_token_budget`** (default **800**, same `len//4` estimator). Wiki cites stay `` `knowledge/wiki/<page>` ``; memory entries keep their OKF type; source cites stay `` `path:symbol` ``. Paths already present as wiki RRF hits are skipped, and memory pages are skipped when `--include-memory-brief` is also on (no double-stuff).
+
+```bash
+python main.py query . --no-llm --include-knowledge-prefix -q "why is Chroma the default?"
+```
 
 ### `doctor` — Local health check
 
@@ -209,7 +213,7 @@ python main.py serve . --host 0.0.0.0 --allow-public
 | `POST /v1/retrieve` | `{"query": "...", "top_k": 20, "pack_mode": "full"}` → ranked ids/paths + packed context |
 | `POST /mcp` | JSON-RPC 2.0 `initialize` / `tools/list` / `tools/call` |
 
-MCP tools: `retrieve`, `retrieve_chunk`, `doctor`, `wiki_show`, `memory_brief`, `graph_neighbors`. Same pipeline flags as `query` (`--pack-mode`, `--loop`, `--profile sage`, `--include-memory-brief`, `--no-redact`).
+MCP tools: `retrieve`, `retrieve_chunk`, `doctor`, `wiki_show`, `memory_brief`, `graph_neighbors`. Same pipeline flags as `query` (`--pack-mode`, `--loop`, `--profile sage`, `--include-memory-brief`, `--include-knowledge-prefix`, `--no-redact`).
 
 ```bash
 curl -s http://127.0.0.1:7432/health
@@ -412,7 +416,10 @@ Key settings:
   },
   "context": {
     "pack_mode": "full",
-    "max_tokens_multiplier": 2
+    "max_tokens_multiplier": 2,
+    "include_memory_brief": false,
+    "knowledge_prefix": false,
+    "knowledge_token_budget": 800
   },
   "ccr": {
     "first_lines": 12,

@@ -1147,6 +1147,14 @@ def _add_pack_flags(parser):
         action="store_true",
         help="Inject typed memory brief (≤800 tokens) after project docs (default off)",
     )
+    parser.add_argument(
+        "--include-knowledge-prefix",
+        action="store_true",
+        help=(
+            "Prefix a bounded knowledge/** slice after project docs "
+            "(default off; budget context.knowledge_token_budget, 800 tokens)"
+        ),
+    )
 
 
 def _add_loop_flags(parser, include_verify: bool = False):
@@ -1534,6 +1542,11 @@ def _load_config(args) -> Config:
         config.context["include_memory_brief"] = True
     if getattr(args, "include_memory_brief", False):
         config.context["include_memory_brief"] = True
+    env_knowledge = os.environ.get("CODEHARNESS_KNOWLEDGE_PREFIX", "").strip().lower()
+    if env_knowledge in ("1", "true", "yes", "on"):
+        config.context["knowledge_prefix"] = True
+    if getattr(args, "include_knowledge_prefix", False):
+        config.context["knowledge_prefix"] = True
 
     env_redact = os.environ.get("CODEHARNESS_REDACT", "").strip().lower()
     if env_redact in ("0", "false", "off", "no"):

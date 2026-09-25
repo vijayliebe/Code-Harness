@@ -201,7 +201,7 @@ Mini-deepens for thin cards: [notes/](notes/).
 - **Best stealable ideas:** (1) Markdown+YAML concepts, path identity, required `type`, preserve unknown keys. (2) `knowledge/` as prefix source. (3) `okf_version: "0.2"` + `x_codeharness` extensions.
 - **Why it matters:** Portability across Claude/Cursor/Memanto; git-diffable wiki/memory; tokens via brief pages vs chat logs.
 - **Map to module:** `harness/okf.py` (WikiPage + typed memory + vault); CLI `knowledge export|import` (alias `okf`) and `memory export|import`.
-- **Status:** `partial` — `wiki generate` writes SPEC v0.2 `WikiPage`; `memory export|import` round-trips `Decision`/`Error`/`Preference`/`Fact`; `knowledge export|import` ships the whole vault (wiki + memory + gloss + local `.code-harness/gloss`) with `okf-manifest.yaml` (`counts`, `okf_version`, `generated`) and unknown-key preservation (`x_memanto` / `x_other`). Shared parser, path identity, `okf_version: "0.2"`, `x_codeharness`. `load_knowledge_docs` prefix-loads `knowledge/**/*.md` (not wired into retrieve/packer). **Delta:** packer/retrieve prefix inject still unwired. Attested Computation **out of scope**.
+- **Status:** `partial` — `wiki generate` writes SPEC v0.2 `WikiPage`; `memory export|import` round-trips `Decision`/`Error`/`Preference`/`Fact`; `knowledge export|import` ships the whole vault (wiki + memory + gloss + local `.code-harness/gloss`) with `okf-manifest.yaml` (`counts`, `okf_version`, `generated`) and unknown-key preservation (`x_memanto` / `x_other`). Shared parser, path identity, `okf_version: "0.2"`, `x_codeharness`. Packer prefix-load of `knowledge/**/*.md` is **opt-in** (`context.knowledge_prefix`, default **off**; `--include-knowledge-prefix` / `CODEHARNESS_KNOWLEDGE_PREFIX=1`) with a hard `context.knowledge_token_budget` (default **800**, `len//4`), keyword rank on title/path, path-dedupe against wiki RRF hits, and skip of memory pages when `--include-memory-brief` is on. **Delta:** chat-over-wiki via CCR, BM25-over-memory channel, Attested Computation **out of scope**.
 - **Fusion priority:** P0 (same wave as memory; wiki emits `WikiPage`)
 - **Evidence:** deep-dive
 
@@ -292,7 +292,7 @@ Mini-deepens for thin cards: [notes/](notes/).
 
 Sources with the most **material delta** still on the table (not rejects):
 
-1. **Google Code Wiki + OKF** — `wiki generate` + WikiPage emit + `--dirty` / watch hook + opt-in RRF `wiki_weight` + full-vault `knowledge export|import` shipped; remaining: chat-over-wiki via CCR, packer prefix-load of `knowledge/**/*.md`, LLM polish.
+1. **Google Code Wiki + OKF** — `wiki generate` + WikiPage emit + `--dirty` / watch hook + opt-in RRF `wiki_weight` + full-vault `knowledge export|import` + opt-in packer prefix-load of `knowledge/**/*.md` shipped; remaining: chat-over-wiki via CCR, LLM polish.
 2. **Memanto** — typed store + supersession + brief + heuristic auto-extract shipped (opt-in); remaining: BM25-over-memory and eval “why” fixtures.
 3. **Strands + Forge + Claurst** — session `/compact` `/cost` sage + localhost HTTP + stdio MCP retrieve shipped; remaining: caveman, graph-explorer digest.
 4. **Agent-Reach + Proxima + OpenHuman** — doctor + query cache + MCP/`POST /v1/retrieve` + **stdio MCP** **shipped** (loopback HTTP / no-bind stdio). Remainder: Jina ingest, serve-cache on eval/interactive.

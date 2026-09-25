@@ -105,6 +105,9 @@ class ContextBuilder:
 
         project_docs = self._load_project_context()
         memory_brief = self._load_memory_brief(query)
+        knowledge_prefix = self._load_knowledge_prefix(
+            query, self._occupied_knowledge_paths(results),
+        )
         deduplicated = self._deduplicate(results)
         started = time.perf_counter()
         scored = self._rerank(query, deduplicated)
@@ -112,10 +115,12 @@ class ContextBuilder:
         packed_full: List[RetrievalResult] = []
         packed_lite: List[RetrievalResult] = []
         full_context = self._assemble_context(
-            query, scored, project_docs, packed=packed_full, memory_brief=memory_brief,
+            query, scored, project_docs, packed=packed_full,
+            memory_brief=memory_brief, knowledge_prefix=knowledge_prefix,
         )
         lite_context = self._assemble_ccr_lite(
-            query, scored, project_docs, packed=packed_lite, memory_brief=memory_brief,
+            query, scored, project_docs, packed=packed_lite,
+            memory_brief=memory_brief, knowledge_prefix=knowledge_prefix,
         )
         if self.pack_mode == "ccr_lite":
             context = lite_context
@@ -174,7 +179,7 @@ class ContextBuilder:
             pack_mode=self.pack_mode,
             prompt_tokens_full=tokens_full,
             prompt_tokens_packed=tokens_packed,
-            prefix_hash=_prefix_hash(project_docs, memory_brief),
+            prefix_hash=_prefix_hash(project_docs, memory_brief + knowledge_prefix),
             omitted_chunk_ids=omitted_ids,
             redaction_count=chosen.count,
         )
@@ -243,6 +248,42 @@ class ContextBuilder:
             )
             cap = int(context_cfg.get("memory_brief_tokens") or BRIEF_TOKEN_CAP)
             return store.brief(query=query or "", max_tokens=cap).text
+        except Exception:
+            return ""
+
+    def _occupied_knowledge_paths(self, results: List[RetrievalResult]) -> List[str]:
+        paths: List[str] = []
+        seen = set()
+        for result in results or []:
+            path = (result.chunk.file_path or "").replace("\\", "/")
+            while path.startswith("./"):
+                path = path[2:]
+            if path and path not in seen:
+                seen.add(path)
+                paths.append(path)
+        return paths
+
+    def _load_knowledge_prefix(self, query: str, occupied_paths: Optional[List[str]] = None) -> str:
+        """Opt-in knowledge/** prefix. Default off so eval/query stay unchanged."""
+        context_cfg = getattr(self.config, "context", None) or {}
+        if not context_cfg.get("knowledge_prefix"):
+            return ""
+        try:
+            from .okf import (
+                KNOWLEDGE_PREFIX_TOKEN_BUDGET,
+                load_knowledge_docs,
+                pack_knowledge_prefix,
+            )
+
+            docs = load_knowledge_docs(self.config.repo_path or ".")
+            cap = int(context_cfg.get("knowledge_token_budget") or KNOWLEDGE_PREFIX_TOKEN_BUDGET)
+            return pack_knowledge_prefix(
+                docs,
+                query=query or "",
+                max_tokens=cap,
+                occupied_paths=occupied_paths,
+                skip_memory=bool(context_cfg.get("include_memory_brief")),
+            )
         except Exception:
             return ""
 
@@ -337,7 +378,8 @@ class ContextBuilder:
                           results: List[RetrievalResult],
                           project_docs: Optional[Dict[str, str]] = None,
                           packed: Optional[List[RetrievalResult]] = None,
-                          memory_brief: str = "") -> str:
+                          memory_brief: str = "",
+                          knowledge_prefix: str = "") -> str:
         sections = []
         total_estimate = 0
         max_estimate = self.max_context_tokens
@@ -366,6 +408,11 @@ class ContextBuilder:
             brief_entry = memory_brief if memory_brief.endswith("\n") else memory_brief + "\n"
             total_estimate += self._estimate_tokens(brief_entry)
             sections.append(brief_entry)
+
+        if knowledge_prefix:
+            vault_entry = knowledge_prefix if knowledge_prefix.endswith("\n") else knowledge_prefix + "\n"
+            total_estimate += self._estimate_tokens(vault_entry)
+            sections.append(vault_entry)
 
         by_file: Dict[str, List[RetrievalResult]] = {}
         for r in results:
@@ -419,7 +466,8 @@ class ContextBuilder:
                            results: List[RetrievalResult],
                            project_docs: Optional[Dict[str, str]] = None,
                            packed: Optional[List[RetrievalResult]] = None,
-                           memory_brief: str = "") -> str:
+                           memory_brief: str = "",
+                           knowledge_prefix: str = "") -> str:
         """KV-cache-friendly pack: stable project docs, then volatile hits."""
         ccr = getattr(self.config, "ccr", None) or {}
         first = int(ccr.get("first_lines", 12))
@@ -448,6 +496,11 @@ class ContextBuilder:
             brief_entry = memory_brief if memory_brief.endswith("\n") else memory_brief + "\n"
             total_estimate += self._estimate_tokens(brief_entry)
             sections.append(brief_entry)
+
+        if knowledge_prefix:
+            vault_entry = knowledge_prefix if knowledge_prefix.endswith("\n") else knowledge_prefix + "\n"
+            total_estimate += self._estimate_tokens(vault_entry)
+            sections.append(vault_entry)
 
         sections.append(f"# Query: {query}\n")
         sections.append("## Relevant Code Context\n")
@@ -503,4 +556,5 @@ Guidelines:
 8. If a snippet notes omitted lines, use retrieve_chunk <chunk_id> (CLI: --expand-chunk or retrieve-chunk) before inventing omitted bodies
 
 The context below contains relevant code snippets from the repository, including file paths and line numbers.
-Project-level documentation files (ARCHITECTURE.md, AGENTS.md, CLAUDE.md) may be included for high-level understanding."""
+Project-level documentation files (ARCHITECTURE.md, AGENTS.md, CLAUDE.md) may be included for high-level understanding.
+When a knowledge vault prefix is present, cite wiki pages as `knowledge/wiki/<page>` and keep source cites as `path:symbol`."""

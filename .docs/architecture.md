@@ -204,6 +204,8 @@ Key design:
 ```
 build_context(query, results)
   ├── load_project_context(): inject ARCHITECTURE.md / AGENTS.md / CLAUDE.md
+  ├── load_memory_brief(): opt-in typed memory (default off)
+  ├── load_knowledge_prefix(): opt-in knowledge/** slice (default off, 800-token budget)
   ├── deduplicate(): remove overlapping line ranges, keep higher-scored
   ├── rerank(): boost for term overlap, entity type, docstrings
   ├── diversity_rerank(): MMR with lambda=0.3

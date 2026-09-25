@@ -57,8 +57,9 @@ overlays (``.code-harness/gloss``, optional ``.code-harness/memory`` /
 writes those paths back. WikiPage / Decision / Error / Preference / Fact
 mappings are reused for classification; gloss notes keep their ``entity:``
 frontmatter. Unknown keys survive because files are copied, not rewritten.
-``load_knowledge_docs`` is the prefix-load helper for retrieve/packer
-(not wired into the packer yet).
+``load_knowledge_docs`` prefix-loads ``knowledge/**/*.md`` for the packer.
+Injection is opt-in (``context.knowledge_prefix``, default off) and bounded
+by ``context.knowledge_token_budget`` (default 800, ``len // 4``).
 
 Citations in the body use Code Wiki style ``path:symbol``
 (e.g. ``harness/chunker.py:CodeChunker``), never chunk UUIDs.
@@ -476,7 +477,8 @@ def iter_vault_markdown(repo_path: str) -> List[Tuple[str, str, str]]:
 def load_knowledge_docs(repo_path: str) -> List[KnowledgeDoc]:
     """Prefix-load ``knowledge/**/*.md`` plus local gloss/memory/wiki overlays.
 
-    Fail-soft. Intended for retrieve/packer later; not injected by default.
+    Fail-soft. The packer injects a ranked slice only when
+    ``context.knowledge_prefix`` is on (default off).
     """
     docs: List[KnowledgeDoc] = []
     for rel_path, _abs_path, text in iter_vault_markdown(repo_path):
@@ -490,6 +492,156 @@ def load_knowledge_docs(repo_path: str) -> List[KnowledgeDoc]:
             )
         )
     return docs
+
+
+KNOWLEDGE_PREFIX_TOKEN_BUDGET = 800
+KNOWLEDGE_PREFIX_ITEM_CAP = 6
+KNOWLEDGE_PREFIX_HEADER = "## Knowledge vault\n\n"
+_KNOWLEDGE_TOKEN_RE = re.compile(r"[a-z0-9_]+")
+_INACTIVE_MEMORY = frozenset({"superseded", "forgotten"})
+_KNOWLEDGE_KIND_PRIOR = {
+    VAULT_KIND_WIKI: 0.2,
+    VAULT_KIND_MEMORY: 0.15,
+    VAULT_KIND_GLOSS: 0.1,
+    VAULT_KIND_OTHER: 0.05,
+}
+
+
+def _knowledge_tokens(text: str) -> List[str]:
+    return _KNOWLEDGE_TOKEN_RE.findall((text or "").lower())
+
+
+def score_knowledge_doc(doc: KnowledgeDoc, query: str = "") -> float:
+    """Cheap keyword score: title/path first, then tags/description, then body."""
+    prior = _KNOWLEDGE_KIND_PRIOR.get(doc.kind, 0.05)
+    q = set(_knowledge_tokens(query))
+    if not q:
+        return prior
+    title_path = set(_knowledge_tokens(f"{doc.page.title} {doc.rel_path}"))
+    extra = set(_knowledge_tokens(f"{doc.page.description} {' '.join(doc.page.tags or [])}"))
+    body = set(_knowledge_tokens((doc.page.body or doc.text or "")[:800]))
+    overlap = (
+        3.0 * len(q & title_path)
+        + 1.5 * len(q & extra)
+        + 0.5 * len(q & body)
+    ) / max(len(q), 1)
+    return overlap + 0.1 * prior
+
+
+def rank_knowledge_docs(
+    docs: List[KnowledgeDoc], query: str = ""
+) -> List[KnowledgeDoc]:
+    """Query-relevant first; stable path tie-break. No BM25/embed dependency."""
+    return sorted(
+        list(docs or []),
+        key=lambda doc: (-score_knowledge_doc(doc, query), _norm_relpath(doc.rel_path)),
+    )
+
+
+def knowledge_cite(doc: KnowledgeDoc) -> str:
+    """Wiki pages cite ``knowledge/wiki/<page>``; others keep their vault path."""
+    rel = _norm_relpath(doc.rel_path)
+    if doc.kind == VAULT_KIND_WIKI or is_wiki_path(rel):
+        return wiki_cite(rel)
+    return rel
+
+
+def _occupy_key(path: str) -> str:
+    rel = _norm_relpath(path)
+    if is_wiki_path(rel):
+        return wiki_cite(rel)
+    return rel
+
+
+def _memory_inactive(doc: KnowledgeDoc) -> bool:
+    if doc.kind != VAULT_KIND_MEMORY and not is_memory_page(doc.page):
+        return False
+    status = str(
+        doc.page.status or (doc.page.x_codeharness or {}).get("status") or ""
+    ).lower()
+    return status in _INACTIVE_MEMORY
+
+
+def _knowledge_body(doc: KnowledgeDoc) -> str:
+    body = (doc.page.body or "").strip()
+    if body:
+        return body
+    raw = (doc.text or "").strip()
+    match = FRONTMATTER_RE.search(raw)
+    if match:
+        return raw[match.end():].strip()
+    return raw
+
+
+def format_knowledge_entry(doc: KnowledgeDoc) -> str:
+    """One vault page: typed memory keeps OKF type; wiki uses knowledge/wiki cite."""
+    cite = knowledge_cite(doc)
+    title = (doc.page.title or "").strip()
+    body = _knowledge_body(doc)
+    if doc.kind == VAULT_KIND_MEMORY or is_memory_page(doc.page):
+        header = f"**{doc.page.type or 'Memory'}** `{cite}`"
+    elif doc.kind == VAULT_KIND_WIKI or is_wiki_path(doc.rel_path):
+        header = f"**Wiki: {title or 'Wiki'}** `{cite}`"
+    elif doc.kind == VAULT_KIND_GLOSS:
+        header = f"**Gloss** `{cite}`"
+    else:
+        header = f"**Knowledge** `{cite}`"
+    lines = [header]
+    if title and title not in body[:160]:
+        lines.append(title)
+    if body:
+        lines.append(body)
+    links = (doc.page.x_codeharness or {}).get("links") or []
+    if isinstance(links, str):
+        links = [links]
+    cite_line = " ".join(f"`{link}`" for link in links if link)
+    if cite_line and cite_line not in "\n".join(lines):
+        lines.append(cite_line)
+    return "\n".join(lines).rstrip() + "\n\n"
+
+
+def pack_knowledge_prefix(
+    docs: List[KnowledgeDoc],
+    query: str = "",
+    max_tokens: int = KNOWLEDGE_PREFIX_TOKEN_BUDGET,
+    occupied_paths: Optional[List[str]] = None,
+    skip_memory: bool = False,
+    max_items: int = KNOWLEDGE_PREFIX_ITEM_CAP,
+) -> str:
+    """Rank, dedupe, and budget a knowledge/** prefix. Fail-soft."""
+    cap = max(0, int(max_tokens if max_tokens is not None else KNOWLEDGE_PREFIX_TOKEN_BUDGET))
+    item_cap = max(0, int(max_items if max_items is not None else KNOWLEDGE_PREFIX_ITEM_CAP))
+    if cap <= 0 or item_cap <= 0 or not docs:
+        return ""
+    occupied = {_occupy_key(path) for path in (occupied_paths or []) if path}
+    selected: List[KnowledgeDoc] = []
+    for doc in rank_knowledge_docs(docs, query):
+        if skip_memory and (doc.kind == VAULT_KIND_MEMORY or is_memory_page(doc.page)):
+            continue
+        if _memory_inactive(doc):
+            continue
+        keys = {_occupy_key(knowledge_cite(doc)), _occupy_key(doc.rel_path)}
+        if keys & occupied:
+            continue
+        occupied.update(keys)
+        selected.append(doc)
+        if len(selected) >= item_cap:
+            break
+    assembled = KNOWLEDGE_PREFIX_HEADER
+    used = 0
+    for doc in selected:
+        candidate = assembled + format_knowledge_entry(doc)
+        if estimate_tokens(candidate) > cap:
+            if used == 0:
+                max_chars = max(0, cap * 4)
+                clipped = candidate[:max_chars].rstrip()
+                if not clipped:
+                    return ""
+                return clipped if clipped.endswith("\n") else clipped + "\n"
+            break
+        assembled = candidate
+        used += 1
+    return assembled if used else ""
 
 
 def _now_utc() -> str:
