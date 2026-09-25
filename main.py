@@ -323,18 +323,29 @@ def cmd_interactive(args):
         verify=bool(session_cfg.get("verify")),
         verify_criteria=session_cfg.get("criteria") or [],
         force_done=bool(session_cfg.get("force_done")),
+        event_session=bool(session_cfg.get("event_session")),
     )
     query_cache = _build_query_cache(args, config, print)
     session.query_cache = query_cache
+    if session.event_session:
+        from harness.prefix import snapshot_prefix
+
+        if not (config.context or {}).get("prefix_stable"):
+            config.context["prefix_stable"] = True
+            context_builder = ContextBuilder(config)
+        freeze = snapshot_prefix(context_builder)
+        session.bind_prefix(freeze)
+        context_builder.bind_prefix_freeze(freeze)
 
     print("=" * 60)
     print("  Code Harness - Interactive Session")
     wiki_bit = "  wiki=on" if session.wiki_mode else ""
     clear_bit = "  clear-tool-results=on" if session.clear_tool_results_enabled else ""
     verify_bit = "  verify=on" if session.verify_enabled else ""
+    event_bit = "  event-session=on" if session.event_session else ""
     print(
         f"  profile={session.profile}  pack={context_builder.pack_mode}"
-        f"{wiki_bit}{clear_bit}{verify_bit}"
+        f"{wiki_bit}{clear_bit}{verify_bit}{event_bit}"
     )
     print("  /help /compact /cost /profile /verify /done /exit")
     print("=" * 60)
@@ -374,6 +385,12 @@ def cmd_interactive(args):
                 try:
                     apply_profile(config, result.profile)
                     context_builder = ContextBuilder(config)
+                    if session.event_session:
+                        from harness.prefix import snapshot_prefix
+
+                        freeze = snapshot_prefix(context_builder)
+                        session.bind_prefix(freeze)
+                        context_builder.bind_prefix_freeze(freeze)
                     print(result.message)
                     print(f"[*] pack_mode={context_builder.pack_mode}")
                 except ValueError as exc:
@@ -408,6 +425,12 @@ def cmd_interactive(args):
                 apply_wiki_mode(config, result.wiki_mode)
                 sync_retriever(retriever, config)
                 context_builder = ContextBuilder(config)
+                if session.event_session:
+                    from harness.prefix import snapshot_prefix
+
+                    freeze = snapshot_prefix(context_builder)
+                    session.bind_prefix(freeze)
+                    context_builder.bind_prefix_freeze(freeze)
                 print(result.message)
                 continue
             if result.message:
@@ -1856,11 +1879,13 @@ def _load_config(args) -> Config:
     if env_audit in ("0", "false", "off", "no"):
         config.redaction["audit"] = False
 
+    from harness.events import apply_event_session_config
     from harness.tool_clear import apply_clear_tool_config
     from harness.verify import apply_verify_config
 
     apply_clear_tool_config(config, args)
     apply_verify_config(config, args)
+    apply_event_session_config(config, args)
 
     _apply_loop_args(config, args)
 
@@ -2024,6 +2049,33 @@ Examples:
     _add_redact_flag(int_p)
     _add_query_cache_flags(int_p)
     _add_clear_tool_result_flags(int_p)
+    int_p.add_argument(
+        "--event-session",
+        action="store_true",
+        dest="event_session",
+        help=(
+            "Append-only session events + derive_messages "
+            "(default off; env CODEHARNESS_EVENT_SESSION=1). Implies prefix-stable packing."
+        ),
+    )
+    int_p.add_argument(
+        "--no-event-session",
+        action="store_true",
+        dest="no_event_session",
+        help="Disable event-sourced session (CODEHARNESS_EVENT_SESSION=0)",
+    )
+    int_p.add_argument(
+        "--prefix-stable",
+        action="store_true",
+        dest="prefix_stable",
+        help="Freeze system/tool/knowledge prefix bytes (default off; implied by --event-session)",
+    )
+    int_p.add_argument(
+        "--no-prefix-stable",
+        action="store_true",
+        dest="no_prefix_stable",
+        help="Disable prefix-stable packing (CODEHARNESS_PREFIX_STABLE=0)",
+    )
     int_p.add_argument(
         "--force-done",
         action="store_true",

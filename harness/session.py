@@ -117,6 +117,7 @@ class SessionTurn:
     tool_args: str = ""
     tool_result: str = ""
     cleared: bool = False
+    event_id: str = ""
 
 
 @dataclass
@@ -257,6 +258,7 @@ class Session:
         verify: Optional[bool] = None,
         verify_criteria: Optional[Sequence] = None,
         force_done: Optional[bool] = None,
+        event_session: Optional[bool] = None,
     ):
         self.repo = repo
         self.profile = (profile or "default").strip().lower() or "default"
@@ -301,6 +303,14 @@ class Session:
             cwd=cwd,
             force=bool(force_done),
         )
+        if event_session is None:
+            from .events import event_session_enabled
+
+            event_session = event_session_enabled(config=config)
+        self.event_session = bool(event_session)
+        self._log = None
+        self._prefix_freeze = None
+        self.prefix_digest = ""
         self.turns: List[SessionTurn] = []
         self._prompt_tokens = 0
         self._packed_tokens = 0
@@ -309,7 +319,26 @@ class Session:
         self._loop_attempts = 0
         self._tool_result_tokens_freed = 0
         self._tool_results_cleared = 0
-        if self.session_dir:
+        if self.event_session:
+            from .events import EventLog, make_event
+
+            path = None
+            if self.session_dir:
+                os.makedirs(self.session_dir, exist_ok=True)
+                path = os.path.join(self.session_dir, f"{self.session_id}.jsonl")
+            self._log = EventLog(path)
+            self._log.append(
+                make_event(
+                    "meta",
+                    kind="session_start",
+                    extra={
+                        "repo": self.repo,
+                        "profile": self.profile,
+                        "session_id": self.session_id,
+                    },
+                )
+            )
+        elif self.session_dir:
             os.makedirs(self.session_dir, exist_ok=True)
             self._append_jsonl(
                 {
@@ -321,9 +350,94 @@ class Session:
             )
 
     def jsonl_path(self) -> str:
+        if self._log is not None and self._log.path:
+            return self._log.path
         if not self.session_dir:
             raise ValueError("session_dir is not set")
         return os.path.join(self.session_dir, f"{self.session_id}.jsonl")
+
+    @property
+    def events(self):
+        if self._log is None:
+            return []
+        return list(self._log.events)
+
+    def derive_messages(self):
+        from .events import derive_messages
+
+        if self._log is None:
+            return []
+        return self._log.derive_messages()
+
+    def bind_prefix(self, freeze) -> None:
+        """Pin a prefix-stable freeze to this session route."""
+        from .events import make_event
+
+        self._prefix_freeze = freeze
+        self.prefix_digest = getattr(freeze, "digest", "") or ""
+        if self._log is None:
+            return
+        system = getattr(freeze, "system", "") or ""
+        if system:
+            self._log.append(make_event("system", text=system, kind="system_prompt"))
+        self._log.append(
+            make_event(
+                "meta",
+                kind="prefix_freeze",
+                extra={
+                    "digest": self.prefix_digest,
+                    "route": getattr(getattr(freeze, "route", None), "to_dict", lambda: {})(),
+                },
+            )
+        )
+        self._refresh_derived()
+
+    @classmethod
+    def resume(cls, path: str, **kwargs) -> "Session":
+        """Reload an event JSONL (or migrate a legacy turn file) and re-derive."""
+        from .events import EventLog
+
+        log = EventLog.load(path)
+        kwargs.setdefault("event_session", True)
+        session_dir = os.path.dirname(os.path.abspath(path)) or None
+        session_id = os.path.splitext(os.path.basename(path))[0]
+        session = cls(
+            session_dir=None,
+            session_id=session_id,
+            **kwargs,
+        )
+        session.session_dir = session_dir
+        session._log = log
+        session.event_session = True
+        session._rebuild_cost_from_events()
+        session._refresh_derived()
+        return session
+
+    def _refresh_derived(self) -> None:
+        if self._log is None:
+            return
+        from .events import derive_turns
+
+        self.turns = derive_turns(self._log.events)
+
+    def _rebuild_cost_from_events(self) -> None:
+        self._prompt_tokens = 0
+        self._packed_tokens = 0
+        self._full_tokens = 0
+        self._completion_tokens = 0
+        self._loop_attempts = 0
+        if self._log is None:
+            return
+        for event in self._log.events:
+            if event.type == "assistant" or event.packed_tokens or event.completion_tokens:
+                self._prompt_tokens += int(event.packed_tokens or 0)
+                self._packed_tokens += int(event.packed_tokens or 0)
+                self._full_tokens += int(event.full_tokens or 0)
+                self._completion_tokens += int(event.completion_tokens or 0)
+                self._loop_attempts += int(event.loop_attempts or 0)
+            if event.type == "clear":
+                self._tool_result_tokens_freed += int(event.tokens_freed or 0)
+                self._tool_results_cleared += len(event.cleared_ids or event.placeholders or {})
 
     def _tokens(self, text: str) -> int:
         return int(self.estimate_fn(text or ""))
@@ -364,13 +478,17 @@ class Session:
                     session_id=self.session_id,
                 )
                 turn.tool_args = args.text
-        self.turns.append(turn)
         if turn.role == "assistant" or turn.packed_tokens or turn.completion_tokens:
             self._prompt_tokens += int(turn.packed_tokens or 0)
             self._packed_tokens += int(turn.packed_tokens or 0)
             self._full_tokens += int(turn.full_tokens or 0)
             self._completion_tokens += int(turn.completion_tokens or 0)
             self._loop_attempts += int(turn.loop_attempts or 0)
+        if self.event_session and self._log is not None:
+            self._append_turn_events(turn)
+            self._refresh_derived()
+            return
+        self.turns.append(turn)
         if self.session_dir:
             self._append_jsonl(
                 {
@@ -390,6 +508,63 @@ class Session:
                     "cleared": bool(turn.cleared),
                 }
             )
+
+    def _append_turn_events(self, turn: SessionTurn) -> None:
+        from .events import make_event
+
+        if turn.role == "user":
+            ev = self._log.append(make_event("user", text=turn.text or ""))
+            turn.event_id = ev.id
+            return
+        if turn.role == "compact":
+            ev = self._log.append(
+                make_event(
+                    "compact",
+                    text=turn.text or "",
+                    chunk_ids=list(turn.chunk_ids or []),
+                    kind="compact",
+                )
+            )
+            turn.event_id = ev.id
+            return
+        if turn.role == "assistant" or turn.tool_name or turn.tool_result:
+            if turn.tool_name or turn.tool_result or turn.chunk_ids:
+                use = self._log.append(
+                    make_event(
+                        "tool_use",
+                        tool_name=turn.tool_name or "retrieve",
+                        tool_args=turn.tool_args or "",
+                        chunk_ids=list(turn.chunk_ids or []),
+                        paths=list(turn.paths or []),
+                    )
+                )
+                result = self._log.append(
+                    make_event(
+                        "tool_result",
+                        text=turn.tool_result or "",
+                        tool_use_id=use.id,
+                        chunk_ids=list(turn.chunk_ids or []),
+                        paths=list(turn.paths or []),
+                        tool_name=turn.tool_name or "retrieve",
+                    )
+                )
+                turn.event_id = result.id
+            ev = self._log.append(
+                make_event(
+                    "assistant",
+                    text=turn.text or "",
+                    chunk_ids=list(turn.chunk_ids or []),
+                    packed_tokens=turn.packed_tokens,
+                    full_tokens=turn.full_tokens,
+                    completion_tokens=turn.completion_tokens,
+                    loop_attempts=turn.loop_attempts,
+                    pack_mode=turn.pack_mode,
+                )
+            )
+            if not turn.event_id:
+                turn.event_id = ev.id
+            return
+        self._log.append(make_event("meta", kind=turn.role, text=turn.text or ""))
 
     def turn_count(self) -> int:
         return len(self.turns)
@@ -515,6 +690,10 @@ class Session:
     ) -> ClearToolResult:
         """Replace aged retrieve/tool dumps. Slash can pass ``enabled=True``."""
         on = self.clear_tool_results_enabled if enabled is None else bool(enabled)
+        if self.event_session and self._log is not None:
+            return self._clear_tool_results_event(
+                keep_n=keep_n, token_trigger=token_trigger, enabled=on
+            )
         result = apply_clear_tool_results(
             self.turns,
             keep_n=keep_n if keep_n is not None else self.clear_tool_keep,
@@ -540,6 +719,73 @@ class Session:
                 )
         return result
 
+    def _clear_tool_results_event(
+        self,
+        keep_n: Optional[int] = None,
+        token_trigger: Optional[int] = None,
+        enabled: bool = True,
+    ) -> ClearToolResult:
+        from .events import make_event
+        from .tool_clear import placeholder_for, select_indexes_to_clear
+
+        if not enabled:
+            return ClearToolResult(
+                kept=sum(1 for t in self.turns if is_refetchable_dump(t))
+            )
+        keep = keep_n if keep_n is not None else self.clear_tool_keep
+        trigger = (
+            token_trigger
+            if token_trigger is not None
+            else self.clear_tool_token_trigger
+        )
+        if not should_clear(
+            self.turns,
+            keep_n=keep,
+            token_trigger=trigger,
+            estimate_fn=self.estimate_fn,
+        ):
+            return ClearToolResult(
+                kept=sum(1 for t in self.turns if is_refetchable_dump(t))
+            )
+        indexes = select_indexes_to_clear(
+            self.turns,
+            keep_n=keep,
+            token_trigger=trigger,
+            estimate_fn=self.estimate_fn,
+        )
+        placeholders: Dict[str, str] = {}
+        tokens_freed = 0
+        for idx in indexes:
+            turn = self.turns[idx]
+            eid = turn.event_id
+            if not eid:
+                continue
+            stub = placeholder_for(turn)
+            placeholders[eid] = stub
+            before = self._tokens(dump_payload(turn))
+            tokens_freed += max(0, before - self._tokens(stub))
+        result = ClearToolResult(
+            cleared=len(placeholders),
+            kept=sum(1 for t in self.turns if is_refetchable_dump(t)) - len(placeholders),
+            tokens_freed=tokens_freed,
+            placeholders=list(placeholders.values()),
+            fired=bool(placeholders),
+        )
+        if result.fired:
+            self._log.append(
+                make_event(
+                    "clear",
+                    cleared_ids=list(placeholders),
+                    placeholders=placeholders,
+                    tokens_freed=tokens_freed,
+                    kept=result.kept,
+                )
+            )
+            self._tool_result_tokens_freed += tokens_freed
+            self._tool_results_cleared += result.cleared
+            self._refresh_derived()
+        return result
+
     def maybe_clear_tool_results(self) -> ClearToolResult:
         """Auto-clear before a model call when the opt-in policy fires."""
         if not self.clear_tool_results_enabled:
@@ -563,6 +809,8 @@ class Session:
     def compact(self, keep_recent: Optional[int] = None) -> CompactResult:
         if self.clear_tool_results_enabled:
             self.clear_tool_results(enabled=True)
+        if self.event_session and self._log is not None:
+            return self._compact_event(keep_recent=keep_recent)
         keep_n = max(1, int(keep_recent or self.keep_recent))
         pairs = _dialogue_pairs(self.turns)
         if len(pairs) <= keep_n and not any(t.role == "compact" for t in self.turns):
@@ -637,23 +885,91 @@ class Session:
             kept_turns=len(new_turns),
         )
 
+    def _compact_event(self, keep_recent: Optional[int] = None) -> CompactResult:
+        from .events import SURFACE_TYPES, make_event
+
+        keep_n = max(1, int(keep_recent or self.keep_recent))
+        pairs = _dialogue_pairs(self.turns)
+        if len(pairs) <= keep_n and not any(t.role == "compact" for t in self.turns):
+            if self.turn_count() <= keep_n * 2:
+                summary = _extractive_summary(self.turns)
+                return CompactResult(
+                    summary=summary,
+                    dropped_turns=0,
+                    kept_turns=self.turn_count(),
+                )
+        recent = pairs[-keep_n:]
+        older = pairs[:-keep_n]
+        older_turns: List[SessionTurn] = []
+        for user, assistant in older:
+            if user is not None:
+                older_turns.append(user)
+            if assistant is not None:
+                older_turns.append(assistant)
+        latest_ids = []
+        if recent:
+            _, last_asst = recent[-1]
+            if last_asst is not None:
+                latest_ids = list(last_asst.chunk_ids or [])
+        if not latest_ids:
+            latest_ids = self.latest_pack_ids()
+        summary = _extractive_summary(older_turns) or "Prior dialogue compacted."
+        first_kept = None
+        for user, assistant in recent:
+            for turn in (user, assistant):
+                if turn is not None and turn.event_id:
+                    first_kept = turn.event_id
+                    break
+            if first_kept:
+                break
+        from .events import _id_seq
+
+        first_seq = _id_seq(first_kept) if first_kept else 10**9
+        replace_ids = [
+            ev.id
+            for ev in self._log.events
+            if ev.type in SURFACE_TYPES and ev.id and _id_seq(ev.id) < first_seq
+        ]
+        before = self.turn_count()
+        self._log.append(
+            make_event(
+                "compact",
+                text=summary,
+                replace_ids=replace_ids,
+                chunk_ids=latest_ids,
+                kind="compact",
+            )
+        )
+        self._refresh_derived()
+        return CompactResult(
+            summary=summary,
+            dropped_turns=max(0, before - self.turn_count()),
+            kept_turns=self.turn_count(),
+        )
+
     def run_verify(self, evidence: Optional[Dict] = None, llm=None) -> VerifyResult:
         result = self.gate.run_verify(evidence=evidence, llm=llm)
-        if self.session_dir:
+        if self.event_session and self._log is not None:
+            from .events import make_event
+
+            self._log.append(make_event("verify", extra=result.to_dict()))
+        elif self.session_dir:
             self._append_jsonl({"event": "verify", **result.to_dict()})
         return result
 
     def claim_done(self, text: str = "", *, force: bool = False) -> CompletionDecision:
         decision = self.gate.claim_done(text, role=BUILDER_ROLE, force=force)
-        if self.session_dir:
-            self._append_jsonl(
-                {
-                    "event": "done",
-                    "accepted": decision.accepted,
-                    "reason": decision.reason,
-                    "forced": decision.forced,
-                }
-            )
+        payload = {
+            "accepted": decision.accepted,
+            "reason": decision.reason,
+            "forced": decision.forced,
+        }
+        if self.event_session and self._log is not None:
+            from .events import make_event
+
+            self._log.append(make_event("meta", kind="done", extra=payload))
+        elif self.session_dir:
+            self._append_jsonl({"event": "done", **payload})
         return decision
 
     def refuse_done_claim(self, text: str) -> Optional[str]:
@@ -684,7 +1000,11 @@ class Session:
                 f"unknown profile {name!r}; choose one of: {', '.join(KNOWN_PROFILES)}"
             )
         self.profile = key
-        if self.session_dir:
+        if self.event_session and self._log is not None:
+            from .events import make_event
+
+            self._log.append(make_event("meta", kind="profile", extra={"profile": key}))
+        elif self.session_dir:
             self._append_jsonl({"event": "profile", "profile": key})
         return key
 

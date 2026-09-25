@@ -54,6 +54,7 @@ DEFAULT_CONFIG = {
         "memory_dir": None,
         "knowledge_prefix": False,
         "knowledge_token_budget": 800,
+        "prefix_stable": False,
         "max_tokens_multiplier": 2,
     },
     "ccr": {
@@ -74,6 +75,7 @@ DEFAULT_CONFIG = {
         "verify": False,
         "force_done": False,
         "criteria": [],
+        "event_session": False,
     },
 
     "chat": {

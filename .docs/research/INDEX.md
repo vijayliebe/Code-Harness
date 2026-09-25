@@ -1,6 +1,6 @@
 # Code-Harness External Research — INDEX
 
-Research date: **2026-09-24** (Europe/Dublin / IST); Claude Code card added **2026-09-25**.  
+Research date: **2026-09-24** (Europe/Dublin / IST); Claude Code card added **2026-09-25**; DeepSeek harness card added **2026-09-25**.  
 Target project: [vijayliebe/Code-Harness](https://github.com/vijayliebe/Code-Harness) — Python hybrid code-RAG CLI (tree-sitter → chunk → ChromaDB + BM25 + KG → RRF / cross-encoder / MMR → LLM).
 
 **Status legend:** Resolved = primary URL identified with workable detail. Partial = best-effort match with ambiguity noted. Unresolved = no credible primary source.
@@ -31,11 +31,12 @@ Target project: [vijayliebe/Code-Harness](https://github.com/vijayliebe/Code-Har
 | 22 | Firecrawl | [firecrawl.md](firecrawl.md) | Resolved | https://github.com/firecrawl/firecrawl | LLM-ready web scrape/crawl/MCP — ingest external docs beside code. | **Med** |
 | 23 | Google Code Wiki | [google-code-wiki.md](google-code-wiki.md) | Resolved | https://codewiki.google/ · Google Developers Blog | Living AI wiki + diagrams + grounded chat — inspiration for `wiki generate`. | **High** |
 | 24 | Claude Code harness | [claude-code-harness.md](claude-code-harness.md) | Resolved | https://docs.anthropic.com/en/docs/claude-code | Tool-result clearing + default-fail independent verify gate (criteria start false; separate read-only evaluator). | **High** |
+| 25 | DeepSeek harness | [deepseek-harness.md](deepseek-harness.md) | Resolved | https://github.com/deepseek-ai/deepseek-harness | Thin loop + event-sourced Session + `deriveMessages` + prefix/KV discipline. Steal seams; do not vendor Cordis. | **High** |
 
 \* Ambiguity documented in the item file (alternate candidates listed).
 
 ## Counts
-- **Resolved:** 22  
+- **Resolved:** 24  
 - **Partial:** 1 (`jitro`)  
 - **Unresolved:** 0  
 

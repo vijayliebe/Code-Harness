@@ -1,6 +1,6 @@
 # Steal matrix — every INDEX resource
 
-Inventory of [../INDEX.md](../INDEX.md) (24 items, including fuzzy-resolved names). Status is judged against **this branch tip**: eval harness, CCR-lite packer, corrective query loop, KG enrichment, wiki, typed memory+OKF + heuristic `memory extract` (opt-in auto), session `/compact`/`/cost` + **opt-in tool-result clearing** + **opt-in default-fail verify gate**, secret redaction + audit JSONL, doctor + localhost MCP / `POST /v1/retrieve`, **experimental TurboVec backend (recall-gated) + fixture-suite A/B table**.
+Inventory of [../INDEX.md](../INDEX.md) (25 items, including fuzzy-resolved names). Status is judged against **this branch tip**: eval harness, CCR-lite packer, corrective query loop, KG enrichment, wiki, typed memory+OKF + heuristic `memory extract` (opt-in auto), session `/compact`/`/cost` + **opt-in tool-result clearing** + **opt-in default-fail verify gate** + **opt-in event-sourced session + prefix-stable packing**, secret redaction + audit JSONL, doctor + localhost MCP / `POST /v1/retrieve`, **experimental TurboVec backend (recall-gated) + fixture-suite A/B table**.
 
 **This is not a claim that fusion is complete.** Rows marked `done` mean the *stealable mechanism* is in-tree; siblings on the same card may still be `gap`.
 
@@ -43,6 +43,7 @@ Mini-deepens for thin cards: [notes/](notes/).
 | 22 | Firecrawl | gap | P2 | fusion-note |
 | 23 | Google Code Wiki | partial | P0 | deep-dive |
 | 24 | Claude Code harness | partial | P1 | fusion-note |
+| 25 | DeepSeek Harness | partial | P0 | fusion-note |
 
 ---
 
@@ -72,7 +73,7 @@ Mini-deepens for thin cards: [notes/](notes/).
 - **Best stealable ideas:** (1) Context-budget policy — never drop latest query + top pack; summarize/drop older packs. (2) Session ≠ long-term memory ≠ code index. (3) Explicit loop stops (grade / coverage / max_loops / easy path).
 - **Why it matters:** Tokens on interactive; accuracy by not mixing chat into Chroma; latency via BM25-only easy path (already in loop).
 - **Map to module:** query loop (`harness/loop.py` — **done** for stops/easy/HyDE-on-retry); NEW session store; later MCP.
-- **Status:** `partial` — loop policy shipped (`max_loops` default 0); session JSONL + never-drop-latest-pack budget **shipped**. Tool-result clearing (keep latest pack / latest user, drop aged retrieve dumps) **shipped** opt-in. Default-fail verify gate **shipped** opt-in. **Delta:** no subagent graph-explorer, no `create_harness` factory (correctly skipped). **Later:** event-sourced session.
+- **Status:** `partial` — loop policy shipped (`max_loops` default 0); session JSONL + never-drop-latest-pack budget **shipped**. Tool-result clearing (keep latest pack / latest user, drop aged retrieve dumps) **shipped** opt-in. Default-fail verify gate **shipped** opt-in. Opt-in event-sourced session + `derive_messages` **shipped** (`--event-session`). **Delta:** no subagent graph-explorer, no `create_harness` factory (correctly skipped). Session FTS later (DeepSeek #25).
 - **Fusion priority:** P1 session+budget. P2 graph-explorer subagent after wiki. Do not `pip install strands-harness`.
 - **Evidence:** deep-dive
 
@@ -282,8 +283,18 @@ Mini-deepens for thin cards: [notes/](notes/).
 - **Best stealable ideas:** (1) **Tool-result clearing** — keep `tool_use` / pack / `chunk_id` records, replace aged re-fetchable `tool_result` / retrieve dumps with short placeholders. (2) Distinct from conversation `/compact` (never silently drop user/assistant prose). (3) **Default-fail independent verify gate** — criteria start false; a separate read-only verifier (runnable checks first) must pass before completion is accepted. (4) Later: event-sourced session.
 - **Why it matters:** After long retrieve/tool turns, bulky dumps dominate session history. Long-running agents also self-grade “done” unless a second path checks evidence. The model can re-call retrieve / `retrieve_chunk` if the placeholder still names the id.
 - **Map to module:** `harness/tool_clear.py`, `harness/verify.py`, `harness/session.py` (`/clear-tool-results`, `/verify`, `/done`, `/compact` micro-step, `/cost` tokens-freed), `harness/eval.py` optional verify stage, CCR packer `retrieve_chunk`.
-- **Status:** `partial` — tool-result clearing **shipped** (opt-in, default **off**). Default-fail verify gate **shipped** (opt-in, default **off**: `--verify` / `CODEHARNESS_SESSION_VERIFY=1` / `session.verify`; `/verify`; `/done --force` / `--force-done`; optional `eval --verify`). **Delta / later:** event-sourced session. Do not change retrieval defaults.
+- **Status:** `partial` — tool-result clearing **shipped** (opt-in, default **off**). Default-fail verify gate **shipped** (opt-in, default **off**: `--verify` / `CODEHARNESS_SESSION_VERIFY=1` / `session.verify`; `/verify`; `/done --force` / `--force-done`; optional `eval --verify`). Event-sourced session is the DeepSeek sibling (**#25**), not this card. Do not change retrieval defaults.
 - **Fusion priority:** P1 (clearing + verify-gate done). Event-session stays later.
+- **Evidence:** fusion-note
+
+## 25. DeepSeek Harness (official `dsh`)
+
+- **Links:** https://github.com/deepseek-ai/deepseek-harness · first-pass [../deepseek-harness.md](../deepseek-harness.md)
+- **Best stealable ideas:** (1) Retrieve-as-pre-step plugin seam. (2) **Event-sourced session + `derive_messages` + prefix-stable packing**. (3) Session-event FTS. (4) `llm-retry` listener. Steal seams only.
+- **Why it matters:** Mixed turn JSONL is the only copy; `/compact` used to mutate the working list; prefix cache is folklore unless system/tools/knowledge stay byte-stable.
+- **Map to module:** `harness/events.py` (`SessionEvent`, `derive_messages`, `EventLog`, `migrate_legacy_events`); `harness/prefix.py` (frozen section order + tool schemas + path-stable knowledge); `harness/session.py` (`--event-session`); `harness/context_builder.py` (`prefix_bytes` / `prefix_stable`).
+- **Status:** `partial` — event log + derive + prefix freeze **shipped opt-in** (`--event-session` / `CODEHARNESS_EVENT_SESSION=1` / `session.event_session`, default **off**; implies `context.prefix_stable`). Legacy turn JSONL is unchanged. **Delta / later:** retrieve-as-pre-step, session-event FTS, `llm-retry`. **Reject:** Cordis megasystem, `@deepseek-ai/*`.
+- **Fusion priority:** P0 for event+prefix (this PR). P1 retrieve-pre-step / FTS later.
 - **Evidence:** fusion-note
 
 ---
@@ -300,6 +311,7 @@ Mini-deepens for thin cards: [notes/](notes/).
 | Secret redaction + audit JSONL | `harness/redact.py`, `harness/audit.py` |
 | `doctor` + localhost MCP / stdio MCP / `POST /v1/retrieve` | `harness/doctor.py`, `harness/serve.py` |
 | Session tool-result clearing (opt-in; keep ids, placeholder dumps) | `harness/tool_clear.py`, `harness/session.py` |
+| Event-sourced session + `derive_messages` + prefix-stable packing (opt-in) | `harness/events.py`, `harness/prefix.py`, `harness/session.py`, `ContextBuilder` |
 
 ## Biggest underextracted sources
 
@@ -307,7 +319,7 @@ Sources with the most **material delta** still on the table (not rejects):
 
 1. **Google Code Wiki + OKF** — `wiki generate` + WikiPage emit + `--dirty` / watch hook + opt-in RRF `wiki_weight` + full-vault `knowledge export|import` + opt-in packer prefix-load of `knowledge/**/*.md` + chat-over-wiki via CCR shipped; remaining: LLM polish.
 2. **Memanto** — typed store + supersession + brief + heuristic auto-extract + opt-in BM25-over-memory RRF shipped; remaining: eval “why” fixtures.
-3. **Strands + Forge + Claurst + Claude Code** — session `/compact` `/cost` sage + **opt-in tool-result clearing** + **opt-in default-fail verify gate** + localhost HTTP + stdio MCP retrieve shipped; remaining: caveman, graph-explorer digest, event-session.
+3. **Strands + Forge + Claurst + Claude Code + DeepSeek** — session `/compact` `/cost` sage + **opt-in tool-result clearing** + **opt-in default-fail verify gate** + **opt-in event-session + prefix-stable packing** + localhost HTTP + stdio MCP retrieve shipped; remaining: caveman, graph-explorer digest, retrieve-pre-step, session FTS.
 4. **Agent-Reach + Proxima + OpenHuman** — doctor + query cache + MCP/`POST /v1/retrieve` + **stdio MCP** **shipped** (loopback HTTP / no-bind stdio). Query cache now covers serve + opt-in query/chat/eval. Remainder: Jina ingest.
 5. **TurboVec** — protocol + opt-in backend + eval A/B gate + **fixture-suite A/B table** shipped; still experimental, not default. Remainder: dual-write, TQ+ calibrate, default flip.
 6. **Headroom remainder** — expand-on-explain, stable cache key, type-aware pack.
