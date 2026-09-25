@@ -176,10 +176,9 @@ def cmd_query(args):
     if config.retrieval.get("max_loops", 0):
         print(f"[*] Query loop: max_loops={config.retrieval.get('max_loops')}")
 
-    from harness.loop import LoopConfig, QueryLoop, verify_answer
-    from harness.query_cache import run_with_query_cache
+    from harness.loop import LoopOutcome, verify_answer
+    from harness.prestep import run_query_turn
 
-    loop = QueryLoop(retriever, context_builder, LoopConfig.from_mapping(config.retrieval))
     generate = None
     if llm is not None and not args.no_llm:
         if args.stream:
@@ -192,17 +191,30 @@ def cmd_query(args):
 
     debug = getattr(args, 'debug', False)
     cache = _build_query_cache(args, config, print)
-    outcome = run_with_query_cache(
-        loop,
+    ctx = run_query_turn(
         query,
+        retriever=retriever,
+        context_builder=context_builder,
+        config=config,
         top_k=config.retrieval.get("top_k", 20),
         cache=cache,
-        config=config,
         repo_name=repo_name,
         repo_path=config.repo_path,
         generate=generate,
         verifier=verifier,
+        args=args,
     )
+    outcome = ctx.outcome
+    if outcome is None:
+        outcome = LoopOutcome(
+            results=ctx.results or [],
+            packed=ctx.packed,
+            attempts=0,
+            grade=0.0,
+            coverage=0.0,
+            action="skip",
+            stop_reason="prestep-disabled",
+        )
     if cache is not None and getattr(outcome, "cached", False):
         print("[*] query cache: hit")
     results = outcome.results
@@ -439,13 +451,12 @@ def cmd_interactive(args):
                 _maybe_auto_extract_session(session, config)
             continue
 
-        from harness.loop import LoopConfig, QueryLoop, verify_answer
-        from harness.query_cache import run_with_query_cache
+        from harness.loop import LoopOutcome, verify_answer
+        from harness.prestep import run_query_turn
 
         if session.clear_tool_results_enabled:
             session.maybe_clear_tool_results()
 
-        loop = QueryLoop(retriever, context_builder, LoopConfig.from_mapping(config.retrieval))
         generate = None
         can_generate = llm_available and llm is not None and _llm_ready(llm, config)
         if can_generate:
@@ -456,17 +467,30 @@ def cmd_interactive(args):
         verifier = None
         if config.retrieval.get("verify") and can_generate:
             verifier = lambda q, a, packed: verify_answer(llm, q, a, packed)
-        outcome = run_with_query_cache(
-            loop,
+        ctx = run_query_turn(
             query,
+            retriever=retriever,
+            context_builder=context_builder,
+            config=config,
             top_k=config.retrieval.get("top_k", 20),
             cache=query_cache,
-            config=config,
             repo_name=repo_name,
             repo_path=config.repo_path,
             generate=generate,
             verifier=verifier,
+            args=args,
         )
+        outcome = ctx.outcome
+        if outcome is None:
+            outcome = LoopOutcome(
+                results=ctx.results or [],
+                packed=ctx.packed,
+                attempts=0,
+                grade=0.0,
+                coverage=0.0,
+                action="skip",
+                stop_reason="prestep-disabled",
+            )
         debug = getattr(args, 'debug', False)
         if debug:
             _print_loop_debug(outcome)
@@ -1259,6 +1283,24 @@ def _add_mcp_stdio_flags(parser):
     parser.set_defaults(func=cmd_serve, mcp_cmd="stdio")
 
 
+def _add_retrieve_prestep_flags(parser):
+    parser.add_argument(
+        "--retrieve-prestep",
+        action="store_true",
+        dest="retrieve_prestep",
+        help=(
+            "Run retrieve as a before_model pre-step "
+            "(default on; env CODEHARNESS_RETRIEVE_PRESTEP=1)"
+        ),
+    )
+    parser.add_argument(
+        "--no-retrieve-prestep",
+        action="store_true",
+        dest="no_retrieve_prestep",
+        help="Skip RetrievePreStep (CODEHARNESS_RETRIEVE_PRESTEP=0)",
+    )
+
+
 def _add_query_cache_flags(parser):
     parser.add_argument(
         "--query-cache",
@@ -1880,12 +1922,14 @@ def _load_config(args) -> Config:
         config.redaction["audit"] = False
 
     from harness.events import apply_event_session_config
+    from harness.prestep import apply_retrieve_prestep_config
     from harness.tool_clear import apply_clear_tool_config
     from harness.verify import apply_verify_config
 
     apply_clear_tool_config(config, args)
     apply_verify_config(config, args)
     apply_event_session_config(config, args)
+    apply_retrieve_prestep_config(config, args)
 
     _apply_loop_args(config, args)
 
@@ -2028,6 +2072,7 @@ Examples:
     _add_profile_flag(q)
     _add_redact_flag(q)
     _add_query_cache_flags(q)
+    _add_retrieve_prestep_flags(q)
     q.set_defaults(func=cmd_query)
 
     int_p = subparsers.add_parser(
@@ -2048,6 +2093,7 @@ Examples:
     _add_profile_flag(int_p)
     _add_redact_flag(int_p)
     _add_query_cache_flags(int_p)
+    _add_retrieve_prestep_flags(int_p)
     _add_clear_tool_result_flags(int_p)
     int_p.add_argument(
         "--event-session",

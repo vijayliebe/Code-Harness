@@ -22,7 +22,7 @@ Official **DeepSeek AI** open-source agent harness (`dsh`, developer preview). T
 |-------|--------|--------|
 | Event-sourced session + `derive_messages` | `harness/events.py`, `harness/session.py` | **shipped opt-in** (`--event-session`, default off) |
 | Prefix-stable packing / KV | `harness/prefix.py`, `ContextBuilder` | **shipped opt-in** (implied by event-session; `--prefix-stable`) |
-| Retrieve as `agent/pre-step` | `loop.py` / `serve.py` | **later** (this PR leaves it) |
+| Retrieve as `agent/pre-step` | `harness/prestep.py` | **shipped, default on** (`--no-retrieve-prestep` skips) |
 | Session-event FTS | NEW beside `memory search` | **later** |
 | `llm-retry` listener | query / LLM prepare | **gap** |
 
@@ -34,6 +34,9 @@ Default interactive JSONL (`event: turn`) is unchanged when the flag is off. `mi
 |------|---------|
 | `session.event_session` / `--event-session` / `CODEHARNESS_EVENT_SESSION` | **off** |
 | `context.prefix_stable` / `--prefix-stable` / `CODEHARNESS_PREFIX_STABLE` | **off** (on when event-session is on, unless `--no-prefix-stable`) |
+| `prestep.retrieve` / `--retrieve-prestep` / `CODEHARNESS_RETRIEVE_PRESTEP` | **on** (`--no-retrieve-prestep` / env `0` skips) |
+
+`RetrievePreStep` is the first `before_model` hook. A second hook (memory brief, verify prep) registers with `default_registry().register(...)` or `HookRegistry([MemoryBriefPreStep(), RetrievePreStep()])`. Session-event FTS stays a later PR.
 
 Event types (local vocabulary, not DeepSeek’s 13-type TS envelope): `user`, `assistant`, `tool_use`, `tool_result`, `system`, `compact`, `clear`, `verify`, `meta`.
 

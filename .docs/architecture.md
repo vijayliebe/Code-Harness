@@ -298,8 +298,13 @@ Files on disk
 
 ### Query Flow
 
+`query` / `chat` / session run registered `before_model` hooks (`harness/prestep.py`) before the model step. Default hook: `RetrievePreStep` (hybrid retrieve + pack). Disable with `--no-retrieve-prestep`. `POST /v1/retrieve` shares `run_retrieve_pack` (HTTP body unchanged).
+
 ```
 User Query (--debug flag optional)
+    │
+    ▼
+[HookRegistry.run_before_model]  # RetrievePreStep default
     │
     ▼
 [Embedder.embed_query()] → query vector (HyDE optional)
