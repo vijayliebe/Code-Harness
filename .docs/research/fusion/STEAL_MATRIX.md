@@ -230,9 +230,9 @@ Mini-deepens for thin cards: [notes/](notes/).
 - **Links:** https://www.agentpatterns.tech/en/governance/governance-overview · Agent Control Plane · OPA/Kite · LLM governance gateway
 - **Best stealable ideas:** (1) Secret redaction before the LLM sees chunks. (2) Max-token / max-$ hard stop. (3) Append-only audit JSONL (query, chunk_ids, tokens, model).
 - **Why it matters:** Ops/safety; tokens (don’t send keys); local-first (no OPA in v1). Write-path approval only if agent writes land.
-- **Map to module:** context builder; CLI; NEW `audit.jsonl` under `.code-harness/`.
-- **Status:** `gap` — `--debug` / eval traces are not an audit log; no redaction.
-- **Fusion priority:** P1 (S PR; do before MCP serve binds a port).
+- **Map to module:** `harness/redact.py`, `harness/audit.py`, context builder, LLM prepare, session JSONL, CLI `audit show`.
+- **Status:** `partial` — **Delta:** optional max-token / max-$ hard stop still open. Redaction + audit JSONL shipped (default-on for outbound LLM; fingerprints only).
+- **Fusion priority:** P1 remainder is the token cap (tiny); do not bind a retrieve port before this helper.
 - **Evidence:** first-pass (enough; no SaaS to skim)
 
 ## 20. LLM in production

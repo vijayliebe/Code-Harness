@@ -13,7 +13,7 @@ Order is RAG-quality first (Recall@k, citation-path, tokens), then ops/distribut
 | **1** | **Wiki generate MVP** — template + KG + Mermaid, write `knowledge/wiki/` as OKF `WikiPage`, cite `path:symbol`. No LLM polish. *(generate + schema shipped; RRF `kind=wiki` boost and watch dirty-module regen still open)* | M | Code Wiki #23, OKF #16, Obsidian vault shape #6 | Mermaid (done). Shared `okf.py` with PR 2 |
 | **2** | **Typed memory + OKF import/export** — `decision`/`error`/`preference`/`fact`, supersede, `memory brief` ≤800 tokens in the semi-stable prefix. *(store + CLI + brief + OKF round-trip shipped; packer inject is opt-in / default-off; no LLM auto-extract)* | M | Memanto #5, OKF #16 | PR 1’s `okf.py` *or* land parser in this PR and have wiki call it |
 | **3** | **Interactive session + `/compact` + `/cost`** — JSONL session, budget never drops latest pack, heuristic compact, print packed/full tokens + loop attempts. Tiny: `--profile sage` flag pack + `path:symbol` system line + `expand_on=explain`. *(session + slash cmds + sage + cite line shipped; LLM compact / eval session fixture still open)* | M | Strands #3, Forge #13, Claurst #2, Loop #18, Headroom remainder #1 | None (CCR/loop exist) |
-| **4** | **Secret redaction + audit JSONL** — strip key/token patterns before assemble; append query/chunk_ids/tokens/model. Optional max-token hard stop. | S | Governance #19, Proxima `analyze_file` strip | None. **Do this before binding a network port** |
+| **4** | **Secret redaction + audit JSONL** — strip key/token patterns before assemble; append query/chunk_ids/tokens/model. *(redact + audit JSONL + `audit show` shipped; optional max-token hard stop still open)* | S | Governance #19, Proxima `analyze_file` strip | None. **Do this before binding a network port** |
 | **5** | **`doctor` + `mcp serve` / `POST /v1/retrieve`** — probe embed/LLM with ordered fallbacks; expose `retrieve`, `retrieve_chunk`, `graph_neighbors`. Optional SQLite query-hash cache. | L (or S doctor + M serve) | Agent-Reach #11, OpenHuman #8, Proxima #9, Forge #13 | PR 4 preferred. Query cache can split as S |
 
 **Immediately after these (not in the 5):** grow the eval hard-set (LLM-in-production #20); TurboVec dual-write (#15, blocked on recall); Jina/`index-url` (#11/#22, P2); path templates + `calls` quality (#14).
@@ -52,14 +52,15 @@ Order is RAG-quality first (Recall@k, citation-path, tokens), then ops/distribut
 - **Risk / complexity / local-first:** Low–medium. Heuristic compact only (no extra LLM). Profiles must **not** retune RRF weights.
 - **PR size / deps:** M. Independent of G1/G2. Shipped.
 
-### G4. Redaction + audit (P1)
+### G4. Redaction + audit (P1) — done (remainder: optional max-token hard stop)
 
 - **Steal:** Governance default-deny *lite*; Proxima credential strip.
 - **Sources:** #19, #9
-- **Change:** Problem — packed first/last lines can leak secrets; no durable “what we sent.” Outcome — regex/entropy redaction in `ContextBuilder`; JSONL audit; optional token cap error.
+- **Shipped:** `harness/redact.py` + `harness/audit.py`. Outbound packed/LLM text is redacted by default (regex + assignment entropy; disable only via `CODEHARNESS_REDACT=0` / `redaction.enabled: false` / `--no-redact`). Session JSONL and chat prints go through the same helper. `memory brief|export --redact` is opt-in. Wiki generate strips env-like echoes. Append-only `.code-harness/audit/audit.jsonl` records counts + fingerprint hashes (never raw secrets). CLI: `audit show --last N` / `audit tail`. PR5 should call `redact_text` / `redact_and_audit` on retrieve/API bodies.
+- **Change:** Problem — packed first/last lines can leak secrets; no durable “what we sent.” Outcome — remaining: optional `redaction.max_prompt_tokens` hard stop (config key reserved, not enforced).
 - **Metric move:** Tokens slightly **down** (redacted spans). Recall@k unchanged (ids unchanged). Measure: unit tests on synthetic key-bearing chunks + eval suite must stay green.
-- **Risk / complexity / local-first:** Low. False-positive redaction of example keys in *this* repo’s tests — allowlist fixtures. No OPA.
-- **PR size / deps:** S. Before G5.
+- **Risk / complexity / local-first:** Low. False-positive redaction of example keys in *this* repo’s tests — allowlist fixtures. No OPA. Repo scan of harness/docs only hit `tests/test_redact.py` fixtures.
+- **PR size / deps:** S. Before G5. Shipped.
 
 ### G5. Doctor + retrieve API + MCP (P1)
 
@@ -67,7 +68,7 @@ Order is RAG-quality first (Recall@k, citation-path, tokens), then ops/distribut
 - **Sources:** #11, #8, #13, #9
 - **Change:** Problem — other agents cannot use our index; embed/LLM failures are silent. Outcome — `doctor` prints live backend + fix; `mcp serve` / `POST /v1/retrieve` returns ranked chunk ids, paths, packed or full text; index stays on disk.
 - **Metric move:** Product/latency for *clients*; eval Recall@k of the retrieve endpoint **equals** CLI `eval` (same `Retriever`). Doctor: no metric, contract tests. Optional query cache: p50 **down** on second suite pass, Recall@k identical.
-- **Risk / complexity / local-first:** Medium–high (serve). Bind localhost default. No hosted `:sync`. Redaction (G4) must run on the serve path.
+- **Risk / complexity / local-first:** Medium–high (serve). Bind localhost default. No hosted `:sync`. Redaction (G4) must run on the serve path — call `harness.redact.redact_text` / `redact_and_audit`.
 - **PR size / deps:** L, or split doctor S + serve M. Depends on G4. Query cache optional S follow-on.
 
 ### G6. Eval suite growth (P1)

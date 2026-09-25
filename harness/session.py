@@ -213,6 +213,9 @@ class Session:
         output_usd_per_1m: Optional[float] = None,
         budget_tokens: int = 8192,
         keep_recent: int = 1,
+        redact: Optional[bool] = None,
+        audit_path: Optional[str] = None,
+        config: Optional[Config] = None,
     ):
         self.repo = repo
         self.profile = (profile or "default").strip().lower() or "default"
@@ -223,6 +226,9 @@ class Session:
         self.output_usd_per_1m = output_usd_per_1m
         self.budget_tokens = int(budget_tokens)
         self.keep_recent = max(1, int(keep_recent))
+        self._config = config
+        self._redact = redact
+        self._audit_path = audit_path
         self.turns: List[SessionTurn] = []
         self._prompt_tokens = 0
         self._packed_tokens = 0
@@ -249,6 +255,21 @@ class Session:
         return int(self.estimate_fn(text or ""))
 
     def record_turn(self, turn: SessionTurn) -> None:
+        from .redact import redact_and_audit, redaction_enabled
+
+        session_on = True
+        if self._config is not None:
+            session_on = (getattr(self._config, "redaction", None) or {}).get("session", True)
+        if session_on and redaction_enabled(self._config, explicit=self._redact):
+            result = redact_and_audit(
+                turn.text or "",
+                action="redact.session",
+                config=self._config,
+                enabled=True,
+                audit_path=self._audit_path,
+                session_id=self.session_id,
+            )
+            turn.text = result.text
         self.turns.append(turn)
         if turn.role == "assistant" or turn.packed_tokens or turn.completion_tokens:
             self._prompt_tokens += int(turn.packed_tokens or 0)

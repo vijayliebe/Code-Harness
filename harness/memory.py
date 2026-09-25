@@ -240,6 +240,7 @@ class MemoryStore:
         query: str = "",
         max_tokens: int = BRIEF_TOKEN_CAP,
         max_items: int = BRIEF_ITEM_CAP,
+        redact: bool = False,
     ) -> MemoryBrief:
         cap = max(0, int(max_tokens or BRIEF_TOKEN_CAP))
         item_cap = max(0, int(max_items or BRIEF_ITEM_CAP))
@@ -266,6 +267,12 @@ class MemoryStore:
             if tokens > cap:
                 if not used:
                     truncated = _truncate_to_tokens(header + block, cap)
+                    if redact and truncated:
+                        from .redact import redact_and_audit
+
+                        truncated = redact_and_audit(
+                            truncated, action="redact.memory",
+                        ).text
                     return MemoryBrief(
                         text=truncated,
                         token_count=estimate_tokens(truncated),
@@ -277,6 +284,10 @@ class MemoryStore:
             assembled = candidate
             used.append(entry.id)
         text = assembled if used else ""
+        if redact and text:
+            from .redact import redact_and_audit
+
+            text = redact_and_audit(text, action="redact.memory").text
         return MemoryBrief(
             text=text,
             token_count=estimate_tokens(text),
@@ -284,7 +295,7 @@ class MemoryStore:
             skipped_ids=skipped,
         )
 
-    def export_okf(self, dest: str) -> int:
+    def export_okf(self, dest: str, redact: bool = False) -> int:
         dest_root = Path(dest)
         dest_root.mkdir(parents=True, exist_ok=True)
         count = 0
@@ -292,7 +303,12 @@ class MemoryStore:
             rel = entry.rel_path or _rel_path_for(entry.kind, entry.title, entry.timestamp, entry.id)
             target = dest_root / rel
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(dump_okf_markdown(entry.to_page()), encoding="utf-8")
+            blob = dump_okf_markdown(entry.to_page())
+            if redact:
+                from .redact import redact_and_audit
+
+                blob = redact_and_audit(blob, action="redact.memory").text
+            target.write_text(blob, encoding="utf-8")
             count += 1
         return count
 

@@ -134,8 +134,9 @@ SHIPPED SPINE (this branch family):
        → eval: Recall@k / citation-path / tokens / stage p50
 
 STILL OPEN (see fusion/GAP_AUDIT.md):
-  wiki generate | typed memory + OKF | session /compact /cost
-  | redaction + audit | doctor + MCP retrieve
+  wiki RRF boost / watch regen | memory LLM-extract
+  | session LLM compact | optional token-cap
+  | doctor + MCP retrieve
   | TurboVec (blocked) | path templates / calls quality | web ingest
 ```
 

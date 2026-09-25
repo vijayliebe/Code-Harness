@@ -155,6 +155,22 @@ Query/interactive can inject the brief **between** project docs and packed hits,
 
 ```bash
 python main.py query . --no-llm --include-memory-brief -q "why is Chroma the default?"
+python main.py memory brief . --redact
+python main.py memory export . ./okf-bundle --redact
+```
+
+### `audit` — Secret redaction log
+
+Outbound packed/LLM text is redacted by default (API keys, tokens, PEM blocks, `.env` assignments, Bearer headers, connection-string passwords). Session JSONL and chat prints use the same helper. Wiki generate strips env-like echoes. Memory brief/export redact only when `--redact` is passed.
+
+Append-only events land in `.code-harness/audit/audit.jsonl`: timestamp, action, redaction counts, fingerprint hashes (never the raw secret), optional query/session id.
+
+```bash
+python main.py audit show --last 20
+python main.py audit tail --path .code-harness/audit/audit.jsonl
+# tests / explicit opt-out only:
+CODEHARNESS_REDACT=0 python main.py query . --no-llm -q "..."
+python main.py query . --no-redact --no-llm -q "..."
 ```
 
 Sample `path:symbol` entries in this repo: `knowledge/memory/decision/2026-09-24-chroma-default.md` (`harness/vector_store.py:VectorStore`) and `knowledge/memory/error/2026-09-24-faiss-oom.md` (`harness/vector_store.py:VectorStore.add_chunks`). Mapping: [`harness/okf.py`](harness/okf.py) and [`.docs/research/fusion/notes/memory-okf.md`](.docs/research/fusion/notes/memory-okf.md).
@@ -283,6 +299,11 @@ Key settings:
   "session": {
     "dir": ".code-harness/sessions",
     "keep_recent": 1
+  },
+  "redaction": {
+    "enabled": true,
+    "audit": true,
+    "audit_path": ".code-harness/audit/audit.jsonl"
   },
   "vector_store": {
     "hnsw_ef_search": 256,

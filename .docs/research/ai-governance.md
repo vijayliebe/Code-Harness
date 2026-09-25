@@ -28,4 +28,4 @@ Common pattern: **default-deny** policy check on every tool/LLM call → BudgetT
 - OPA may be heavy — start with simple hooks.
 
 ## Open questions
-- Default-on redaction vs opt-in?
+- Default-on redaction vs opt-in? **Resolved (PR #4):** default-on for outbound packed/LLM text. Explicit disable only (`--no-redact`, `CODEHARNESS_REDACT=0`, `redaction.enabled: false`). Memory brief/export stay opt-in (`--redact`).
