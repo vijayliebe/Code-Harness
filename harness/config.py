@@ -71,6 +71,9 @@ DEFAULT_CONFIG = {
         "clear_tool_results": False,
         "clear_tool_keep": 1,
         "clear_tool_token_trigger": 0,
+        "verify": False,
+        "force_done": False,
+        "criteria": [],
     },
 
     "chat": {

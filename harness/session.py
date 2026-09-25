@@ -24,6 +24,15 @@ from .tool_clear import (
     should_clear,
     tool_result_clearing_enabled,
 )
+from .verify import (
+    BUILDER_ROLE,
+    CompletionDecision,
+    CompletionGate,
+    VerifyResult,
+    force_done_enabled,
+    looks_like_done_claim,
+    verify_gate_enabled,
+)
 
 
 CITATION_INSTRUCTION = (
@@ -60,6 +69,9 @@ HELP_TEXT = """Commands:
   /wiki                    Toggle chat-over-wiki (ask the living wiki)
   /wiki on|off             Enable or disable wiki mode
   /wiki <page>             Show a generated wiki page
+  /verify                  Independent completion-criteria check (default-fail)
+  /done                    Accept completion only if the verify gate is green
+  /done --force            Override the verify gate (explicit)
   /llm on|off              Enable/disable LLM responses
   /context                 Show the last retrieved context
   /clear                   Clear the screen
@@ -138,6 +150,8 @@ class CommandResult:
     memory_brief: bool = False
     llm: Optional[bool] = None
     clear_screen: bool = False
+    done_accepted: Optional[bool] = None
+    force_done: bool = False
 
 
 def parse_slash(line: str) -> Optional[SlashCommand]:
@@ -240,6 +254,9 @@ class Session:
         clear_tool_results: Optional[bool] = None,
         clear_tool_keep: Optional[int] = None,
         clear_tool_token_trigger: Optional[int] = None,
+        verify: Optional[bool] = None,
+        verify_criteria: Optional[Sequence] = None,
+        force_done: Optional[bool] = None,
     ):
         self.repo = repo
         self.profile = (profile or "default").strip().lower() or "default"
@@ -267,6 +284,23 @@ class Session:
         self.clear_tool_token_trigger = max(0, int(clear_tool_token_trigger or 0))
         self.wiki_mode = bool((getattr(config, "chat", None) or {}).get("wiki_mode"))
         self.query_cache = None
+        if verify is None:
+            verify = verify_gate_enabled(config=config)
+        self.verify_enabled = bool(verify)
+        if force_done is None:
+            force_done = force_done_enabled(config=config)
+        specs = verify_criteria
+        if specs is None:
+            specs = session_cfg.get("criteria") or []
+        cwd = getattr(config, "repo_path", None) if config is not None else None
+        if not cwd:
+            cwd = self.repo if os.path.isdir(self.repo or "") else "."
+        self.gate = CompletionGate(
+            enabled=self.verify_enabled,
+            criteria=specs,
+            cwd=cwd,
+            force=bool(force_done),
+        )
         self.turns: List[SessionTurn] = []
         self._prompt_tokens = 0
         self._packed_tokens = 0
@@ -603,6 +637,46 @@ class Session:
             kept_turns=len(new_turns),
         )
 
+    def run_verify(self, evidence: Optional[Dict] = None, llm=None) -> VerifyResult:
+        result = self.gate.run_verify(evidence=evidence, llm=llm)
+        if self.session_dir:
+            self._append_jsonl({"event": "verify", **result.to_dict()})
+        return result
+
+    def claim_done(self, text: str = "", *, force: bool = False) -> CompletionDecision:
+        decision = self.gate.claim_done(text, role=BUILDER_ROLE, force=force)
+        if self.session_dir:
+            self._append_jsonl(
+                {
+                    "event": "done",
+                    "accepted": decision.accepted,
+                    "reason": decision.reason,
+                    "forced": decision.forced,
+                }
+            )
+        return decision
+
+    def refuse_done_claim(self, text: str) -> Optional[str]:
+        """End-of-turn / user-claim gate. None when the gate is off or not a claim."""
+        if not self.verify_enabled:
+            return None
+        if not looks_like_done_claim(text):
+            return None
+        decision = self.claim_done(text, force=False)
+        if decision.accepted:
+            return None
+        return decision.message or "verify gate: not done"
+
+    def format_verify(self) -> str:
+        if not self.verify_enabled:
+            return (
+                "verify gate is off (default). "
+                "Pass --verify / CODEHARNESS_SESSION_VERIFY=1 / session.verify"
+            )
+        if self.gate.last_result is not None:
+            return self.gate.last_result.message or self.gate.format_checklist()
+        return self.gate.format_checklist()
+
     def set_profile(self, name: str) -> str:
         key = (name or "").strip().lower()
         if key not in KNOWN_PROFILES:
@@ -750,6 +824,23 @@ def handle_slash(session: Session, command: SlashCommand) -> CommandResult:
                 wiki_mode=session.wiki_mode,
             )
         return CommandResult(kind="wiki", message="", wiki_page=page)
+    if kind == "verify":
+        result = session.run_verify()
+        return CommandResult(kind="verify", message=session.format_verify() or result.message)
+    if kind == "done":
+        args = (command.args or "").strip().lower()
+        force = args in ("--force", "--force-done", "force") or "--force" in args.split()
+        decision = session.claim_done(command.raw, force=force)
+        if decision.accepted:
+            msg = f"[*] done: {decision.reason}"
+        else:
+            msg = f"[!] {decision.message}"
+        return CommandResult(
+            kind="done",
+            message=msg,
+            done_accepted=decision.accepted,
+            force_done=bool(decision.forced),
+        )
     if kind == "llm":
         flag = (command.args or "").split(None, 1)[0].lower() if command.args else ""
         if flag not in ("on", "off"):

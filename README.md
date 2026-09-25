@@ -67,7 +67,7 @@ python main.py session ./my-project --profile sage
 python main.py interactive --cross-repo ./my-project   # same command
 ```
 
-Turns are stored as JSONL under `.code-harness/sessions/` (ephemeral dialogue — not typed memory and not the code index). `/compact` is extractive conversation compression (keep user lines + the latest pack ids); it is not the CCR packer. Opt-in **tool-result clearing** (`--clear-tool-results`, `CODEHARNESS_CLEAR_TOOL_RESULTS=1`, or `session.clear_tool_results`) replaces aged retrieve/`tool_result` dumps with short placeholders that keep `chunk_id` / path / tool+args so `/expand` and `retrieve_chunk` still work. **Default is off.** `/compact` runs clearing as a micro-step only when the flag is on; `/clear-tool-results` is the explicit slash. `/cost` prints packed vs full prompt tokens, completion tokens, loop attempts, query-cache hit/miss when `--query-cache` is on, **tool-result tokens freed** when clearing fires, and approx $ when `llm.input_usd_per_1m` / `llm.output_usd_per_1m` are set. Without an LLM key the session still retrieves, packs, and prints context.
+Turns are stored as JSONL under `.code-harness/sessions/` (ephemeral dialogue — not typed memory and not the code index). `/compact` is extractive conversation compression (keep user lines + the latest pack ids); it is not the CCR packer. Opt-in **tool-result clearing** (`--clear-tool-results`, `CODEHARNESS_CLEAR_TOOL_RESULTS=1`, or `session.clear_tool_results`) replaces aged retrieve/`tool_result` dumps with short placeholders that keep `chunk_id` / path / tool+args so `/expand` and `retrieve_chunk` still work. Opt-in **default-fail verify gate** (`--verify`, `CODEHARNESS_SESSION_VERIFY=1`, or `session.verify`) starts completion criteria all-false; the builder cannot mark them true. `/verify` runs an independent read-only checker (file / command / contains / coverage first; LLM only as fallback). `/done` is refused until the gate is green unless you pass `--force-done` or `/done --force`. **Both default off.** `/compact` runs clearing as a micro-step only when the flag is on; `/clear-tool-results` is the explicit slash. `/cost` prints packed vs full prompt tokens, completion tokens, loop attempts, query-cache hit/miss when `--query-cache` is on, **tool-result tokens freed** when clearing fires, and approx $ when `llm.input_usd_per_1m` / `llm.output_usd_per_1m` are set. Without an LLM key the session still retrieves, packs, and prints context.
 
 `--profile sage` (or `CODEHARNESS_PROFILE=sage`, or `/profile sage`) is a flag pack: `pack_mode=ccr_lite`, `max_loops=1`, larger graph expand, higher pack budget. It does **not** retune RRF weights. One-shot `query` stays unchanged unless you pass `--profile`.
 
@@ -86,6 +86,9 @@ System framing always includes a `path:symbol` citation instruction. Explain/why
 /wiki                     Toggle chat-over-wiki (ask the living wiki)
 /wiki on|off              Enable or disable wiki mode
 /wiki <page>              Show a generated wiki page
+/verify                   Independent completion-criteria check (default-fail)
+/done                     Accept completion only if the verify gate is green
+/done --force             Override the verify gate (explicit)
 /llm on|off               Enable/disable AI responses
 /context                  Show the last retrieved context
 /clear                    Clear the screen
@@ -388,7 +391,7 @@ Query → [optional loop] retrieve → grade → (rewrite | HyDE | deepen | proc
                                      → LLM → Answer → citation check (maybe re-retrieve)
 ```
 
-The corrective loop is **off by default** (`retrieval.max_loops: 0`) so one-shot latency is unchanged. Enable with `--loop` (one extra retrieve) or `--max-loops N` (0–2 extra). Identifier-like queries short-circuit to BM25-only. `--verify` adds an independent LLM citation check (off by default).
+The corrective loop is **off by default** (`retrieval.max_loops: 0`) so one-shot latency is unchanged. Enable with `--loop` (one extra retrieve) or `--max-loops N` (0–2 extra). Identifier-like queries short-circuit to BM25-only. Query `--verify` adds an independent LLM citation check (off by default). Chat/session `--verify` also enables the default-fail completion gate (`session.verify`).
 
 ### Retrieval Pipeline
 
@@ -459,7 +462,10 @@ Key settings:
     "keep_recent": 1,
     "clear_tool_results": false,
     "clear_tool_keep": 1,
-    "clear_tool_token_trigger": 0
+    "clear_tool_token_trigger": 0,
+    "verify": false,
+    "force_done": false,
+    "criteria": []
   },
   "chat": {
     "wiki_mode": false
@@ -502,6 +508,7 @@ Global flags:
 | `--wiki` | Chat-over-wiki (query/chat). Config: `chat.wiki_mode`. Env: `CODEHARNESS_WIKI_MODE` |
 | `--query-cache` | Opt-in retrieve/pack cache for `query` / `chat` / `eval` (default off). Env: `CODEHARNESS_QUERY_CACHE=1`. `--no-query-cache` disables. Serve stays default-on (`--no-cache`). |
 | `--clear-tool-results` | Opt-in session retrieve/tool dump clearing (default off). Env: `CODEHARNESS_CLEAR_TOOL_RESULTS=1`. Knobs: `--clear-tool-keep`, `--clear-tool-token-trigger`. |
+| `--verify` | Query: independent citation check. Chat/session/eval: also the default-fail completion gate (`session.verify`). Env: `CODEHARNESS_SESSION_VERIFY=1`. Override: `--force-done` / `/done --force`. |
 
 ## Embedding Providers
 

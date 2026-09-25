@@ -320,6 +320,9 @@ def cmd_interactive(args):
         clear_tool_results=bool(session_cfg.get("clear_tool_results")),
         clear_tool_keep=session_cfg.get("clear_tool_keep"),
         clear_tool_token_trigger=session_cfg.get("clear_tool_token_trigger"),
+        verify=bool(session_cfg.get("verify")),
+        verify_criteria=session_cfg.get("criteria") or [],
+        force_done=bool(session_cfg.get("force_done")),
     )
     query_cache = _build_query_cache(args, config, print)
     session.query_cache = query_cache
@@ -328,8 +331,12 @@ def cmd_interactive(args):
     print("  Code Harness - Interactive Session")
     wiki_bit = "  wiki=on" if session.wiki_mode else ""
     clear_bit = "  clear-tool-results=on" if session.clear_tool_results_enabled else ""
-    print(f"  profile={session.profile}  pack={context_builder.pack_mode}{wiki_bit}{clear_bit}")
-    print("  /help /compact /cost /profile /exit")
+    verify_bit = "  verify=on" if session.verify_enabled else ""
+    print(
+        f"  profile={session.profile}  pack={context_builder.pack_mode}"
+        f"{wiki_bit}{clear_bit}{verify_bit}"
+    )
+    print("  /help /compact /cost /profile /verify /done /exit")
     print("=" * 60)
     print()
 
@@ -345,6 +352,17 @@ def cmd_interactive(args):
 
         if not query:
             continue
+
+        if session.verify_enabled:
+            from harness.verify import looks_like_done_claim
+
+            if looks_like_done_claim(query) and not query.startswith("/"):
+                decision = session.claim_done(query, force=False)
+                if decision.accepted:
+                    print(f"[*] done: {decision.reason}")
+                else:
+                    print(f"[!] {decision.message}")
+                continue
 
         slash = parse_slash(query)
         if slash is not None:
@@ -485,6 +503,10 @@ def cmd_interactive(args):
                 tool_result=context or "",
             )
         )
+        if session.verify_enabled:
+            banner = session.refuse_done_claim(answer or "")
+            if banner:
+                print(f"[!] {banner}")
         print()
 
 
@@ -1345,7 +1367,10 @@ def _add_loop_flags(parser, include_verify: bool = False):
         parser.add_argument(
             "--verify",
             action="store_true",
-            help="Independent LLM citation check on {query, answer, packed chunks} (off by default)",
+            help=(
+                "Independent verify: citation check on query, and on chat/session "
+                "a default-fail completion gate (session.verify; off by default)"
+            ),
         )
 
 
@@ -1400,6 +1425,9 @@ def _eval_snapshot(config, context_builder, backend_name: str) -> Dict:
             "grade_threshold": config.retrieval.get("grade_threshold", 0.35),
             "citation_threshold": config.retrieval.get("citation_threshold", 0.5),
         },
+        "session": {
+            "verify": bool((getattr(config, "session", None) or {}).get("verify")),
+        },
     }
 
 
@@ -1447,6 +1475,7 @@ def _run_eval_backend(config, fixtures, meta, suite_path, repo_name, k, loop_con
         loop_config=loop_config,
         cache=cache,
         config=config,
+        verify=bool((getattr(config, "session", None) or {}).get("verify")),
     )
     return report, None
 
@@ -1828,8 +1857,10 @@ def _load_config(args) -> Config:
         config.redaction["audit"] = False
 
     from harness.tool_clear import apply_clear_tool_config
+    from harness.verify import apply_verify_config
 
     apply_clear_tool_config(config, args)
+    apply_verify_config(config, args)
 
     _apply_loop_args(config, args)
 
@@ -1993,6 +2024,11 @@ Examples:
     _add_redact_flag(int_p)
     _add_query_cache_flags(int_p)
     _add_clear_tool_result_flags(int_p)
+    int_p.add_argument(
+        "--force-done",
+        action="store_true",
+        help="Override the session verify gate (explicit; same as /done --force)",
+    )
     int_p.set_defaults(func=cmd_interactive)
 
     info = subparsers.add_parser("info", help="Show repository information")
@@ -2076,6 +2112,14 @@ Examples:
         help="Context pack mode used for citation/token columns (default: full)",
     )
     _add_loop_flags(ev, include_verify=False)
+    ev.add_argument(
+        "--verify",
+        action="store_true",
+        help=(
+            "Optional completion-criteria verify stage for agent-completion "
+            "fixtures (default off; skipped when a fixture has no rubric)"
+        ),
+    )
     _add_query_cache_flags(ev)
     ev.set_defaults(func=cmd_eval)
 
