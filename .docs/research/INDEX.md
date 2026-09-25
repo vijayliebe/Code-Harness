@@ -41,7 +41,17 @@ Target project: [vijayliebe/Code-Harness](https://github.com/vijayliebe/Code-Har
 ## See also
 - [SYNTHESIS.md](SYNTHESIS.md) — prioritized Code-Harness roadmap
 - [deep/README.md](deep/README.md) — HIGH-source design notes
-- [deep/INTEGRATION_PLAN.md](deep/INTEGRATION_PLAN.md) — sequenced PRs (`eval metrics → CCR-lite packer → query loop → KG enrichment`)
+- [deep/INTEGRATION_PLAN.md](deep/INTEGRATION_PLAN.md) — sequenced PRs (`eval metrics → CCR-lite packer → query loop → KG enrichment`) — **spine shipped**; remaining work in the fusion pack
+- [fusion/README.md](fusion/README.md) — steal matrix + gap audit + thesis (path to best-of-kind, not a claim it is achieved)
+
+### Fusion pack (post-spine)
+
+| File | What |
+|------|------|
+| [fusion/STEAL_MATRIX.md](fusion/STEAL_MATRIX.md) | All 23 INDEX rows: steal / module / `done`·`partial`·`gap`·`reject` / P0–P3 |
+| [fusion/GAP_AUDIT.md](fusion/GAP_AUDIT.md) | Open gaps only; recommended next 5 PRs |
+| [fusion/FUSION_THESIS.md](fusion/FUSION_THESIS.md) | Differentiators + non-goals + eval/token/latency scorecard |
+| [fusion/notes/](fusion/notes/) | Mini-deepens for thin Medium / weak-primary cards |
 
 ### Deep dives (HIGH only)
 
@@ -58,3 +68,19 @@ Target project: [vijayliebe/Code-Harness](https://github.com/vijayliebe/Code-Har
 | Google Code Wiki | [deep/google-code-wiki.md](deep/google-code-wiki.md) |
 
 **Correction:** OKF is a Google Cloud specification, not a Memanto-owned format. First-pass `okf.md` was updated.
+
+### HIGH fusion status (vs design-only)
+
+Spine on the KG-enrichment tip: eval harness, CCR-lite packer, corrective loop, KG enrichment. That is **not** full fusion.
+
+| Item | Deep dive | Fusion |
+|------|-----------|--------|
+| headroom | [deep/headroom.md](deep/headroom.md) | **Partially fused** — CCR-lite + retrieve-back. Delta: expand-on-explain, stable cache key, type-aware pack |
+| strands harness | [deep/strands-harness.md](deep/strands-harness.md) | **Partially fused** — loop stops + easy path. Delta: session budget, MCP |
+| Memanto | [deep/memanto.md](deep/memanto.md) | **Design-only** |
+| forgecode | [deep/forgecode.md](deep/forgecode.md) | **Partially fused** — pack env knob. Delta: sage profile, `/compact`, MCP-as-`:sync` |
+| code graph | [deep/code-graph.md](deep/code-graph.md) | **Partially fused** — exposes/tested_by/gloss + beam + Mermaid. Delta: path templates, `calls` quality |
+| turboVec | [deep/turbovec.md](deep/turbovec.md) | **Design-only** (blocked on recall gates) |
+| OKF (Google SPEC) | [deep/okf.md](deep/okf.md) | **Design-only** |
+| Prompt→Loop→Graph | [deep/prompt-loop-graph-engineering.md](deep/prompt-loop-graph-engineering.md) | **Partially fused** — eval + loop. Delta: session state, `path:symbol` cites |
+| Google Code Wiki | [deep/google-code-wiki.md](deep/google-code-wiki.md) | **Partially fused** — Mermaid precursor. Delta: `wiki generate` |

@@ -108,7 +108,7 @@ Golden Q→chunk_id / answer suites per sample repo; stage latency + token trace
 
 Eval **before** packer/loop/KG so later diffs have anchors. Details: [deep/INTEGRATION_PLAN.md](deep/INTEGRATION_PLAN.md).
 
-`eval metrics → CCR-lite packer → query loop → KG enrichment`
+`eval metrics → CCR-lite packer → query loop → KG enrichment` — **shipped**. Next five: [fusion/GAP_AUDIT.md](fusion/GAP_AUDIT.md).
 
 ## Suggested 90-day sequence
 
@@ -126,12 +126,28 @@ Eval **before** packer/loop/KG so later diffs have anchors. Details: [deep/INTEG
 ## Mapping: Code-Harness today → gaps
 
 ```
-TODAY:  parse → chunk → Chroma + BM25 + NetworkX → RRF → CE → MMR → LLM
-GAPS:   graded loop | reversible compression | richer KG/wiki | typed memory
-        | faster/smaller vectors | MCP distribution | eval anchors
+SHIPPED SPINE (this branch family):
+  parse → chunk → Chroma + BM25 + NetworkX
+       → RRF → CE → MMR → CCR-lite packer
+       → opt-in graded loop (grade / rewrite / HyDE / deepen)
+       → KG: exposes / tested_by / gloss + beam + Mermaid
+       → eval: Recall@k / citation-path / tokens / stage p50
+
+STILL OPEN (see fusion/GAP_AUDIT.md):
+  wiki generate | typed memory + OKF | session /compact /cost
+  | redaction + audit | doctor + MCP retrieve
+  | TurboVec (blocked) | path templates / calls quality | web ingest
 ```
+
+This file’s 90-day table is **historical first-pass intent**. Execution order and honesty about what landed live in [fusion/](fusion/README.md) and [deep/INTEGRATION_PLAN.md](deep/INTEGRATION_PLAN.md).
 
 ---
 
 ## File map
 All first-pass write-ups live beside this file; start at [INDEX.md](INDEX.md). HIGH-source design notes and the sequenced PR plan are under [deep/](deep/README.md).
+
+**Fusion backlog (steal matrix, next-5 PRs, scorecard):** [fusion/README.md](fusion/README.md) — [STEAL_MATRIX.md](fusion/STEAL_MATRIX.md) · [GAP_AUDIT.md](fusion/GAP_AUDIT.md) · [FUSION_THESIS.md](fusion/FUSION_THESIS.md).
+
+HIGH items **partially fused:** Headroom (CCR-lite), Strands (loop policy), Forge (pack knob), Code graph (enrichment), Prompt→Loop→Graph (eval+loop), Code Wiki (Mermaid only).
+
+HIGH items **still design-only:** Memanto, OKF, TurboVec. Wiki generate remains design-only aside from the Mermaid precursor.
