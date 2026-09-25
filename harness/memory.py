@@ -6,7 +6,9 @@ optionally ``.code-harness/memory/``. Not written into Chroma.
 
 Reconcile is supersession + tombstone, not silent overwrite. ``memory brief``
 packs active entries with a hard cap of 800 tokens (``len // 4``).
-LLM auto-extract from chats is out of scope — :func:`observe_stub` only.
+Heuristic auto-extract from session JSONL lives in :mod:`harness.memory_extract`
+(``memory extract``, opt-in ``memory.auto_extract``). :func:`observe_stub` remains
+as a no-network alias.
 """
 
 from __future__ import annotations
@@ -135,6 +137,8 @@ class MemoryStore:
         timestamp: Optional[str] = None,
         entry_id: Optional[str] = None,
         extras: Optional[Dict[str, Any]] = None,
+        generated: bool = False,
+        verified: Any = "human",
     ) -> MemoryEntry:
         normalized = normalize_memory_kind(kind)
         if not normalized:
@@ -169,6 +173,8 @@ class MemoryStore:
             status=STATUS_ACTIVE,
             extras=dict(extras or {}),
             rel_path=_rel_path_for(normalized, title, ts, entry_id),
+            generated=bool(generated),
+            verified=verified if verified is not None else "human",
         )
         self._write(entry)
         if old is not None:
@@ -403,7 +409,7 @@ class MemoryStore:
 
 
 def observe_stub(*_args, **_kwargs) -> None:
-    """Placeholder — LLM memory synthesis is fusion PR #3+ (out of scope)."""
+    """Compatibility alias. Prefer :func:`harness.memory_extract.extract_session`."""
     return None
 
 

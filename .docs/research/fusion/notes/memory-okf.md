@@ -51,9 +51,12 @@ python main.py memory list . [--type decision] [--as-of 2026-06-01] [--all]
 python main.py memory brief . -q "why chroma?"
 python main.py memory export . ./okf-bundle
 python main.py memory import . ./okf-bundle
+python main.py memory extract . [--session path.jsonl] [--dry-run] [--llm]
 ```
 
-No Memanto/Mem0 dependency. No auto-extract from chats (`observe_stub` only).
+Heuristic extract (default, offline) classifies session/chat turns into `decision|error|preference|fact` with `path:symbol` links and supersede/dedupe. `--llm` refines only when a client+key exist; otherwise it is a no-op. Config `memory.auto_extract` is **false** by default; when true, extract runs after `/compact` or session exit.
+
+No Memanto/Mem0 dependency.
 
 ## Sample `path:symbol` entries (this repo)
 

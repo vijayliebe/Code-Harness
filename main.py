@@ -314,6 +314,7 @@ def cmd_interactive(args):
             query = input(">>> ").strip()
         except (EOFError, KeyboardInterrupt):
             print()
+            _maybe_auto_extract_session(session, config)
             break
 
         if not query:
@@ -323,6 +324,7 @@ def cmd_interactive(args):
         if slash is not None:
             result = handle_slash(session, slash)
             if result.should_exit:
+                _maybe_auto_extract_session(session, config)
                 break
             if result.kind == "profile" and result.profile:
                 try:
@@ -358,6 +360,8 @@ def cmd_interactive(args):
                 continue
             if result.message:
                 print(result.message)
+            if result.kind == "compact":
+                _maybe_auto_extract_session(session, config)
             continue
 
         from harness.loop import LoopConfig, QueryLoop, verify_answer
@@ -672,7 +676,7 @@ def cmd_memory(args):
         if parser is not None:
             parser.print_help()
         else:
-            print("usage: main.py memory {add,list,brief,export,import}")
+            print("usage: main.py memory {add,list,brief,export,import,extract}")
         sys.exit(2)
 
     repo = getattr(args, "repo", None) or "."
@@ -751,6 +755,36 @@ def cmd_memory(args):
             count = store.import_okf(src)
             print(f"[+] Imported {count} OKF concept(s) → {memory_dir}")
             return
+
+        if action == "extract":
+            from harness.memory_extract import (
+                MemoryExtractError,
+                extract_session,
+                format_extract_report,
+            )
+
+            llm = None
+            use_llm = bool(getattr(args, "use_llm", False))
+            if use_llm:
+                try:
+                    llm = LLMInterface(config)
+                except Exception:
+                    llm = None
+            try:
+                report = extract_session(
+                    repo=config.repo_path,
+                    session_path=getattr(args, "session", None),
+                    store=store,
+                    dry_run=bool(getattr(args, "dry_run", False)),
+                    use_llm=use_llm,
+                    config=config,
+                    llm=llm,
+                )
+            except MemoryExtractError as exc:
+                print(f"[!] {exc}")
+                sys.exit(1)
+            print(format_extract_report(report))
+            return
     except MemoryError as exc:
         print(f"[!] {exc}")
         sys.exit(1)
@@ -820,6 +854,15 @@ def _print_memory_brief(config):
         return
     print(brief.text.rstrip())
     print(f"\n[*] tokens={brief.token_count} entries={len(brief.entry_ids)}")
+
+
+def _maybe_auto_extract_session(session, config):
+    from harness.memory_extract import format_extract_report, maybe_auto_extract
+
+    report = maybe_auto_extract(config=config, session=session)
+    if report is None:
+        return
+    print(format_extract_report(report))
 
 
 def _print_wiki_page(config, page: str):
@@ -1462,6 +1505,8 @@ Examples:
    %(prog)s memory brief . -q "why chroma?"
    %(prog)s memory export . ./okf-bundle
    %(prog)s memory import . ./okf-bundle
+   %(prog)s memory extract . --dry-run
+   %(prog)s memory extract . --session .code-harness/sessions/20260925.jsonl
    %(prog)s audit show --last 20
    %(prog)s audit tail --path .code-harness/audit/audit.jsonl
    %(prog)s doctor ./my-project                           # Local health check
@@ -1770,6 +1815,34 @@ Examples:
         help="Memory directory (default: <repo>/knowledge/memory)",
     )
     mem_import.set_defaults(func=cmd_memory)
+
+    mem_extract = mem_sub.add_parser(
+        "extract",
+        help="Heuristic extract typed memories from a session JSONL",
+    )
+    mem_extract.add_argument("repo", nargs="?", default=".", help="Repository path")
+    mem_extract.add_argument(
+        "--session",
+        default=None,
+        help="Session JSONL path (default: last file under <repo>/.code-harness/sessions)",
+    )
+    mem_extract.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print candidates without writing OKF files",
+    )
+    mem_extract.add_argument(
+        "--llm",
+        dest="use_llm",
+        action="store_true",
+        help="Optional LLM refine; no-op when client+key are missing",
+    )
+    mem_extract.add_argument(
+        "--dir",
+        default=None,
+        help="Memory directory (default: <repo>/knowledge/memory)",
+    )
+    mem_extract.set_defaults(func=cmd_memory)
 
     audit = subparsers.add_parser(
         "audit",
