@@ -21,7 +21,7 @@ Full-vault OKF: `knowledge export|import` (alias `okf`) copies wiki + memory + g
 
 Wiki remainders now closer: `wiki generate --dirty` + watch hook + opt-in RRF `retrieval.wiki_weight` (default 0.0) + chat-over-wiki (`chat --wiki` / `query --wiki` / `/wiki` / `chat.wiki_mode`) via CCR pack/expand. LLM polish stays open.
 
-Fusion PR #3 (interactive session) adds `chat` / `session` / `repl` aliases, JSONL under `.code-harness/sessions/`, heuristic `/compact` + `/cost`, `--profile sage`, and a `path:symbol` system line. Expand-on-explain is session/sage-scoped. Claude Code steal #1 (tool-result clearing) is opt-in on that path (`--clear-tool-results`, default off). DeepSeek steal (event-sourced session + prefix-stable packing) is opt-in (`--event-session`, default off).
+Fusion PR #3 (interactive session) adds `chat` / `session` / `repl` aliases, JSONL under `.code-harness/sessions/`, heuristic `/compact` + `/cost`, `--profile sage`, and a `path:symbol` system line. Expand-on-explain is session/sage-scoped. Claude Code steal #1 (tool-result clearing) is opt-in on that path (`--clear-tool-results`, default off). DeepSeek steal (event-sourced session + prefix-stable packing) is opt-in (`--event-session`, default off). Session-event FTS (steal wave 5/5) is `session search` / `/search` / `search_session` over the typed event log (SQLite FTS5 sidecar; legacy turn JSONL refused).
 
 Fusion PR #4 (secret redaction + audit) adds `harness/redact.py` + append-only `.code-harness/audit/audit.jsonl`. Packed/LLM text is redacted by default; `audit show --last N` prints fingerprint hashes, never raw secrets. Disable only via `--no-redact` / `CODEHARNESS_REDACT=0`.
 
