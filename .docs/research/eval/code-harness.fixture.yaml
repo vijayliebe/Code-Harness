@@ -4,6 +4,8 @@
 #   python main.py index .
 # Then:
 #   python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml
+# Chroma vs TurboVec A/B (indexes both persist dirs; writes RESULTS.md):
+#   python main.py eval-ab .
 # Dry-run (no index required):
 #   python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --dry-run
 #

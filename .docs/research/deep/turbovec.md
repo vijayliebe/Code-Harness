@@ -121,7 +121,7 @@ If union < 20, skip allowlist (too tight; semantic questions starve).
 
 - [x] PR 1 suite exists and is green on Chroma
 - [x] Protocol extracted from `VectorStore`
-- [ ] Dual-write spike + recall table (A/B eval shipped; dual-write not)
+- [x] Fixture-suite A/B table (`eval-ab` → `.docs/research/eval/RESULTS.md`; dual-write not)
 - [x] Embedding model name persisted
 - [x] Allowlist union/min-size rules (BM25 pool ≥20; graph seeds still open)
 - [x] Default remains `chromadb`

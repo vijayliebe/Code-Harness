@@ -69,12 +69,39 @@ python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --lo
 
 ## Experimental backend A/B
 
+Routine recipe (indexes both persist dirs, compares, writes the committed table):
+
 ```bash
-python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml \
-  --compare-backends chromadb,turbovec
+python main.py eval-ab .
+# or
+make eval-ab
+# or
+python scripts/eval_chroma_vs_turbovec.py
 ```
 
-Prints side-by-side Recall@k / nDCG@k / dense p50. Selecting `vector_store.type: turbovec` (or `--vector-backend turbovec`) without `--force-experimental` exits `2` when TurboVec is below Chroma by more than 5% relative, or by more than 2 Recall@10 points / 1 Recall@30 point. Missing `turbovec` extra → skip that column (exit 0 unless it was the selected backend). Switching `type` always requires a rebuild; Chroma and TurboVec do not share persist directories.
+Equivalent explicit commands:
+
+```bash
+python main.py index .
+python main.py index . --vector-backend turbovec
+python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml \
+  --compare-backends chromadb,turbovec \
+  --compare-markdown .docs/research/eval/RESULTS.md \
+  --compare-output .docs/research/eval/RESULTS.json
+```
+
+Prints and persists side-by-side Recall@k / nDCG@k / dense p50 in
+[RESULTS.md](RESULTS.md) / [RESULTS.json](RESULTS.json). Selecting
+`vector_store.type: turbovec` (or `--vector-backend turbovec`) without
+`--force-experimental` exits `2` when TurboVec is below Chroma by more than
+5% relative, or by more than 2 Recall@10 points / 1 Recall@30 point. Missing
+`turbovec` extra → skip that column (exit 0 unless it was the selected
+backend). Switching `type` always requires a rebuild; Chroma and TurboVec
+do not share persist directories.
+
+`eval-ab` is the optional path: if the TurboVec wheel or the embedder/Chroma
+stack cannot run, it writes a placeholder RESULTS table and exits 0. Selecting
+TurboVec as the active backend while the extra is missing still fails clearly.
 
 Interactive `/compact` is session-only and does not change these eval numbers (easy p50 stays the one-shot path). A synthetic 10-turn session is kept under `llm.max_tokens * 2` by dropping older packs while never dropping the latest pack ids; see `tests/test_session.py`.
 
