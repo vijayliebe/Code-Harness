@@ -34,7 +34,7 @@ Gates are **relative to a frozen suite + config snapshot** (already written by `
 | Gate | Metric (existing harness) | Target vs current spine |
 |------|---------------------------|-------------------------|
 | **Accuracy — retrieve** | Recall@k, nDCG@k | No silent drop when adding packer/backends. Hard subset (`who calls` / `what exposes`) **up** after wiki / path templates |
-| **Accuracy — grounded** | citation-path hit rate; optional `--verify` later | `must_cite_paths` ≥ baseline; packed headers stay within **5 points** of `full` |
+| **Accuracy — grounded** | citation-path hit rate; optional citation `--verify`; session completion gate (`session.verify`, default off) | `must_cite_paths` ≥ baseline; packed headers stay within **5 points** of `full` |
 | **Tokens / cost** | `prompt_tokens_packed` vs `prompt_tokens_full`; `prompt_token_drop` | CCR-lite **≥30%** drop on this repo’s suite without Recall@k change. Wiki/memory briefs **lower** mean tokens on “explain architecture / why did we…” vs stuffing bodies |
 | **Latency** | stage p50 (`dense` / `bm25` / `graph` / `ce` / `mmr`); loop `attempts` | Easy queries: BM25 path, p50 **≤ +15%** vs one-shot. `max_loops=0` bit-identical to one-shot |
 | **Local-first** | doctor + config | **Shipped:** `doctor` + localhost `POST /v1/retrieve` / MCP (127.0.0.1; `--allow-public` is explicit). Index and graph never leave the machine. Cloud embed/LLM are **opt-in**. No new required hosted service |

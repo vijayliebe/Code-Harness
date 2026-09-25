@@ -41,6 +41,7 @@ class EvalFixture:
     relevant_chunk_ids: List[str] = field(default_factory=list)
     must_cite_paths: List[str] = field(default_factory=list)
     difficulty: str = "medium"
+    completion_criteria: List[Dict[str, Any]] = field(default_factory=list)
 
 
 def load_suite(path: str) -> Tuple[List[EvalFixture], Dict[str, Any]]:
@@ -49,7 +50,8 @@ def load_suite(path: str) -> Tuple[List[EvalFixture], Dict[str, Any]]:
     Accepted shapes:
       - a list of fixture objects
       - a mapping `{suite, k, fixtures: [...]}`
-    Each fixture: `{id, query, relevant_chunk_ids[], must_cite_paths[], difficulty}`.
+    Each fixture: `{id, query, relevant_chunk_ids[], must_cite_paths[],
+    difficulty, optional completion_criteria[]}`.
     """
     if not os.path.isfile(path):
         raise FileNotFoundError(f"Eval suite not found: {path}")
@@ -90,12 +92,17 @@ def _parse_fixture(item: Any, idx: int) -> EvalFixture:
     difficulty = item.get("difficulty") or "medium"
     if difficulty not in ("easy", "medium", "hard"):
         raise ValueError(f"Fixture {fixture_id}: difficulty must be easy|medium|hard")
+    raw_criteria = item.get("completion_criteria") or item.get("verify") or []
+    criteria: List[Dict[str, Any]] = []
+    if isinstance(raw_criteria, list):
+        criteria = [dict(row) for row in raw_criteria if isinstance(row, dict)]
     return EvalFixture(
         id=str(fixture_id),
         query=str(query),
         relevant_chunk_ids=[str(x) for x in (item.get("relevant_chunk_ids") or [])],
         must_cite_paths=[normalize_path(str(x)) for x in (item.get("must_cite_paths") or [])],
         difficulty=difficulty,
+        completion_criteria=criteria,
     )
 
 
@@ -186,6 +193,7 @@ def run_eval(
     loop_config=None,
     cache=None,
     config=None,
+    verify=None,
 ) -> Dict[str, Any]:
     from .loop import LoopConfig, QueryLoop
     from .query_cache import run_with_query_cache
@@ -194,6 +202,9 @@ def run_eval(
     ce_enabled = bool(getattr(retriever, "ce_enabled", False))
     loop = QueryLoop(retriever, context_builder, loop_config or LoopConfig(max_loops=0))
     eval_config = config
+    if verify is None:
+        verify = bool((getattr(eval_config, "session", None) or {}).get("verify"))
+    verify = bool(verify)
 
     for fixture in fixtures:
         if cache is not None and eval_config is not None:
@@ -313,6 +324,22 @@ def run_eval(
                 },
             },
         }
+        if verify:
+            from .verify import run_fixture_verify
+
+            evidence = {
+                "coverage": outcome.coverage,
+                "grade": outcome.grade,
+                "paths": list(packed.packed_paths or []),
+                "chunk_ids": list(packed.packed_chunk_ids or []),
+            }
+            verify_result = run_fixture_verify(
+                fixture.completion_criteria,
+                enabled=True,
+                cwd=repo_path,
+                evidence=evidence,
+            )
+            case["verify"] = verify_result.to_dict()
         cases.append(case)
 
     metrics = _aggregate(cases, k)
@@ -384,7 +411,7 @@ def _aggregate(cases: Sequence[Dict[str, Any]], k: int) -> Dict[str, Any]:
         if subset:
             by_difficulty[difficulty] = _subset_metrics(subset)
 
-    return {
+    metrics = {
         "k": k,
         "n": len(cases),
         "recall_at_k": None if not recalls else round(mean(recalls), 4),
@@ -400,6 +427,18 @@ def _aggregate(cases: Sequence[Dict[str, Any]], k: int) -> Dict[str, Any]:
         "loop_attempts_mean": None if not attempts else round(mean(attempts), 3),
         "by_difficulty": by_difficulty,
     }
+    verify_rows = [
+        c.get("verify")
+        for c in cases
+        if isinstance(c.get("verify"), dict) and not c["verify"].get("skipped")
+    ]
+    if verify_rows:
+        metrics["verify_n"] = len(verify_rows)
+        metrics["verify_pass_rate"] = round(
+            mean([1.0 if row.get("passed") else 0.0 for row in verify_rows]),
+            4,
+        )
+    return metrics
 
 
 def print_summary(report: Dict[str, Any]) -> None:
@@ -438,6 +477,11 @@ def print_summary(report: Dict[str, Any]) -> None:
             print("  by difficulty: " + "  |  ".join(parts))
     if metrics.get("loop_attempts_mean") is not None:
         print(f"  loop attempts mean: {metrics.get('loop_attempts_mean')}")
+    if metrics.get("verify_pass_rate") is not None:
+        print(
+            f"  verify pass rate: {metrics.get('verify_pass_rate')} "
+            f"(n={metrics.get('verify_n', 0)})"
+        )
     qc = metrics.get("query_cache") or {}
     if qc.get("enabled"):
         print(f"  query cache: hits={qc.get('hits', 0)} misses={qc.get('misses', 0)}")

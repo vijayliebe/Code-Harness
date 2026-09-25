@@ -1,0 +1,30 @@
+# Example agent-completion fixture (not part of the retrieval golden suite).
+#
+# Eval stays retrieval-only unless you pass --verify. Fixtures without
+# completion_criteria are skipped by that stage. Criteria start false;
+# the independent verifier (file / command / contains / coverage) must
+# pass before the case is marked done.
+#
+#   python3 main.py eval . --suite .docs/research/eval/agent-completion.example.yaml --verify --dry-run
+#   python3 main.py eval . --suite .docs/research/eval/agent-completion.example.yaml --verify
+
+suite: agent-completion-example
+k: 10
+fixtures:
+  - id: agent-verify-module
+    query: Implement the independent default-fail verify gate
+    relevant_chunk_ids:
+      - class:harness/verify.py:CompletionGate
+    must_cite_paths:
+      - harness/verify.py
+    difficulty: medium
+    completion_criteria:
+      - id: module
+        kind: file
+        check: harness/verify.py
+      - id: tests
+        kind: command
+        check: python3 -m unittest tests.test_verify_gate
+      - id: coverage
+        kind: coverage
+        expect: 0.0

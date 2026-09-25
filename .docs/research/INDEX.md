@@ -30,7 +30,7 @@ Target project: [vijayliebe/Code-Harness](https://github.com/vijayliebe/Code-Har
 | 21 | WorkOS | [workos.md](workos.md) | Resolved | https://workos.com (Agent Auth) | Enterprise SSO + agent tokens — only if SaaS; skip for local CLI. | **Low** |
 | 22 | Firecrawl | [firecrawl.md](firecrawl.md) | Resolved | https://github.com/firecrawl/firecrawl | LLM-ready web scrape/crawl/MCP — ingest external docs beside code. | **Med** |
 | 23 | Google Code Wiki | [google-code-wiki.md](google-code-wiki.md) | Resolved | https://codewiki.google/ · Google Developers Blog | Living AI wiki + diagrams + grounded chat — inspiration for `wiki generate`. | **High** |
-| 24 | Claude Code harness | [claude-code-harness.md](claude-code-harness.md) | Resolved | https://docs.anthropic.com/en/docs/claude-code | Tool-result clearing (keep ids, stub aged retrieve dumps) — not conversation compact. | **High** |
+| 24 | Claude Code harness | [claude-code-harness.md](claude-code-harness.md) | Resolved | https://docs.anthropic.com/en/docs/claude-code | Tool-result clearing + default-fail independent verify gate (criteria start false; separate read-only evaluator). | **High** |
 
 \* Ambiguity documented in the item file (alternate candidates listed).
 

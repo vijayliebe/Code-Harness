@@ -67,6 +67,27 @@ python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --lo
 
 `--loop` (or `--max-loops N`) enables the bounded corrective retrieve loop. Default `max_loops=0` is one-shot. Reports include `metrics.by_difficulty` and per-case `loop` traces (`attempts`, `grade`, `stop_reason`).
 
+### Optional verify stage (`--verify`)
+
+Eval stays retrieval-only unless you pass `--verify`. Fixtures that declare `completion_criteria` then run the independent default-fail gate (file / command / contains / coverage). Retrieval fixtures without a rubric are **skipped** by that stage — they do not fail the suite. See [agent-completion.example.yaml](agent-completion.example.yaml).
+
+```yaml
+completion_criteria:
+  - id: module
+    kind: file
+    check: harness/verify.py
+  - id: tests
+    kind: command
+    check: python3 -m unittest tests.test_verify_gate
+```
+
+```bash
+python main.py eval . --suite .docs/research/eval/agent-completion.example.yaml --verify --dry-run
+python main.py eval . --suite .docs/research/eval/agent-completion.example.yaml --verify
+```
+
+Reports then include per-case `verify` and `metrics.verify_pass_rate` (only over non-skipped agent-completion fixtures). Default **off**.
+
 ## Experimental backend A/B
 
 Routine recipe (indexes both persist dirs, compares, writes the committed table):
