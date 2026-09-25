@@ -87,6 +87,22 @@ MCP_TOOLS = (
             "required": ["entity_id"],
         },
     },
+    {
+        "name": "search_session",
+        "description": (
+            "Full-text search over a typed session event log. "
+            "Returns ranked hits with event ids, snippets, and timestamps."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "session": {"type": "string"},
+                "top_k": {"type": "integer"},
+            },
+            "required": ["query"],
+        },
+    },
 )
 
 
@@ -269,7 +285,7 @@ def _result_dict(result) -> Dict[str, Any]:
 _index_fingerprint = index_fingerprint
 
 
-def handle_mcp(message: Dict[str, Any], service: RetrieveService) -> Dict[str, Any]:
+def handle_mcp(message: Dict[str, Any], service: Optional[RetrieveService] = None) -> Dict[str, Any]:
     msg = message or {}
     req_id = msg.get("id")
     method = msg.get("method") or ""
@@ -310,7 +326,9 @@ def _rpc(req_id, result: Dict[str, Any]) -> Dict[str, Any]:
     return {"jsonrpc": "2.0", "id": req_id, "result": result}
 
 
-def _call_tool(name: str, args: Dict[str, Any], service: RetrieveService) -> Dict[str, Any]:
+def _call_tool(
+    name: str, args: Dict[str, Any], service: Optional[RetrieveService] = None
+) -> Dict[str, Any]:
     args = args or {}
     if name == "retrieve":
         payload = service.retrieve(args)
@@ -353,6 +371,27 @@ def _call_tool(name: str, args: Dict[str, Any], service: RetrieveService) -> Dic
         store = MemoryStore(default_memory_dir(service.repo_path))
         brief = store.brief(query=args.get("query") or "", redact=True)
         return _tool_text(brief.text or "[!] No active memory to brief")
+    if name == "search_session":
+        from .session_fts import SessionSearchError, search_session
+
+        repo = getattr(service, "repo_path", None) if service is not None else None
+        try:
+            payload = search_session(
+                args.get("query") or "",
+                path=args.get("session") or args.get("path"),
+                repo=repo,
+                top_k=int(args.get("top_k") or 10),
+            )
+        except SessionSearchError as exc:
+            text = str(exc)
+            return _tool_text(text, {"error": text, "hits": []})
+        blob = json.dumps(payload, ensure_ascii=False)
+        blob = redact_and_audit(
+            blob,
+            action="redact.retrieve",
+            config=service.config if service is not None else None,
+        ).text
+        return _tool_text(blob, payload)
     if name == "graph_neighbors":
         entity_id = args.get("entity_id") or ""
         depth = int(args.get("max_depth") or 2)

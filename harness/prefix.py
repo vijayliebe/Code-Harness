@@ -275,6 +275,13 @@ def snapshot_prefix(builder, *, tools: Optional[Sequence[Dict[str, Any]]] = None
     """Freeze the current builder's prefix (empty-query, path-stable knowledge)."""
     config = builder.config
     context = getattr(config, "context", None) or {}
+    if tools is None:
+        tools = list(DEFAULT_TOOL_SCHEMAS)
+        session = getattr(config, "session", None) or {}
+        if session.get("event_session"):
+            from .session_fts import SEARCH_SESSION_TOOL
+
+            tools = list(tools) + [SEARCH_SESSION_TOOL]
     tools_blob = freeze_tool_schemas(tools)
     project_docs = builder._load_project_context()
     prev = getattr(builder, "_prefix_freeze", None)
