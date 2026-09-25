@@ -270,8 +270,8 @@ Mini-deepens for thin cards: [notes/](notes/).
 - **Links:** https://codewiki.google/ · https://developers.googleblog.com/en/introducing-code-wiki-accelerating-your-code-understanding/ · deep [../deep/google-code-wiki.md](../deep/google-code-wiki.md)
 - **Best stealable ideas:** (1) Incremental living wiki from the KG (template first, no LLM). (2) Every heading cites `path:symbol`. (3) Chat-over-wiki then CCR expand to source. (4) Diagrams from **edges**, not the model.
 - **Why it matters:** Accuracy (stable narrative + grounded links); tokens (summaries first); UX (`info --mermaid` already a precursor).
-- **Map to module:** KG Mermaid **done**; CLI `wiki generate` / `list` / `show` **done** (template + OKF WikiPage + `path:symbol`); system prompt cite style **done** (`` `path:symbol` ``); watch dirty-module regen **gap**.
-- **Status:** `partial` — generator shipped. **Delta:** watch dirty-module regen; RRF `kind=wiki` boost (intentionally not in this PR); chat-over-wiki via CCR; LLM polish.
+- **Map to module:** KG Mermaid **done**; CLI `wiki generate` / `list` / `show` **done** (template + OKF WikiPage + `path:symbol`); system prompt cite style **done** (`` `path:symbol` ``); `wiki generate --dirty` + watch hook **done**; RRF `kind=wiki` channel **done** (default `wiki_weight=0.0`).
+- **Status:** `partial` — generator + dirty regen + opt-in wiki RRF shipped. **Delta:** chat-over-wiki via CCR; LLM polish; architecture/explain eval fixtures.
 - **Fusion priority:** P0
 - **Evidence:** deep-dive
 
@@ -292,7 +292,7 @@ Mini-deepens for thin cards: [notes/](notes/).
 
 Sources with the most **material delta** still on the table (not rejects):
 
-1. **Google Code Wiki + OKF** — `wiki generate` + WikiPage emit shipped; memory OKF import/export shipped; remaining: watch regen, RRF wiki boost, prefix-load of `knowledge/**/*.md`.
+1. **Google Code Wiki + OKF** — `wiki generate` + WikiPage emit + `--dirty` / watch hook + opt-in RRF `wiki_weight` shipped; remaining: chat-over-wiki via CCR, prefix-load of `knowledge/**/*.md`, LLM polish.
 2. **Memanto** — typed store + supersession + brief shipped; remaining: observe/auto-extract and eval “why” fixtures.
 3. **Strands + Forge + Claurst** — session `/compact` `/cost` sage + localhost MCP retrieve shipped; remaining: caveman, graph-explorer digest.
 4. **Agent-Reach + Proxima + OpenHuman** — doctor + query cache + MCP/`POST /v1/retrieve` **shipped** (loopback). Remainder: Jina ingest, stdio MCP, serve-cache on eval/interactive.

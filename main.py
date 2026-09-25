@@ -612,18 +612,28 @@ def cmd_wiki(args):
                 out_dir=out_dir,
                 graph_path=getattr(args, "graph", None),
                 module=getattr(args, "module", None),
+                dirty=bool(getattr(args, "dirty", False)),
             )
         except MissingGraphError as exc:
             print(f"[!] {exc}")
             sys.exit(1)
-        print(f"[*] Wiki generate: {result.page_count} pages → {result.wiki_dir}")
+        if result.skipped_reason:
+            print(f"[!] Wiki dirty-generate skipped: {result.skipped_reason}")
+            return
+        mode = " (dirty)" if result.dirty else ""
+        print(f"[*] Wiki generate{mode}: {result.page_count} pages → {result.wiki_dir}")
         for name in result.pages:
             print(f"    {name}")
+        if result.dirty and result.skipped:
+            print(f"[*] Skipped (clean): {', '.join(result.skipped)}")
         if result.citations:
             print(f"[*] Sample cite: `{result.citations[0]}`")
         if result.mermaid_pages:
             print(f"[*] Mermaid on: {', '.join(result.mermaid_pages)}")
-        print("[+] Wiki written")
+        if result.dirty and result.page_count == 0:
+            print("[+] Wiki already clean")
+        else:
+            print("[+] Wiki written")
         return
 
     if action == "list":
@@ -1267,6 +1277,20 @@ def cmd_watch(args):
                 _sys.argv = ["main.py", "index", repo_path]
                 cmd_index(args)
                 print(f"[*] Watch: re-index complete. Waiting for changes...")
+                try:
+                    from harness.wiki import maybe_dirty_wiki_regen
+                    wiki_result = maybe_dirty_wiki_regen(
+                        repo_path, config=config, repo_name=repo_name,
+                    )
+                    if wiki_result and wiki_result.skipped_reason:
+                        print(f"[*] Watch: wiki dirty-regen skipped ({wiki_result.skipped_reason.splitlines()[0]})")
+                    elif wiki_result:
+                        print(
+                            f"[*] Watch: wiki dirty-regen "
+                            f"{wiki_result.page_count} page(s)"
+                        )
+                except Exception as wiki_exc:
+                    print(f"[*] Watch: wiki dirty-regen skipped ({wiki_exc})")
             except Exception as e:
                 print(f"[!] Re-index failed: {e}")
 
@@ -1430,6 +1454,7 @@ Examples:
    %(prog)s info ./my-project                             # Show repo stats
    %(prog)s info ./my-project --mermaid --focus class:harness/context_builder.py:ContextBuilder
    %(prog)s wiki generate ./my-project                    # Living wiki from the KG
+   %(prog)s wiki generate ./my-project --dirty             # Only pages whose sources changed
    %(prog)s wiki list ./my-project
    %(prog)s wiki show architecture
    %(prog)s memory add . --type decision --title "Keep Chroma" --body "Until TurboVec gates pass." --link harness/vector_store.py:VectorStore
@@ -1619,6 +1644,11 @@ Examples:
         default=None,
         metavar="PKG_OR_PATH",
         help="Regenerate one package page (plus architecture index)",
+    )
+    wiki_gen.add_argument(
+        "--dirty",
+        action="store_true",
+        help="Regenerate only pages whose source hashes or KG subgraph changed",
     )
     wiki_gen.set_defaults(func=cmd_wiki)
 

@@ -102,6 +102,9 @@ class KnowledgeGraph:
                 if "/gloss/" in f"/{path}":
                     kind = "gloss"
                     entity.metadata["kind"] = "gloss"
+                elif path.startswith("knowledge/wiki/") or "/knowledge/wiki/" in f"/{path}":
+                    kind = "wiki"
+                    entity.metadata["kind"] = "wiki"
             if kind:
                 node_attrs["kind"] = kind
             self.graph.add_node(entity.id, **node_attrs)

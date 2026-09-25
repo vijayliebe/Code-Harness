@@ -150,14 +150,14 @@ Eval `must_cite_paths` scores this without needing wiki pages.
 
 ## 13. Implementation checklist
 
-- [ ] Citation instruction in loop PR (no generator yet)
-- [ ] Mermaid helper lands with KG PR
-- [ ] Write only under `knowledge/wiki/`
-- [ ] Hash-stable regen
-- [ ] Template path first; LLM polish optional
-- [ ] OKF `WikiPage` frontmatter
-- [ ] `watch` dirty-module only
-- [ ] No Google APIs
+- [x] Citation instruction in loop PR (no generator yet)
+- [x] Mermaid helper lands with KG PR
+- [x] Write only under `knowledge/wiki/`
+- [x] Hash-stable regen
+- [x] Template path first; LLM polish optional
+- [x] OKF `WikiPage` frontmatter
+- [x] `watch` dirty-module only
+- [x] No Google APIs
 
 ## 14. Cross-links
 

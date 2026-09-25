@@ -88,6 +88,7 @@ DEFAULT_CONFIG = {
         "dense_weight": 0.3,
         "sparse_weight": 0.25,
         "graph_weight": 0.2,
+        "wiki_weight": 0.0,
         "top_k": 30,
         "rerank_top_k": 15,
         "expand_neighbors": 3,

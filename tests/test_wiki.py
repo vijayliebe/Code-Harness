@@ -295,6 +295,100 @@ class TestWikiCli(unittest.TestCase):
             self.assertIn("graph", combined)
             self.assertIn("index", combined)
 
+    def test_help_lists_dirty_flag(self):
+        run = subprocess.run(
+            [sys.executable, "main.py", "wiki", "generate", "--help"],
+            capture_output=True,
+            text=True,
+            cwd=ROOT,
+        )
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertIn("--dirty", run.stdout)
+
+
+class TestWikiDirtyRegen(unittest.TestCase):
+    def _tiny_repo(self, tmp):
+        return TestWikiGenerate()._tiny_repo(tmp)
+
+    def test_dirty_regenerates_only_changed_package(self):
+        from harness.wiki import generate_wiki
+
+        with tempfile.TemporaryDirectory() as tmp:
+            kg = self._tiny_repo(tmp)
+            out = Path(tmp) / "knowledge" / "wiki"
+            first = generate_wiki(kg, repo_path=tmp, out_dir=out, repo_name="fixture")
+            self.assertGreaterEqual(first.page_count, 2)
+            before = {p.name: p.read_bytes() for p in out.glob("*.md")}
+            self.assertIn("pkg.md", before)
+
+            src = Path(tmp) / "pkg" / "mod.py"
+            src.write_text(
+                src.read_text(encoding="utf-8").replace(
+                    "Assemble packed context.",
+                    "Assemble packed context after a source edit.",
+                ),
+                encoding="utf-8",
+            )
+
+            dirty = generate_wiki(
+                kg, repo_path=tmp, out_dir=out, repo_name="fixture", dirty=True,
+            )
+            self.assertTrue(dirty.dirty)
+            self.assertIn("pkg.md", dirty.regenerated)
+            self.assertIn("architecture.md", dirty.regenerated)
+            self.assertNotIn("api.md", dirty.regenerated)
+            self.assertIn("api.md", dirty.skipped)
+
+            after = {p.name: p.read_bytes() for p in out.glob("*.md")}
+            self.assertEqual(before["api.md"], after["api.md"])
+            self.assertNotEqual(before["pkg.md"], after["pkg.md"])
+            self.assertIn("after a source edit", after["pkg.md"].decode("utf-8"))
+
+    def test_dirty_is_noop_when_sources_unchanged(self):
+        from harness.wiki import generate_wiki
+
+        with tempfile.TemporaryDirectory() as tmp:
+            kg = self._tiny_repo(tmp)
+            out = Path(tmp) / "knowledge" / "wiki"
+            generate_wiki(kg, repo_path=tmp, out_dir=out, repo_name="fixture")
+            before = {p.name: p.read_bytes() for p in out.glob("*.md")}
+
+            again = generate_wiki(
+                kg, repo_path=tmp, out_dir=out, repo_name="fixture", dirty=True,
+            )
+            self.assertTrue(again.dirty)
+            self.assertEqual(again.regenerated, [])
+            self.assertEqual(again.page_count, 0)
+            after = {p.name: p.read_bytes() for p in out.glob("*.md")}
+            self.assertEqual(before, after)
+
+    def test_dirty_missing_graph_fails_soft(self):
+        from harness.wiki import generate_from_repo
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = Config()
+            cfg.repo_path = tmp
+            cfg.knowledge_graph["persist_path"] = os.path.join(tmp, "graph.json")
+            result = generate_from_repo(
+                tmp, config=cfg, repo_name="empty", dirty=True,
+            )
+            self.assertEqual(result.page_count, 0)
+            self.assertTrue(result.skipped_reason)
+            self.assertIn("graph", result.skipped_reason.lower())
+
+    def test_dirty_missing_graph_cli_exits_zero(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run = subprocess.run(
+                [sys.executable, "main.py", "wiki", "generate", tmp, "--dirty"],
+                capture_output=True,
+                text=True,
+                cwd=ROOT,
+            )
+            self.assertEqual(run.returncode, 0, run.stderr + run.stdout)
+            combined = (run.stdout + run.stderr).lower()
+            self.assertIn("graph", combined)
+            self.assertTrue("skip" in combined or "not found" in combined)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -182,6 +182,7 @@ retrieve(query, debug=False)
   ├── Dense (30%): vector_store.search(embed_query(query))
   ├── Sparse (25%): BM25 keyword scoring
   ├── Graph (20%): beam neighbor expansion (width=6, depth=2; `expand_mode=bfs` for old BFS)
+  ├── Wiki (opt-in): `kind=wiki` / `knowledge/wiki/` channel via RRF when `wiki_weight` > 0 (default 0.0)
   ├── Fusion: RRF with k=60
   ├── Cross-encoder rerank: cross-encoder/ms-marco-MiniLM-L-6-v2
   └── Return top-k (default: 30)

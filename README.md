@@ -133,12 +133,17 @@ Template-only (no LLM). Reads `graph_{repo}.json` and writes OKF `WikiPage` mark
 ```bash
 python main.py index .
 python main.py wiki generate .
+python main.py wiki generate . --dirty          # only pages whose sources / subgraph changed
 python main.py wiki list .
 python main.py wiki show architecture
 python main.py wiki generate . --module harness --out knowledge/wiki
 ```
 
+`--dirty` compares source-file content hashes and per-package KG subgraphs to `knowledge/wiki/.wiki-manifest.json`. It rewrites only affected package (module) pages plus the architecture index. Full `wiki generate` still rebuilds the vault. Missing graph: full generate exits non-zero; `--dirty` fails soft (prints a skip, exit 0). `watch` runs the same dirty path after re-index when a vault already exists.
+
 OKF = [Open Knowledge Format (Google SPEC v0.2)](https://github.com/GoogleCloudPlatform/open-knowledge-format/blob/main/SPEC.md). We emit a code-repo subset (`type: WikiPage`, `okf_version: "0.2"`, `x_codeharness` citations). See `harness/okf.py` for the field mapping. Missing graph → clear error asking you to `index` first.
+
+Indexed wiki pages (`kind=wiki` or `knowledge/wiki/<page>`) can join hybrid RRF as a fourth list when `retrieval.wiki_weight > 0`. **Default is `0.0`** (off — eval-safe; existing dense/BM25/graph ranking unchanged). A careful starting weight is `0.08`–`0.12`. Source citations stay `` `path:symbol` ``; wiki hits may cite `knowledge/wiki/<page>`.
 
 ### `memory` — Typed project memory + OKF import/export
 
@@ -350,6 +355,7 @@ Key settings:
     "dense_weight": 0.3,
     "sparse_weight": 0.25,
     "graph_weight": 0.2,
+    "wiki_weight": 0.0,
     "top_k": 30,
     "rerank_top_k": 15,
     "expand_mode": "beam",

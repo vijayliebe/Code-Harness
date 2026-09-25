@@ -24,8 +24,12 @@ from .okf import (
     cite_from_entity_id,
     default_wiki_dir,
     dump_okf_markdown,
+    is_wiki_path,
     parse_okf_markdown,
+    wiki_cite,
 )
+
+WIKI_MANIFEST_NAME = ".wiki-manifest.json"
 
 DOCSTRING_RE = re.compile(r'(?:"""|\'\'\')(.*?)(?:"""|\'\'\')', re.DOTALL)
 SKIP_PAGE_PREFIXES = (".code-harness/", "knowledge/wiki/")
@@ -43,6 +47,10 @@ class WikiGenerateResult:
     mermaid_pages: List[str] = field(default_factory=list)
     citations: List[str] = field(default_factory=list)
     graph_hash: str = ""
+    dirty: bool = False
+    regenerated: List[str] = field(default_factory=list)
+    skipped: List[str] = field(default_factory=list)
+    skipped_reason: str = ""
 
 
 def graph_content_hash(graph) -> str:
@@ -113,13 +121,42 @@ def generate_from_repo(
     out_dir: Optional[str] = None,
     graph_path: Optional[str] = None,
     module: Optional[str] = None,
+    dirty: bool = False,
 ) -> WikiGenerateResult:
-    kg, _ = load_kg_or_raise(repo_path, config=config, repo_name=repo_name, graph_path=graph_path)
-    name = repo_name or os.path.basename(os.path.abspath(repo_path or "."))
     dest = Path(out_dir) if out_dir else Path(default_wiki_dir(repo_path))
+    try:
+        kg, _ = load_kg_or_raise(repo_path, config=config, repo_name=repo_name, graph_path=graph_path)
+    except MissingGraphError as exc:
+        if dirty:
+            return WikiGenerateResult(
+                wiki_dir=str(dest),
+                dirty=True,
+                skipped_reason=str(exc),
+            )
+        raise
+    name = repo_name or os.path.basename(os.path.abspath(repo_path or "."))
     return generate_wiki(
-        kg, repo_path=repo_path, out_dir=dest, repo_name=name, module=module, config=config,
+        kg, repo_path=repo_path, out_dir=dest, repo_name=name, module=module,
+        config=config, dirty=dirty,
     )
+
+
+def maybe_dirty_wiki_regen(
+    repo_path: str,
+    config: Optional[Config] = None,
+    repo_name: str = "",
+    out_dir: Optional[str] = None,
+) -> Optional[WikiGenerateResult]:
+    """Watch-hook: dirty-regen if a vault already exists. Never raises."""
+    dest = Path(out_dir) if out_dir else Path(default_wiki_dir(repo_path))
+    if not dest.is_dir():
+        return None
+    try:
+        return generate_from_repo(
+            repo_path, config=config, repo_name=repo_name, out_dir=str(dest), dirty=True,
+        )
+    except Exception:
+        return None
 
 
 def generate_wiki(
@@ -129,6 +166,7 @@ def generate_wiki(
     repo_name: str = "",
     module: Optional[str] = None,
     config: Optional[Config] = None,
+    dirty: bool = False,
 ) -> WikiGenerateResult:
     graph = kg.graph
     out_dir = Path(out_dir)
@@ -136,41 +174,70 @@ def generate_wiki(
     ghash = graph_content_hash(graph)
     groups = _group_nodes(graph)
     gloss_by_target = _gloss_notes(graph, repo_path)
+    endpoints = _collect_endpoints(graph)
 
     wanted = None
     if module:
         wanted = _package_key(module) or module.replace("\\", "/").split("/")[0]
 
+    fingerprints = _page_fingerprints(graph, groups, endpoints, repo_path, ghash)
+    write_names: Optional[set] = None
+    skipped: List[str] = []
+    if dirty:
+        write_names, skipped = _dirty_write_set(out_dir, fingerprints)
+        if wanted:
+            write_names = {n for n in write_names if _page_matches_wanted(n, wanted, fingerprints)}
+            skipped = [n for n in fingerprints if n not in write_names]
+        if not write_names:
+            _write_manifest(out_dir, ghash, fingerprints)
+            return WikiGenerateResult(
+                wiki_dir=str(out_dir),
+                pages=[],
+                page_count=0,
+                graph_hash=ghash,
+                dirty=True,
+                regenerated=[],
+                skipped=skipped,
+            )
+
     pages: List[WikiPage] = []
     mermaid_pages: List[str] = []
     all_cites: List[str] = []
 
+    # Always render every package in memory so the architecture index stays complete
+    # even when dirty mode writes only a subset.
     pkg_pages = []
     for pkg in sorted(groups):
-        if wanted and pkg != wanted:
+        if wanted and pkg != wanted and not dirty:
             continue
         page = _render_package_page(
             pkg, groups[pkg], graph, repo_path, repo_name, ghash, gloss_by_target, out_dir,
         )
-        pages.append(page)
         pkg_pages.append(page)
+        fname = _page_filename(page)
+        if write_names is not None and fname not in write_names:
+            continue
+        pages.append(page)
         if "```mermaid" in page.body:
-            mermaid_pages.append(_page_filename(page))
+            mermaid_pages.append(fname)
         all_cites.extend((page.x_codeharness or {}).get("citations") or [])
 
-    endpoints = _collect_endpoints(graph)
-    if endpoints and not wanted:
-        ep_page = _render_endpoints_page(endpoints, graph, repo_path, repo_name, ghash, out_dir)
-        pages.append(ep_page)
-        all_cites.extend((ep_page.x_codeharness or {}).get("citations") or [])
+    if endpoints and (wanted is None or dirty):
+        ep_name = "endpoints.md"
+        if write_names is None or ep_name in write_names:
+            ep_page = _render_endpoints_page(endpoints, graph, repo_path, repo_name, ghash, out_dir)
+            pages.append(ep_page)
+            all_cites.extend((ep_page.x_codeharness or {}).get("citations") or [])
 
-    arch = _render_architecture_page(
-        graph, pkg_pages, endpoints if not wanted else [], repo_path, repo_name, ghash, out_dir,
-    )
-    pages.insert(0, arch)
-    if "```mermaid" in arch.body:
-        mermaid_pages.insert(0, "architecture.md")
-    all_cites.extend((arch.x_codeharness or {}).get("citations") or [])
+    if write_names is None or "architecture.md" in write_names:
+        arch = _render_architecture_page(
+            graph, pkg_pages, endpoints if not wanted or dirty else [],
+            repo_path, repo_name, ghash, out_dir,
+        )
+        pages.insert(0, arch)
+        if "```mermaid" in arch.body:
+            mermaid_pages.insert(0, "architecture.md")
+        all_cites.extend((arch.x_codeharness or {}).get("citations") or [])
 
     written = []
     for page in pages:
@@ -190,6 +257,7 @@ def generate_wiki(
         dest.write_text(text, encoding="utf-8")
         written.append(filename)
 
+    _write_manifest(out_dir, ghash, fingerprints)
     cites = sorted(dict.fromkeys(c for c in all_cites if c))
     return WikiGenerateResult(
         wiki_dir=str(out_dir),
@@ -198,6 +266,9 @@ def generate_wiki(
         mermaid_pages=mermaid_pages,
         citations=cites,
         graph_hash=ghash,
+        dirty=dirty,
+        regenerated=list(written) if dirty else list(written),
+        skipped=skipped if dirty else [],
     )
 
 
@@ -236,6 +307,151 @@ def show_page(wiki_dir: str | Path, name: str) -> str:
     raise FileNotFoundError(f"Wiki page not found: {name} (under {root})")
 
 
+def file_content_hash(path: Path) -> str:
+    if not path.is_file():
+        return "missing"
+    return hashlib.sha256(path.read_bytes()).hexdigest()[:16]
+
+
+def _fingerprint_payload(payload) -> str:
+    return hashlib.sha256(
+        json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    ).hexdigest()[:16]
+
+
+def _package_fingerprint(graph, pkg: str, node_ids: Sequence[str], repo_path: str) -> Dict:
+    files = sorted({
+        str(graph.nodes[n].get("file_path") or "").replace("\\", "/")
+        for n in node_ids
+        if graph.nodes[n].get("file_path")
+    })
+    file_hashes = {
+        rel: file_content_hash(Path(repo_path or ".") / rel) for rel in files if rel
+    }
+    entity_ids = sorted(str(n) for n in node_ids)
+    wanted = set(entity_ids)
+    edges = sorted(
+        (str(src), str(tgt), str((data or {}).get("relationship") or ""))
+        for src, tgt, data in graph.edges(data=True)
+        if str(src) in wanted or str(tgt) in wanted
+    )
+    return {
+        "page": pkg,
+        "kind": "package",
+        "source_files": files,
+        "file_hashes": file_hashes,
+        "entity_ids": entity_ids,
+        "fingerprint": _fingerprint_payload({
+            "pkg": pkg, "entities": entity_ids, "files": file_hashes, "edges": edges,
+        }),
+    }
+
+
+def _endpoints_fingerprint(graph, endpoint_ids: Sequence[str], repo_path: str) -> Dict:
+    files = sorted({
+        str(graph.nodes[n].get("file_path") or "").replace("\\", "/")
+        for n in endpoint_ids
+        if n in graph and graph.nodes[n].get("file_path")
+    })
+    file_hashes = {
+        rel: file_content_hash(Path(repo_path or ".") / rel) for rel in files if rel
+    }
+    ids = sorted(str(n) for n in endpoint_ids)
+    return {
+        "page": "endpoints",
+        "kind": "endpoints",
+        "source_files": files,
+        "file_hashes": file_hashes,
+        "entity_ids": ids,
+        "fingerprint": _fingerprint_payload({"ids": ids, "files": file_hashes}),
+    }
+
+
+def _architecture_fingerprint(ghash: str, packages: Sequence[str], has_endpoints: bool) -> Dict:
+    return {
+        "page": "architecture",
+        "kind": "index",
+        "source_files": [],
+        "file_hashes": {},
+        "entity_ids": [],
+        "fingerprint": _fingerprint_payload({
+            "graph_hash": ghash,
+            "packages": list(packages),
+            "endpoints": bool(has_endpoints),
+        }),
+    }
+
+
+def _page_fingerprints(graph, groups, endpoint_ids, repo_path: str, ghash: str) -> Dict[str, Dict]:
+    pages: Dict[str, Dict] = {}
+    for pkg, node_ids in groups.items():
+        info = _package_fingerprint(graph, pkg, node_ids, repo_path)
+        slug = re.sub(r"[^A-Za-z0-9._-]+", "-", str(pkg)).strip("-").lower()
+        pages[f"{slug or 'page'}.md"] = info
+    if endpoint_ids:
+        pages["endpoints.md"] = _endpoints_fingerprint(graph, endpoint_ids, repo_path)
+    pages["architecture.md"] = _architecture_fingerprint(ghash, sorted(groups), bool(endpoint_ids))
+    return pages
+
+
+def _load_manifest(out_dir: Path) -> Dict:
+    path = Path(out_dir) / WIKI_MANIFEST_NAME
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _write_manifest(out_dir: Path, ghash: str, fingerprints: Dict[str, Dict]) -> None:
+    dest = Path(out_dir) / WIKI_MANIFEST_NAME
+    dest.write_text(
+        json.dumps({"version": 1, "graph_hash": ghash, "pages": fingerprints}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _page_matches_wanted(filename: str, wanted: str, fingerprints: Dict[str, Dict]) -> bool:
+    if filename == "architecture.md":
+        return True
+    info = fingerprints.get(filename) or {}
+    return info.get("page") == wanted or filename == f"{wanted}.md"
+
+
+def _dirty_write_set(
+    out_dir: Path,
+    fingerprints: Dict[str, Dict],
+) -> Tuple[set, List[str]]:
+    """Return (filenames to write, clean filenames skipped)."""
+    manifest = _load_manifest(out_dir)
+    old_pages = manifest.get("pages") if isinstance(manifest.get("pages"), dict) else {}
+    have_vault = any(Path(out_dir).glob("*.md"))
+    dirty: set = set()
+    skipped: List[str] = []
+    if not have_vault or not old_pages:
+        return set(fingerprints), []
+
+    for name, info in fingerprints.items():
+        if name == "architecture.md":
+            continue
+        dest = Path(out_dir) / name
+        old = old_pages.get(name) or {}
+        if not dest.is_file() or old.get("fingerprint") != info.get("fingerprint"):
+            dirty.add(name)
+        else:
+            skipped.append(name)
+
+    arch_old = (old_pages.get("architecture.md") or {}).get("fingerprint")
+    arch_new = (fingerprints.get("architecture.md") or {}).get("fingerprint")
+    if dirty or arch_old != arch_new or not (Path(out_dir) / "architecture.md").is_file():
+        dirty.add("architecture.md")
+    else:
+        skipped.append("architecture.md")
+    return dirty, skipped
+
+
 def _page_filename(page: WikiPage) -> str:
     slug = ((page.x_codeharness or {}).get("page") or page.title or "page")
     slug = re.sub(r"[^A-Za-z0-9._-]+", "-", str(slug)).strip("-").lower()
@@ -246,7 +462,7 @@ def _package_key(file_path: str) -> Optional[str]:
     path = (file_path or "").replace("\\", "/").lstrip("./")
     if not path:
         return None
-    if path.startswith(SKIP_PAGE_PREFIXES):
+    if path.startswith(SKIP_PAGE_PREFIXES) or is_wiki_path(path):
         return None
     if "/gloss/" in f"/{path}":
         return None

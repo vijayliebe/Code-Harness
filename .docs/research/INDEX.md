@@ -83,4 +83,4 @@ Spine on the KG-enrichment tip: eval harness, CCR-lite packer, corrective loop, 
 | turboVec | [deep/turbovec.md](deep/turbovec.md) | **Design-only** (blocked on recall gates) |
 | OKF (Google SPEC) | [deep/okf.md](deep/okf.md) | **Partially fused** — WikiPage emit. Delta: memory import/export |
 | Prompt→Loop→Graph | [deep/prompt-loop-graph-engineering.md](deep/prompt-loop-graph-engineering.md) | **Partially fused** — eval + loop. Delta: session state, `path:symbol` cites |
-| Google Code Wiki | [deep/google-code-wiki.md](deep/google-code-wiki.md) | **Partially fused** — `wiki generate` + Mermaid. Delta: watch regen, RRF wiki boost |
+| Google Code Wiki | [deep/google-code-wiki.md](deep/google-code-wiki.md) | **Partially fused** — `wiki generate` + Mermaid + `--dirty` / watch + opt-in wiki RRF. Delta: chat-over-wiki, LLM polish |
