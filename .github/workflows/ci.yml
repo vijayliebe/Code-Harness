@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: python3 -m pip install -r requirements.txt
+
+      - name: Unit tests
+        run: make test
+
+      - name: Index repository
+        run: python3 main.py index .
+
+      - name: Golden retrieval eval
+        run: python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml
