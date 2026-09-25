@@ -50,7 +50,7 @@ Target project: [vijayliebe/Code-Harness](https://github.com/vijayliebe/Code-Har
 
 | File | What |
 |------|------|
-| [fusion/STEAL_MATRIX.md](fusion/STEAL_MATRIX.md) | All 23 INDEX rows: steal / module / `done`·`partial`·`gap`·`reject` / P0–P3 |
+| [fusion/STEAL_MATRIX.md](fusion/STEAL_MATRIX.md) | All 25 INDEX rows: steal / module / `done`·`partial`·`gap`·`reject` / P0–P3 |
 | [fusion/GAP_AUDIT.md](fusion/GAP_AUDIT.md) | Open gaps only; recommended next 5 PRs |
 | [fusion/FUSION_THESIS.md](fusion/FUSION_THESIS.md) | Differentiators + non-goals + eval/token/latency scorecard |
 | [fusion/notes/](fusion/notes/) | Mini-deepens for thin Medium / weak-primary cards |
@@ -86,3 +86,5 @@ Spine on the KG-enrichment tip: eval harness, CCR-lite packer, corrective loop, 
 | OKF (Google SPEC) | [deep/okf.md](deep/okf.md) | **Partially fused** — WikiPage emit + typed memory + full-vault `knowledge export|import` + opt-in packer prefix-load + chat-over-wiki. Delta: BM25-over-memory |
 | Prompt→Loop→Graph | [deep/prompt-loop-graph-engineering.md](deep/prompt-loop-graph-engineering.md) | **Partially fused** — eval + loop. Delta: session state, `path:symbol` cites |
 | Google Code Wiki | [deep/google-code-wiki.md](deep/google-code-wiki.md) | **Partially fused** — `wiki generate` + Mermaid + `--dirty` / watch + opt-in wiki RRF + chat-over-wiki via CCR. Delta: LLM polish |
+| Claude Code harness | — (first-pass) | **Partially fused** — tool-result clearing + default-fail verify gate (opt-in). Not a Claude Code clone |
+| DeepSeek Harness | — (first-pass) | **Partially fused** — event log, pre-step retrieve, session FTS. Remainder: `llm-retry`. Do not vendor Cordis |

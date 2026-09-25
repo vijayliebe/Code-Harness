@@ -24,9 +24,11 @@ These notes go one level deeper than the per-source cards. Each one maps a **HIG
 | 18 | Prompt→Loop→Graph | [prompt-loop-graph-engineering.md](prompt-loop-graph-engineering.md) | graded retrieve loop in `retriever.py` / `main.py` | **Partially fused** (eval + loop) |
 | 23 | Google Code Wiki | [google-code-wiki.md](google-code-wiki.md) | incremental `wiki generate` + cite `path:symbol` | **Partially fused** (`wiki generate` + `--dirty` + opt-in wiki RRF) |
 
+No deep dive yet for **#24 Claude Code harness** or **#25 DeepSeek Harness** — first-pass cards plus matrix rows are the record (steal wave shipped; remainder `llm-retry`). Do not vendor Cordis / Claude Code.
+
 ## How to read
 
-1. For **what to build next**, start at [../fusion/GAP_AUDIT.md](../fusion/GAP_AUDIT.md) (PRs 1–4 are done).
+1. For **what to build next**, start at [../fusion/GAP_AUDIT.md](../fusion/GAP_AUDIT.md) (spine + fusion 1–5 + post-polish steal wave done).
 2. [INTEGRATION_PLAN.md](INTEGRATION_PLAN.md) is the design record for the shipped spine and the original “later #5–8” list.
 3. Open the deep dive that owns the next fusion PR; keep the matching first-pass card for links and caveats.
 
