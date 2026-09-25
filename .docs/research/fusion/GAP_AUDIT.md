@@ -2,11 +2,27 @@
 
 Status `gap`, or `partial` with a **material** delta. Rejects and fully shipped steals are in [STEAL_MATRIX.md](STEAL_MATRIX.md), not here.
 
-Spine already shipped: **eval → CCR-lite → corrective loop → KG enrichment**. This file is what to fuse *next*. Nothing here claims best-of-kind is done.
+Spine already shipped: **eval → CCR-lite → corrective loop → KG enrichment**. Fusion PRs 1–5 below landed on this tip family. Nothing here claims best-of-kind is done.
 
-## Recommended next 5 fusion PRs
+## Recommended next 5 — after polish wave
 
-Order is RAG-quality first (Recall@k, citation-path, tokens), then ops/distribution. Each PR stays local-first and eval-gated.
+**Current polish (do these first, not in the 5):** TurboVec A/B / default-flip gates (#15) and query-hash cache on eval/interactive (G12 remainder). They are already in-tree as experimental / serve-path-only.
+
+Then, ranked by expected **accuracy / cost / reliability** from DeepSeek (#24) and Claude Code (#25). Do **not** rebuild Strands session budget or the memory/index split (#3 / #5).
+
+| # | PR | Size | Owns | Depends on |
+|---|-----|------|------|------------|
+| **1** | **Tool-result clearing in session/interactive** — keep pack/`chunk_id` records; replace aged packed bodies and `retrieve_chunk` expansions with a placeholder; re-expand via CCR. Do this *before* another `/compact` summary. | S–M | Claude Code #25 (cookbook clearing); DeepSeek pruner sibling #24 | Session + CCR spill (done) |
+| **2** | **Default-fail independent eval gate** — criteria start `false`; fresh-context `--verify` (no generator CoT, no writes) flips them for citation-coverage / agent-done. | S | Claude Code #25 (cwc-long-running-agents); Loop #18 `--verify` | Verify hook (wired, off) |
+| **3** | **Event-sourced session + prefix-stable packing** — append-only events; `derive_messages()` projection; freeze system/wiki/memory prefix; compaction is a surface replacement. **Not** a second Strands budget. | M | DeepSeek #24 Session/`deriveMessages`; Headroom CacheAligner #1 (count once) | Session JSONL (done) |
+| **4** | **Retrieve-as-pre-step plugin seam** — one `pre_step` hook (`reject \| enter`) shared by `query` / `chat` / MCP; driver stays thin. | M | DeepSeek #24 agent-loop | Loop + serve (done) |
+| **5** | **Session-event FTS** — SQLite FTS over session events (queries, pack ids, retrieve/tool text). **Beyond** BM25-over-memory (typed `knowledge/memory/` files). Not a Chroma collection. | M | DeepSeek #24 `sessionQuery` | PR 3 events (or FTS today’s JSONL as a stepping stone) |
+
+**Still not in the 5:** eval hard-set growth (#20); Jina/`index-url` (#11/#22, P2); path templates + `calls` quality (#14); LLM wiki polish (#23); caveman prompt (#2).
+
+## Shipped fusion PRs (historical next-5)
+
+Order was RAG-quality first, then ops/distribution. Kept as the record of what landed.
 
 | # | PR | Size | Owns | Depends on |
 |---|-----|------|------|------------|
@@ -15,8 +31,6 @@ Order is RAG-quality first (Recall@k, citation-path, tokens), then ops/distribut
 | **3** | **Interactive session + `/compact` + `/cost`** — JSONL session, budget never drops latest pack, heuristic compact, print packed/full tokens + loop attempts. Tiny: `--profile sage` flag pack + `path:symbol` system line + `expand_on=explain`. *(session + slash cmds + sage + cite line shipped; LLM compact / eval session fixture still open)* | M | Strands #3, Forge #13, Claurst #2, Loop #18, Headroom remainder #1 | None (CCR/loop exist) |
 | **4** | **Secret redaction + audit JSONL** — strip key/token patterns before assemble; append query/chunk_ids/tokens/model. *(redact + audit JSONL + `audit show` shipped; optional max-token hard stop still open)* | S | Governance #19, Proxima `analyze_file` strip | None. **Do this before binding a network port** |
 | **5** | **`doctor` + `mcp serve` / `mcp stdio` / `POST /v1/retrieve`** — probe embed/LLM with ordered fallbacks; expose `retrieve`, `retrieve_chunk`, `graph_neighbors`. Optional SQLite query-hash cache. *(`doctor` + localhost HTTP/MCP + **stdio MCP** + bind guard + redacted bodies + optional query-hash cache shipped; no public bind without `--allow-public`)* | L (or S doctor + M serve) | Agent-Reach #11, OpenHuman #8, Proxima #9, Forge #13 | PR 4 preferred. Query cache can split as S |
-
-**Immediately after these (not in the 5):** grow the eval hard-set (LLM-in-production #20); TurboVec default flip after recall gates (#15, protocol+opt-in+A/B shipped); Jina/`index-url` (#11/#22, P2); path templates + `calls` quality (#14).
 
 ---
 
@@ -155,6 +169,51 @@ Order is RAG-quality first (Recall@k, citation-path, tokens), then ops/distribut
 - **Risk / complexity / local-first:** Medium (digest quality). No extra model if digest is heuristic (names + signatures).
 - **PR size / deps:** M. After G1/G7.
 
+### G15. Tool-result clearing in session/interactive (P0) — post-polish #1
+
+- **Steal:** Anthropic cookbook tool-result clearing; DeepSeek `dsh-compaction-tool-result-pruner` before summary.
+- **Sources:** #25, #24
+- **Change:** Problem — session JSONL and interactive history keep full packed bodies / expansions; `/compact` is the expensive rung. Outcome — aged retrieve dumps become placeholders + ids; CCR `retrieve_chunk` re-expands.
+- **Metric move:** `prompt_tokens_packed` **down** on a 10-turn session fixture; citation-path held after one expand. Recall@k unchanged (post-retrieve).
+- **Risk / complexity / local-first:** Low. Do not delete `tool_use` / pack-id records (breaks pairing). No Anthropic server API.
+- **PR size / deps:** S–M. Independent of G16–G19. After polish query-cache if we want the same cache key to see cleared vs full.
+
+### G16. Default-fail independent eval gate (P0) — post-polish #2
+
+- **Steal:** `cwc-long-running-agents` default-FAIL + fresh-context evaluator; Loop lecture independent verify.
+- **Sources:** #25, #18
+- **Change:** Problem — `--verify` is wired off and the builder can still declare “done.” Outcome — criteria start `false`; a no-write verifier with fresh `{query, answer, packed chunks}` flips them. Reuse typed memory for handoff notes (#5); do not add `PROGRESS.md`.
+- **Metric move:** citation-path / verify-pass on explain fixtures **honest** (no self-grade). Does not raise Recall@k by itself.
+- **Risk / complexity / local-first:** Low. Opt-in flag; eval stays retrieval-first. No second LLM-as-judge product.
+- **PR size / deps:** S. Can land anytime; nicest after G6 fixtures.
+
+### G17. Event-sourced session + prefix-stable packing (P0) — post-polish #3
+
+- **Steal:** DeepSeek append-only `Session` + `deriveMessages()`; compaction as surface replacement; byte-identical prefix replay for KV cache.
+- **Sources:** #24, #1 (CacheAligner — **count once**), not a second Strands budget (#3)
+- **Change:** Problem — mixed JSONL turns are the only copy; `/compact` mutates the working list; prefix cache is folklore. Outcome — events + projection; freeze system/wiki/memory brief; volatile packs last.
+- **Metric move:** Tokens/latency on repeated interactive turns **down** when provider prefix cache hits; resume/fork correctness (unit). Recall@k unchanged.
+- **Risk / complexity / local-first:** Medium (migration of existing JSONL). Keep a reader for old turn files.
+- **PR size / deps:** M. Unlocks G19 FTS. Do not vendor Cordis.
+
+### G18. Retrieve-as-pre-step plugin seam (P0) — post-polish #4
+
+- **Steal:** DeepSeek thin loop: retrieve is an `agent/pre-step` listener, not the driver.
+- **Sources:** #24
+- **Change:** Problem — `query` / `chat` / MCP each grow retrieve forks. Outcome — one `pre_step(query) -> reject|enter(pack)` shared by CLI and serve.
+- **Metric move:** Product/ops (one code path); eval Recall@k of MCP **equals** CLI (already a G5 contract — keep it).
+- **Risk / complexity / local-first:** Medium (refactor, not a new ranker). No plugin runtime (no Cordis).
+- **PR size / deps:** M. After G17 if the hook writes session events; can land as a function seam first.
+
+### G19. Session-event FTS (P1) — post-polish #5
+
+- **Steal:** DeepSeek `ctx.sessionQuery` SQLite FTS (`searchSessions` / `searchEvents`).
+- **Sources:** #24
+- **Change:** Problem — “what did we retrieve last Tuesday?” has no index. BM25-over-memory (#5) covers typed files only. Outcome — FTS over session events; literal query; exclude log-only retry/compact internals.
+- **Metric move:** Debug/UX; optional “session cite” fixture later. Must **not** change code-index Recall@k (separate store).
+- **Risk / complexity / local-first:** Low–medium. Do not write session text into Chroma.
+- **PR size / deps:** M. After G17 (or FTS today’s JSONL as a stepping stone).
+
 ---
 
 ## Deferred (tracked, not next)
@@ -165,6 +224,9 @@ Order is RAG-quality first (Recall@k, citation-path, tokens), then ops/distribut
 | Headroom proxy / Kompress / SmartCrusher | Deep #1; CLI is code-not-JSON |
 | Memanto/Mem0 cloud, OpenHuman agentmemory | OKF files are enough |
 | LangGraph / multi-agent topology | Loop lecture: orchestration tax |
+| Cordis / DeepSeek desktop / experimental agent teams | #24 reject — steal seams only |
+| Community Plan→Work→Review `claude-code-harness` | #25 reject — skill pack, not retrieval |
+| Streaming tool executor / Ralph-loop / `/goal` clone | #25 reject for v1 |
 | WorkOS, AirLLM, Jitro, OpenMontage, interview curricula | Rejected in matrix |
 | LLM-as-judge | Eval README: after citation metric saturates |
 

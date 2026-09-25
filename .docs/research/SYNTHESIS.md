@@ -91,6 +91,16 @@ Golden Q→chunk_id / answer suites per sample repo; stage latency + token trace
 
 ---
 
+### 9. Post-polish harness seams (DeepSeek + Claude Code)
+**Impact:** T ★★★★☆ · A ★★★★☆ · P ★★★☆☆  
+**Sources:** DeepSeek Harness (#24), Claude Code harness (#25); **do not re-steal** Strands budget / store-split (#3)
+
+After TurboVec A/B and query-cache polish: (1) clear aged retrieve/tool payloads in session, (2) default-fail independent `--verify` gate, (3) event-sourced session + prefix-stable packing, (4) retrieve-as-pre-step hook shared by CLI/MCP, (5) session-event FTS beside — not inside — BM25-over-memory.
+
+**Why:** Interactive cost is now pack *bloat*, not missing `/compact`. Accuracy needs a non-self-graded done gate. Reliability needs a reconstructable log. These are seams, not a Cordis/Claude-Code clone.
+
+---
+
 ## Explicitly deprioritize (for now)
 
 | Item | Why |
@@ -100,7 +110,8 @@ Golden Q→chunk_id / answer suites per sample repo; stage latency + token trace
 | AirLLM (#17) | Local huge-model inference; orthogonal & slow |
 | Jitro (#7) | No public implementation |
 | Interview Medium repos (#12) | Pedagogy, not retrieval tech |
-| Full Strands/Forge rewrite | Integrate as backend; don’t become another agent clone |
+| Full Strands/Forge/DeepSeek/Claude Code rewrite | Integrate as backend; don’t become another agent clone |
+| Community Plan→Work→Review `claude-code-harness` | Skill-pack product; independent-review idea already in #25 default-fail |
 
 ---
 
@@ -108,7 +119,19 @@ Golden Q→chunk_id / answer suites per sample repo; stage latency + token trace
 
 Eval **before** packer/loop/KG so later diffs have anchors. Details: [deep/INTEGRATION_PLAN.md](deep/INTEGRATION_PLAN.md).
 
-`eval metrics → CCR-lite packer → query loop → KG enrichment` — **shipped**. Next five: [fusion/GAP_AUDIT.md](fusion/GAP_AUDIT.md).
+`eval metrics → CCR-lite packer → query loop → KG enrichment` — **shipped**. Fusion PRs 1–5 (wiki / memory / session / redact / doctor+MCP) **shipped** on this tip family, including opt-in BM25-over-memory.
+
+**Current polish wave (not in the next 5):** TurboVec A/B / default-flip gates; query-hash cache on eval/interactive.
+
+**Next five after polish** (DeepSeek #24 + Claude Code #25; do not rebuild Strands budget / store-split):
+
+1. Tool-result clearing in session/interactive
+2. Default-fail independent eval gate for agent done
+3. Event-sourced session + prefix-stable packing
+4. Retrieve-as-pre-step plugin seam
+5. Session-event FTS (beyond BM25-over-memory)
+
+Details: [fusion/GAP_AUDIT.md](fusion/GAP_AUDIT.md).
 
 ## Suggested 90-day sequence
 
@@ -133,11 +156,18 @@ SHIPPED SPINE (this branch family):
        → KG: exposes / tested_by / gloss + beam + Mermaid
        → eval: Recall@k / citation-path / tokens / stage p50
 
+SHIPPED SINCE SPINE (same tip family):
+  wiki generate + dirty/watch + opt-in wiki RRF + chat-over-wiki
+  typed memory + OKF vault + heuristic extract + BM25-over-memory
+  session /compact /cost sage | redact + audit | doctor + MCP/stdio + retrieve API
+  experimental TurboVec + serve-path query cache
+
 STILL OPEN (see fusion/GAP_AUDIT.md):
-  LLM polish | memory LLM-extract / BM25-over-memory
-  | session LLM compact | optional token-cap
-  | doctor + MCP retrieve
-  | TurboVec (blocked) | path templates / calls quality | web ingest
+  polish: TurboVec default-flip | query-cache on eval/interactive
+  post-polish next-5: tool-result clearing | default-fail verify gate
+    | event-sourced session + prefix-stable pack | retrieve pre-step seam
+    | session-event FTS
+  later: LLM wiki polish | token-cap | path templates / calls quality | web ingest
 ```
 
 This file’s 90-day table is **historical first-pass intent**. Execution order and honesty about what landed live in [fusion/](fusion/README.md) and [deep/INTEGRATION_PLAN.md](deep/INTEGRATION_PLAN.md).
@@ -149,6 +179,6 @@ All first-pass write-ups live beside this file; start at [INDEX.md](INDEX.md). H
 
 **Fusion backlog (steal matrix, next-5 PRs, scorecard):** [fusion/README.md](fusion/README.md) — [STEAL_MATRIX.md](fusion/STEAL_MATRIX.md) · [GAP_AUDIT.md](fusion/GAP_AUDIT.md) · [FUSION_THESIS.md](fusion/FUSION_THESIS.md).
 
-HIGH items **partially fused:** Headroom (CCR-lite), Strands (loop policy), Forge (pack knob), Code graph (enrichment), Prompt→Loop→Graph (eval+loop), Code Wiki (Mermaid only).
+HIGH items **partially fused:** Headroom (CCR-lite), Strands (loop policy + session budget), Forge (sage/compact/MCP), Code graph (enrichment), Prompt→Loop→Graph (eval+loop), Code Wiki (`wiki generate` + chat-over-wiki), OKF (WikiPage + vault + prefix-load), Memanto (typed store + BM25-over-memory), TurboVec (opt-in + A/B, not default).
 
-HIGH items **still design-only:** Memanto, OKF, TurboVec. Wiki generate remains design-only aside from the Mermaid precursor.
+HIGH items **still design-only:** DeepSeek Harness (#24), Claude Code harness (#25). Remainder deltas on the partials live in [fusion/GAP_AUDIT.md](fusion/GAP_AUDIT.md).
