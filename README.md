@@ -111,6 +111,20 @@ python main.py info ./my-project --mermaid --focus class:harness/context_builder
 
 Shows file count, chunk count, knowledge graph size, cross-repo relationships, and file type distribution. `--mermaid` prints a `graph TD` subgraph from `graph_{repo}.json` (wiki precursor; no extra services). `--focus` centers the diagram on an entity id.
 
+### `wiki` — Living project wiki from the KG
+
+Template-only (no LLM). Reads `graph_{repo}.json` and writes OKF `WikiPage` markdown under `knowledge/wiki/` (override with `--out`, including `.code-harness/wiki/`). Pages are package-level plus an architecture index; they cite `path:symbol` (never chunk UUIDs) and embed Mermaid from existing graph edges. Human `.docs/` files are never overwritten.
+
+```bash
+python main.py index .
+python main.py wiki generate .
+python main.py wiki list .
+python main.py wiki show architecture
+python main.py wiki generate . --module harness --out knowledge/wiki
+```
+
+OKF = [Open Knowledge Format (Google SPEC v0.2)](https://github.com/GoogleCloudPlatform/open-knowledge-format/blob/main/SPEC.md). We emit a code-repo subset (`type: WikiPage`, `okf_version: "0.2"`, `x_codeharness` citations). See `harness/okf.py` for the field mapping. Missing graph → clear error asking you to `index` first.
+
 Graph expansion defaults to **beam** (`retrieval.expand_mode: beam`, `beam_width: 6`, `beam_depth: 2`). `expand_neighbors: 3` is the added-chunk cap (`max_added = expand_neighbors * 2`). Set `expand_mode: bfs` to restore the old hop walk. Gloss notes live in `knowledge/gloss/*.md` or `.code-harness/gloss/*.md` with frontmatter `entity: class:path:Name`.
 
 ### `watch` — Watch and auto re-index
@@ -350,6 +364,10 @@ python main.py query --cross-repo -q "how do these projects interact?"
 ├── repo_graph.json        # Inter-repo relationship graph
 ├── eval/                  # Retrieval eval reports ({suite}-{timestamp}.json)
 ├── ccr/                   # Optional CCR-lite originals ({sanitized_chunk_id}.txt)
+├── wiki/                  # Optional generated wiki (`--out .code-harness/wiki`)
+
+knowledge/
+└── wiki/                  # Default OKF WikiPage markdown from `wiki generate`
 ```
 
 ## Research
@@ -374,6 +392,9 @@ code-harness/
 │   ├── embedder.py                Embedding (local/Voyage/Jina/OpenAI + HyDE)
 │   ├── vector_store.py            ChromaDB vector storage (tuned HNSW)
 │   ├── knowledge_graph.py         NetworkX code relationship graph (intra-repo)
+│   ├── kg_enrich.py               exposes / tested_by / gloss + Mermaid export
+│   ├── okf.py                     OKF (Google SPEC v0.2) WikiPage subset
+│   ├── wiki.py                    Deterministic wiki generate from the KG
 │   ├── repo_graph.py              Inter-repo relationship graph
 │   ├── retriever.py               Hybrid retrieval (dense + sparse + graph + cross-encoder)
 │   ├── context_builder.py         Context assembly (MMR, prefix docs, full | ccr_lite pack)
@@ -382,7 +403,10 @@ code-harness/
 │   ├── metrics.py                 Recall@k, nDCG@k, citation hit, failure taxonomy
 │   ├── llm.py                     LLM integration layer (OpenAI/Anthropic/Gemini/Ollama)
 │   └── utils.py                   Shared utilities (retry, import/export extraction)
-├── tests/                         Offline unit tests for eval metrics
+├── tests/                         Offline unit tests (eval, CCR, loop, KG, wiki)
+├── knowledge/
+│   ├── gloss/                     Human gloss notes (entity frontmatter)
+│   └── wiki/                      Generated OKF WikiPages (`wiki generate`)
 ├── visualizer/
 │   └── visualize.py               Embedding space visualization (PCA/t-SNE)
 └── .docs/

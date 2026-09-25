@@ -34,7 +34,7 @@ Mini-deepens for thin cards: [notes/](notes/).
 | 13 | ForgeCode | partial | P1 | deep-dive |
 | 14 | Code graph | partial | P1 | deep-dive |
 | 15 | TurboVec | gap | P1 | deep-dive |
-| 16 | OKF (Google SPEC) | gap | P0 | deep-dive |
+| 16 | OKF (Google SPEC) | partial | P0 | deep-dive |
 | 17 | AirLLM | reject | — | fusion-note |
 | 18 | Prompt→Loop→Graph | partial | P1 | deep-dive |
 | 19 | AI governance | gap | P1 | first-pass |
@@ -100,8 +100,8 @@ Mini-deepens for thin cards: [notes/](notes/).
 - **Links:** https://obsidian.md · Smart Connections · [notes/obsidian.md](notes/obsidian.md)
 - **Best stealable ideas:** (1) Human notes on graph nodes (gloss). (2) Export KG+notes as a markdown vault with wikilinks. (3) Local embeddings over notes (same embedder).
 - **Why it matters:** Accuracy (tribal knowledge); UX (navigable overlay); portability without forcing the Obsidian app.
-- **Map to module:** KG (gloss **done**); NEW vault export with wiki/OKF; visualizer (gloss UX **gap**).
-- **Status:** `partial` — gloss extract + boost + example `knowledge/gloss/context-builder.md` shipped. **Delta:** vault export, bidirectional viz, no Obsidian sync protocol.
+- **Map to module:** KG (gloss **done**); wiki vault (`knowledge/wiki/`) **partial**; visualizer (gloss UX **gap**).
+- **Status:** `partial` — gloss extract + boost + example `knowledge/gloss/context-builder.md` shipped; `wiki generate` writes a markdown vault with relative links. **Delta:** bidirectional viz, no Obsidian sync protocol.
 - **Fusion priority:** P1 if folded into wiki/OKF `knowledge/` tree; P2 viz-only.
 - **Evidence:** fusion-note
 
@@ -200,8 +200,8 @@ Mini-deepens for thin cards: [notes/](notes/).
 - **Links:** https://github.com/GoogleCloudPlatform/open-knowledge-format/blob/main/SPEC.md · repo + Cloud blog · Memanto is **implementer** · deep [../deep/okf.md](../deep/okf.md)
 - **Best stealable ideas:** (1) Markdown+YAML concepts, path identity, required `type`, preserve unknown keys. (2) `knowledge/` as prefix source. (3) `okf_version: "0.2"` + `x_codeharness` extensions.
 - **Why it matters:** Portability across Claude/Cursor/Memanto; git-diffable wiki/memory; tokens via brief pages vs chat logs.
-- **Map to module:** NEW `harness/okf.py`; memory + wiki emitters.
-- **Status:** `gap` — we inject three filenames, not a bundle. Attested Computation **out of scope**.
+- **Map to module:** `harness/okf.py` (WikiPage emit); memory + full import/export still NEW.
+- **Status:** `partial` — `wiki generate` writes SPEC v0.2 `WikiPage` markdown (`type`, path identity, `okf_version: "0.2"`, unknown-key round-trip, `x_codeharness`). **Delta:** typed memory files, `knowledge export|import`, prefix-load of all `knowledge/**/*.md`. Attested Computation **out of scope**.
 - **Fusion priority:** P0 (same wave as memory; wiki emits `WikiPage`)
 - **Evidence:** deep-dive
 
@@ -270,8 +270,8 @@ Mini-deepens for thin cards: [notes/](notes/).
 - **Links:** https://codewiki.google/ · https://developers.googleblog.com/en/introducing-code-wiki-accelerating-your-code-understanding/ · deep [../deep/google-code-wiki.md](../deep/google-code-wiki.md)
 - **Best stealable ideas:** (1) Incremental living wiki from the KG (template first, no LLM). (2) Every heading cites `path:symbol`. (3) Chat-over-wiki then CCR expand to source. (4) Diagrams from **edges**, not the model.
 - **Why it matters:** Accuracy (stable narrative + grounded links); tokens (summaries first); UX (`info --mermaid` already a precursor).
-- **Map to module:** KG Mermaid **done**; CLI `wiki generate` **gap**; system prompt cite style **partial** (paths/lines, not `path:symbol`); watch dirty-module regen **gap**.
-- **Status:** `partial`
+- **Map to module:** KG Mermaid **done**; CLI `wiki generate` / `list` / `show` **done** (template + OKF WikiPage + `path:symbol`); system prompt cite style **partial** (paths/lines, not `path:symbol`); watch dirty-module regen **gap**.
+- **Status:** `partial` — generator shipped. **Delta:** watch dirty-module regen; RRF `kind=wiki` boost (intentionally not in this PR); chat-over-wiki via CCR; LLM polish.
 - **Fusion priority:** P0
 - **Evidence:** deep-dive
 
@@ -290,7 +290,7 @@ Mini-deepens for thin cards: [notes/](notes/).
 
 Sources with the most **material delta** still on the table (not rejects):
 
-1. **Google Code Wiki + OKF** — wiki generate / interchange not started; Mermaid only.
+1. **Google Code Wiki + OKF** — `wiki generate` + WikiPage emit shipped; remaining: watch regen, RRF wiki boost, typed-memory interchange.
 2. **Memanto** — typed memory + supersession + brief unused.
 3. **Strands + Forge + Claurst** — session budget, `/compact`, `/cost`, sage profile.
 4. **Agent-Reach + Proxima + OpenHuman** — doctor, query cache, MCP/`POST /v1/retrieve`.

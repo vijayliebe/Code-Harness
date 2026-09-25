@@ -20,9 +20,9 @@ These notes go one level deeper than the per-source cards. Each one maps a **HIG
 | 13 | ForgeCode | [forgecode.md](forgecode.md) | read-only “sage” query profile, compact, knobs | **Partially fused** (pack knob) |
 | 14 | Code graph | [code-graph.md](code-graph.md) | `knowledge_graph.py` edges, gloss, beam expand | **Partially fused** (PR 4 slice) |
 | 15 | TurboVec | [turbovec.md](turbovec.md) | optional `vector_store` backend after recall eval | **Design-only** |
-| 16 | OKF (Google SPEC) | [okf.md](okf.md) | portable wiki/memory interchange (not a Memanto format) | **Design-only** |
+| 16 | OKF (Google SPEC) | [okf.md](okf.md) | portable wiki/memory interchange (not a Memanto format) | **Partially fused** (WikiPage emit) |
 | 18 | Prompt→Loop→Graph | [prompt-loop-graph-engineering.md](prompt-loop-graph-engineering.md) | graded retrieve loop in `retriever.py` / `main.py` | **Partially fused** (eval + loop) |
-| 23 | Google Code Wiki | [google-code-wiki.md](google-code-wiki.md) | incremental `wiki generate` + cite `path:symbol` | **Partially fused** (Mermaid only) |
+| 23 | Google Code Wiki | [google-code-wiki.md](google-code-wiki.md) | incremental `wiki generate` + cite `path:symbol` | **Partially fused** (`wiki generate` + Mermaid) |
 
 ## How to read
 

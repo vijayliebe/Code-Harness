@@ -15,7 +15,7 @@ This pack is a **map**, not a medal. Code-Harness is not yet the best hybrid cod
 | **Forge** | Terminal agent + hosted `:sync` | Local index, sage-shaped `--no-llm` / read-only query | Beat hosted search on privacy + hybrid recall; expose MCP retrieve so Forge can keep the TUI |
 | **Strands Harness** | Assembled agent factory, sessions, memory | Loop stop conditions + easy BM25 path | Steal session budget + memory *split*; do not vendor Bedrock defaults |
 | **Code-Graph-RAG / Memgraph** | Cypher + graph DB | NetworkX + exposes/tested_by/gloss + beam + Mermaid | Path templates + wiki, not a required graph server |
-| **Google Code Wiki** | Hosted living docs + grounded chat | Mermaid export, gloss, weak path cites | Template `wiki generate` + `path:symbol` + chat-over-wiki via CCR |
+| **Google Code Wiki** | Hosted living docs + grounded chat | Mermaid export, gloss, template `wiki generate` + `path:symbol` WikiPages | Chat-over-wiki via CCR; watch dirty-module regen |
 
 ## Non-goals
 

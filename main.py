@@ -485,6 +485,74 @@ def cmd_retrieve_chunk(args):
     print(text)
 
 
+def cmd_wiki(args):
+    from harness.okf import default_wiki_dir
+    from harness.wiki import MissingGraphError, generate_from_repo, list_pages, show_page
+
+    action = getattr(args, "wiki_cmd", None)
+    if not action:
+        parser = getattr(args, "wiki_parser", None)
+        if parser is not None:
+            parser.print_help()
+        else:
+            print("usage: main.py wiki {generate,list,show}")
+        sys.exit(2)
+
+    repo = getattr(args, "repo", None) or "."
+    config = _load_config(args)
+    config.repo_path = os.path.abspath(repo)
+    repo_name = _derive_repo_name(args)
+    out_dir = getattr(args, "out", None) or default_wiki_dir(config.repo_path)
+
+    if action == "generate":
+        try:
+            result = generate_from_repo(
+                config.repo_path,
+                config=config,
+                repo_name=repo_name,
+                out_dir=out_dir,
+                graph_path=getattr(args, "graph", None),
+                module=getattr(args, "module", None),
+            )
+        except MissingGraphError as exc:
+            print(f"[!] {exc}")
+            sys.exit(1)
+        print(f"[*] Wiki generate: {result.page_count} pages → {result.wiki_dir}")
+        for name in result.pages:
+            print(f"    {name}")
+        if result.citations:
+            print(f"[*] Sample cite: `{result.citations[0]}`")
+        if result.mermaid_pages:
+            print(f"[*] Mermaid on: {', '.join(result.mermaid_pages)}")
+        print("[+] Wiki written")
+        return
+
+    if action == "list":
+        try:
+            pages = list_pages(out_dir)
+        except FileNotFoundError as exc:
+            print(f"[!] {exc}")
+            sys.exit(1)
+        if not pages:
+            print(f"[!] No wiki pages in {out_dir}")
+            print(f"    Run: python main.py wiki generate {repo}")
+            return
+        print(f"[*] Wiki pages in {out_dir}")
+        for item in pages:
+            kind = f" ({item['type']})" if item.get("type") else ""
+            print(f"    {item['path']}: {item['title']}{kind}")
+        return
+
+    if action == "show":
+        try:
+            text = show_page(out_dir, args.page)
+        except FileNotFoundError as exc:
+            print(f"[!] {exc}")
+            sys.exit(1)
+        print(text)
+        return
+
+
 def _add_pack_flags(parser):
     parser.add_argument(
         "--pack-mode",
@@ -828,6 +896,9 @@ Examples:
    %(prog)s index ./my-project --embed-model all-MiniLM-L6-v2
    %(prog)s info ./my-project                             # Show repo stats
    %(prog)s info ./my-project --mermaid --focus class:harness/context_builder.py:ContextBuilder
+   %(prog)s wiki generate ./my-project                    # Living wiki from the KG
+   %(prog)s wiki list ./my-project
+   %(prog)s wiki show architecture
    %(prog)s watch ./my-project                            # Watch and auto re-index
   %(prog)s eval . --suite .docs/research/eval/code-harness.fixture.yaml
   %(prog)s eval . --suite .docs/research/eval/code-harness.fixture.yaml --loop
@@ -942,6 +1013,55 @@ Examples:
         help="CCR cache directory (default: .code-harness/ccr)",
     )
     rc.set_defaults(func=cmd_retrieve_chunk)
+
+    wiki = subparsers.add_parser(
+        "wiki",
+        help="Generate and inspect a living project wiki (OKF WikiPage)",
+    )
+    wiki.set_defaults(func=cmd_wiki, wiki_parser=wiki)
+    wiki_sub = wiki.add_subparsers(dest="wiki_cmd")
+
+    wiki_gen = wiki_sub.add_parser(
+        "generate",
+        help="Write OKF WikiPage markdown from the knowledge graph",
+    )
+    wiki_gen.add_argument("repo", nargs="?", default=".", help="Repository path")
+    wiki_gen.add_argument(
+        "--out",
+        default=None,
+        help="Wiki directory (default: <repo>/knowledge/wiki)",
+    )
+    wiki_gen.add_argument(
+        "--graph",
+        default=None,
+        help="Override path to graph_{repo}.json",
+    )
+    wiki_gen.add_argument(
+        "--module",
+        default=None,
+        metavar="PKG_OR_PATH",
+        help="Regenerate one package page (plus architecture index)",
+    )
+    wiki_gen.set_defaults(func=cmd_wiki)
+
+    wiki_list = wiki_sub.add_parser("list", help="List generated wiki pages")
+    wiki_list.add_argument("repo", nargs="?", default=".", help="Repository path")
+    wiki_list.add_argument(
+        "--out",
+        default=None,
+        help="Wiki directory (default: <repo>/knowledge/wiki)",
+    )
+    wiki_list.set_defaults(func=cmd_wiki)
+
+    wiki_show = wiki_sub.add_parser("show", help="Print one wiki page")
+    wiki_show.add_argument("page", help="Page name (e.g. architecture or harness.md)")
+    wiki_show.add_argument("repo", nargs="?", default=".", help="Repository path")
+    wiki_show.add_argument(
+        "--out",
+        default=None,
+        help="Wiki directory (default: <repo>/knowledge/wiki)",
+    )
+    wiki_show.set_defaults(func=cmd_wiki)
 
     args = parser.parse_args()
 
