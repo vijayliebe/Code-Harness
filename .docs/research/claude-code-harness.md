@@ -21,8 +21,8 @@
 
 ## Reject / later
 
-- Event-sourced session log.
-- Prefix packing / retrieve-pre-step / session FTS.
+- Event-sourced session log + prefix-stable packing (DeepSeek #25 — **shipped opt-in** on the sibling card).
+- Retrieve-pre-step / session FTS.
 - LLM compact of user/assistant prose.
 - Changing retrieval defaults or flipping TurboVec.
 

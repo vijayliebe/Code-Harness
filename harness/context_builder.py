@@ -20,6 +20,7 @@ class ContextReport:
     prompt_tokens_full: int = 0
     prompt_tokens_packed: int = 0
     prefix_hash: str = ""
+    prefix_bytes: str = ""
     omitted_chunk_ids: List[str] = field(default_factory=list)
     redaction_count: int = 0
 
@@ -84,12 +85,22 @@ class ContextBuilder:
         multiplier = float(context_cfg.get("max_tokens_multiplier") or 2)
         self.max_context_tokens = int(config.llm.get("max_tokens", 4096) * multiplier)
         self.cache = self._make_cache()
+        self._prefix_freeze = None
 
     @property
     def pack_mode(self) -> str:
         context_cfg = getattr(self.config, "context", None) or {}
         mode = str(context_cfg.get("pack_mode") or "full").strip().lower()
         return mode if mode in ("full", "ccr_lite") else "full"
+
+    @property
+    def prefix_stable(self) -> bool:
+        context_cfg = getattr(self.config, "context", None) or {}
+        return bool(context_cfg.get("prefix_stable"))
+
+    def bind_prefix_freeze(self, freeze) -> None:
+        """Reuse a session-route freeze so later packs keep prefix bytes identical."""
+        self._prefix_freeze = freeze
 
     def _make_cache(self) -> CCRCache:
         ccr = getattr(self.config, "ccr", None) or {}
@@ -192,6 +203,9 @@ class ContextBuilder:
                 chunk_ids=packed_ids,
                 tokens=tokens,
             )
+        prefix_bytes, prefix_hash = self._prefix_snapshot(
+            project_docs, memory_brief, knowledge_prefix
+        )
         return ContextReport(
             context=context,
             prompt_tokens=tokens,
@@ -201,7 +215,8 @@ class ContextBuilder:
             pack_mode=self.pack_mode,
             prompt_tokens_full=tokens_full,
             prompt_tokens_packed=tokens_packed,
-            prefix_hash=_prefix_hash(project_docs, memory_brief + knowledge_prefix),
+            prefix_hash=prefix_hash,
+            prefix_bytes=prefix_bytes,
             omitted_chunk_ids=omitted_ids,
             redaction_count=chosen.count,
         )
@@ -256,11 +271,40 @@ class ContextBuilder:
         names = context_cfg.get("prefix_files") or CONTEXT_FILE_NAMES
         return _find_context_files(repo_root, names)
 
+    def _prefix_snapshot(
+        self,
+        project_docs: Dict[str, str],
+        memory_brief: str,
+        knowledge_prefix: str,
+    ):
+        freeze = getattr(self, "_prefix_freeze", None)
+        if freeze is not None:
+            return freeze.blob, freeze.digest
+        if not self.prefix_stable:
+            return "", _prefix_hash(project_docs, memory_brief + knowledge_prefix)
+        from .prefix import assemble_prefix, freeze_tool_schemas, prefix_digest
+
+        context_cfg = getattr(self.config, "context", None) or {}
+        blob = assemble_prefix(
+            system=self.build_system_prompt(),
+            tools_blob=freeze_tool_schemas(),
+            project_docs=project_docs,
+            prefix_files=context_cfg.get("prefix_files") or CONTEXT_FILE_NAMES,
+            memory_brief=memory_brief,
+            knowledge_prefix=knowledge_prefix,
+        )
+        return blob, prefix_digest(blob)
+
     def _load_memory_brief(self, query: str) -> str:
         """Opt-in typed-memory prefix. Default off so the query path is unchanged."""
+        freeze = getattr(self, "_prefix_freeze", None)
+        if freeze is not None:
+            return freeze.memory_brief
         context_cfg = getattr(self.config, "context", None) or {}
         if not context_cfg.get("include_memory_brief"):
             return ""
+        if self.prefix_stable:
+            query = ""
         try:
             from .memory import BRIEF_TOKEN_CAP, MemoryStore
 
@@ -287,6 +331,9 @@ class ContextBuilder:
 
     def _load_knowledge_prefix(self, query: str, occupied_paths: Optional[List[str]] = None) -> str:
         """Opt-in knowledge/** prefix. Default off so eval/query stay unchanged."""
+        freeze = getattr(self, "_prefix_freeze", None)
+        if freeze is not None:
+            return freeze.knowledge
         context_cfg = getattr(self.config, "context", None) or {}
         if not context_cfg.get("knowledge_prefix"):
             return ""
@@ -299,12 +346,19 @@ class ContextBuilder:
 
             docs = load_knowledge_docs(self.config.repo_path or ".")
             cap = int(context_cfg.get("knowledge_token_budget") or KNOWLEDGE_PREFIX_TOKEN_BUDGET)
+            skip_memory = bool(context_cfg.get("include_memory_brief"))
+            if self.prefix_stable:
+                from .prefix import pack_stable_knowledge_prefix
+
+                return pack_stable_knowledge_prefix(
+                    docs, max_tokens=cap, skip_memory=skip_memory
+                )
             return pack_knowledge_prefix(
                 docs,
                 query=query or "",
                 max_tokens=cap,
                 occupied_paths=occupied_paths,
-                skip_memory=bool(context_cfg.get("include_memory_brief")),
+                skip_memory=skip_memory,
             )
         except Exception:
             return ""
@@ -622,6 +676,9 @@ class ContextBuilder:
         return "\n".join(sections)
 
     def build_system_prompt(self) -> str:
+        freeze = getattr(self, "_prefix_freeze", None)
+        if freeze is not None and getattr(freeze, "system", None):
+            return freeze.system
         from .session import CITATION_INSTRUCTION as SESSION_CITE
 
         cite = SESSION_CITE

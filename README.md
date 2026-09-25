@@ -67,7 +67,7 @@ python main.py session ./my-project --profile sage
 python main.py interactive --cross-repo ./my-project   # same command
 ```
 
-Turns are stored as JSONL under `.code-harness/sessions/` (ephemeral dialogue — not typed memory and not the code index). `/compact` is extractive conversation compression (keep user lines + the latest pack ids); it is not the CCR packer. Opt-in **tool-result clearing** (`--clear-tool-results`, `CODEHARNESS_CLEAR_TOOL_RESULTS=1`, or `session.clear_tool_results`) replaces aged retrieve/`tool_result` dumps with short placeholders that keep `chunk_id` / path / tool+args so `/expand` and `retrieve_chunk` still work. Opt-in **default-fail verify gate** (`--verify`, `CODEHARNESS_SESSION_VERIFY=1`, or `session.verify`) starts completion criteria all-false; the builder cannot mark them true. `/verify` runs an independent read-only checker (file / command / contains / coverage first; LLM only as fallback). `/done` is refused until the gate is green unless you pass `--force-done` or `/done --force`. **Both default off.** `/compact` runs clearing as a micro-step only when the flag is on; `/clear-tool-results` is the explicit slash. `/cost` prints packed vs full prompt tokens, completion tokens, loop attempts, query-cache hit/miss when `--query-cache` is on, **tool-result tokens freed** when clearing fires, and approx $ when `llm.input_usd_per_1m` / `llm.output_usd_per_1m` are set. Without an LLM key the session still retrieves, packs, and prints context.
+Turns are stored as JSONL under `.code-harness/sessions/` (ephemeral dialogue — not typed memory and not the code index). Default files stay the mixed `event: turn` log. Opt-in **event-sourced session** (`--event-session`, `CODEHARNESS_EVENT_SESSION=1`, or `session.event_session`) appends typed events (`user` / `assistant` / `tool_use` / `tool_result` / `system` / `compact` / `clear` / `verify` / `meta`); model history is **derived** (`derive_messages`) so `/compact` and tool-result clearing are events, not a rewrite of the only copy. Resume reloads the log and re-derives. The flag implies **prefix-stable packing** (`context.prefix_stable` / `--prefix-stable`): system sections + sorted tool schemas + path-stable knowledge prefix stay byte-identical across packs; volatile hits last. **Default off.** `/compact` is extractive conversation compression (keep user lines + the latest pack ids); it is not the CCR packer. Opt-in **tool-result clearing** (`--clear-tool-results`, `CODEHARNESS_CLEAR_TOOL_RESULTS=1`, or `session.clear_tool_results`) replaces aged retrieve/`tool_result` dumps with short placeholders that keep `chunk_id` / path / tool+args so `/expand` and `retrieve_chunk` still work. Opt-in **default-fail verify gate** (`--verify`, `CODEHARNESS_SESSION_VERIFY=1`, or `session.verify`) starts completion criteria all-false; the builder cannot mark them true. `/verify` runs an independent read-only checker (file / command / contains / coverage first; LLM only as fallback). `/done` is refused until the gate is green unless you pass `--force-done` or `/done --force`. **Both default off.** `/compact` runs clearing as a micro-step only when the flag is on; `/clear-tool-results` is the explicit slash. `/cost` prints packed vs full prompt tokens, completion tokens, loop attempts, query-cache hit/miss when `--query-cache` is on, **tool-result tokens freed** when clearing fires, and approx $ when `llm.input_usd_per_1m` / `llm.output_usd_per_1m` are set. Without an LLM key the session still retrieves, packs, and prints context.
 
 `--profile sage` (or `CODEHARNESS_PROFILE=sage`, or `/profile sage`) is a flag pack: `pack_mode=ccr_lite`, `max_loops=1`, larger graph expand, higher pack budget. It does **not** retune RRF weights. One-shot `query` stays unchanged unless you pass `--profile`.
 
@@ -449,7 +449,8 @@ Key settings:
     "include_memory_brief": false,
     "include_memory_search": false,
     "knowledge_prefix": false,
-    "knowledge_token_budget": 800
+    "knowledge_token_budget": 800,
+    "prefix_stable": false
   },
   "ccr": {
     "first_lines": 12,
@@ -465,7 +466,8 @@ Key settings:
     "clear_tool_token_trigger": 0,
     "verify": false,
     "force_done": false,
-    "criteria": []
+    "criteria": [],
+    "event_session": false
   },
   "chat": {
     "wiki_mode": false
@@ -509,6 +511,8 @@ Global flags:
 | `--query-cache` | Opt-in retrieve/pack cache for `query` / `chat` / `eval` (default off). Env: `CODEHARNESS_QUERY_CACHE=1`. `--no-query-cache` disables. Serve stays default-on (`--no-cache`). |
 | `--clear-tool-results` | Opt-in session retrieve/tool dump clearing (default off). Env: `CODEHARNESS_CLEAR_TOOL_RESULTS=1`. Knobs: `--clear-tool-keep`, `--clear-tool-token-trigger`. |
 | `--verify` | Query: independent citation check. Chat/session/eval: also the default-fail completion gate (`session.verify`). Env: `CODEHARNESS_SESSION_VERIFY=1`. Override: `--force-done` / `/done --force`. |
+| `--event-session` | Opt-in append-only session events + `derive_messages` (default off). Env: `CODEHARNESS_EVENT_SESSION=1`. Implies prefix-stable packing. `--no-event-session` disables. |
+| `--prefix-stable` | Freeze system/tool/knowledge prefix bytes (default off; implied by `--event-session`). Env: `CODEHARNESS_PREFIX_STABLE=1`. |
 
 ## Embedding Providers
 

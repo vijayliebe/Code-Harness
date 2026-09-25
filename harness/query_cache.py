@@ -237,6 +237,7 @@ def make_cache_key(
                 "include_memory_search": bool(ctx.get("include_memory_search")),
                 "knowledge_prefix": bool(ctx.get("knowledge_prefix")),
                 "knowledge_token_budget": ctx.get("knowledge_token_budget"),
+                "prefix_stable": bool(ctx.get("prefix_stable")),
                 "backend": normalize_backend_name(vs.get("type", "chromadb")),
             },
             "packer": {
