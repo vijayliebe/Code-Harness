@@ -303,7 +303,7 @@ def cmd_interactive(args):
     print("=" * 60)
     print("  Code Harness - Interactive Session")
     print(f"  profile={session.profile}  pack={context_builder.pack_mode}")
-    print("  /help /compact /cost /profile /exit")
+    print("  /help /compact /cost /profile /memory extract /exit")
     print("=" * 60)
     print()
 
@@ -353,11 +353,18 @@ def cmd_interactive(args):
             if result.memory_brief:
                 _print_memory_brief(config)
                 continue
+            if result.memory_extract:
+                _run_memory_extract(
+                    session, config, dry_run=result.dry_run, invoked=True
+                )
+                continue
             if result.wiki_page:
                 _print_wiki_page(config, result.wiki_page)
                 continue
             if result.message:
                 print(result.message)
+            if result.kind == "compact":
+                _maybe_auto_extract_session(session, config)
             continue
 
         from harness.loop import LoopConfig, QueryLoop, verify_answer
@@ -434,6 +441,49 @@ def cmd_interactive(args):
             )
         )
         print()
+
+    _maybe_auto_extract_session(session, config)
+
+
+def _run_memory_extract(session, config, *, dry_run=False, invoked=False):
+    from harness.memory import MemoryStore
+    from harness.memory_extract import format_extract, run_extract, turns_from_session
+
+    store = MemoryStore.for_repo(
+        config.repo_path or ".",
+        memory_dir=(config.context or {}).get("memory_dir") or None,
+    )
+    result = run_extract(
+        turns=turns_from_session(session),
+        store=store,
+        dry_run=bool(dry_run),
+        invoked=bool(invoked),
+        auto=False,
+        config=config,
+        use_llm=bool((getattr(config, "memory", None) or {}).get("llm_refine")),
+    )
+    print(format_extract(result))
+    return result
+
+
+def _maybe_auto_extract_session(session, config):
+    from harness.memory import MemoryStore
+    from harness.memory_extract import (
+        auto_extract_enabled,
+        format_extract,
+        maybe_auto_extract,
+    )
+
+    if not auto_extract_enabled(config):
+        return None
+    store = MemoryStore.for_repo(
+        config.repo_path or ".",
+        memory_dir=(config.context or {}).get("memory_dir") or None,
+    )
+    result = maybe_auto_extract(store=store, config=config, session=session)
+    if result.candidates or result.written:
+        print(format_extract(result))
+    return result
 
 
 def cmd_info(args):
@@ -672,7 +722,7 @@ def cmd_memory(args):
         if parser is not None:
             parser.print_help()
         else:
-            print("usage: main.py memory {add,list,brief,export,import}")
+            print("usage: main.py memory {add,list,brief,export,import,extract}")
         sys.exit(2)
 
     repo = getattr(args, "repo", None) or "."
@@ -750,6 +800,47 @@ def cmd_memory(args):
                 sys.exit(2)
             count = store.import_okf(src)
             print(f"[+] Imported {count} OKF concept(s) → {memory_dir}")
+            return
+
+        if action == "extract":
+            from harness.memory_extract import (
+                format_extract,
+                latest_session_path,
+                load_session_jsonl,
+                resolve_session_dir,
+                run_extract,
+            )
+
+            session_path = getattr(args, "session", None)
+            if not session_path:
+                session_path = latest_session_path(
+                    resolve_session_dir(config.repo_path, config)
+                )
+            if not session_path or not os.path.isfile(session_path):
+                print("[!] No session JSONL found. Pass --session path")
+                return
+            turns = load_session_jsonl(session_path)
+            use_llm = bool(
+                getattr(args, "use_llm", False)
+                or (getattr(config, "memory", None) or {}).get("llm_refine")
+            )
+            llm = None
+            if use_llm:
+                from harness.llm import LLMInterface
+
+                llm = LLMInterface(config)
+            result = run_extract(
+                turns=turns,
+                store=store,
+                dry_run=bool(getattr(args, "dry_run", False)),
+                invoked=True,
+                use_llm=use_llm,
+                llm=llm,
+                config=config,
+            )
+            print(format_extract(result, session_path=session_path))
+            if not result.candidates:
+                print("[!] No durable memory candidates")
             return
     except MemoryError as exc:
         print(f"[!] {exc}")
@@ -1770,6 +1861,35 @@ Examples:
         help="Memory directory (default: <repo>/knowledge/memory)",
     )
     mem_import.set_defaults(func=cmd_memory)
+
+    mem_extract = mem_sub.add_parser(
+        "extract",
+        help="Heuristic extract from a session JSONL (or last session)",
+    )
+    mem_extract.add_argument("repo", nargs="?", default=".", help="Repository path")
+    mem_extract.add_argument(
+        "--session",
+        default=None,
+        help="Session or query-trace JSONL (default: latest under session.dir)",
+    )
+    mem_extract.add_argument(
+        "--dry-run",
+        action="store_true",
+        dest="dry_run",
+        help="Print candidates without writing memory files",
+    )
+    mem_extract.add_argument(
+        "--llm",
+        action="store_true",
+        dest="use_llm",
+        help="Optional LLM refine (no-ops without a key)",
+    )
+    mem_extract.add_argument(
+        "--dir",
+        default=None,
+        help="Memory directory (default: <repo>/knowledge/memory)",
+    )
+    mem_extract.set_defaults(func=cmd_memory)
 
     audit = subparsers.add_parser(
         "audit",

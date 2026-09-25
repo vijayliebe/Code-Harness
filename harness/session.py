@@ -46,6 +46,7 @@ HELP_TEXT = """Commands:
   /profile default|sage    Switch pack/expand profile (does not retune RRF)
   /expand <id|path:symbol> Print a cached chunk (alias: /retrieve)
   /memory brief            Dump the typed memory brief
+  /memory extract          Heuristic extract → typed memory (add --dry-run)
   /wiki <page>             Show a generated wiki page
   /llm on|off              Enable/disable LLM responses
   /context                 Show the last retrieved context
@@ -115,6 +116,8 @@ class CommandResult:
     expand_ref: Optional[str] = None
     wiki_page: Optional[str] = None
     memory_brief: bool = False
+    memory_extract: bool = False
+    dry_run: bool = False
     llm: Optional[bool] = None
     clear_screen: bool = False
 
@@ -568,13 +571,22 @@ def handle_slash(session: Session, command: SlashCommand) -> CommandResult:
             )
         return CommandResult(kind="expand", message="", expand_ref=command.args)
     if kind == "memory":
-        action = (command.args or "brief").split(None, 1)[0].lower()
-        if action != "brief":
+        parts = (command.args or "brief").split()
+        action = (parts[0] if parts else "brief").lower()
+        if action == "brief":
+            return CommandResult(kind="memory", message="", memory_brief=True)
+        if action == "extract":
+            dry = any(p in ("--dry-run", "dry-run") for p in parts[1:])
             return CommandResult(
-                kind="unknown",
-                message="[!] Usage: /memory brief",
+                kind="memory_extract",
+                message="",
+                memory_extract=True,
+                dry_run=dry,
             )
-        return CommandResult(kind="memory", message="", memory_brief=True)
+        return CommandResult(
+            kind="unknown",
+            message="[!] Usage: /memory brief | /memory extract [--dry-run]",
+        )
     if kind == "wiki":
         page = (command.args or "").strip()
         if not page:
