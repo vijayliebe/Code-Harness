@@ -14,7 +14,7 @@ Order is RAG-quality first (Recall@k, citation-path, tokens), then ops/distribut
 | **2** | **Typed memory + OKF import/export** — `decision`/`error`/`preference`/`fact`, supersede, `memory brief` ≤800 tokens in the semi-stable prefix. *(store + CLI + brief + OKF round-trip + heuristic `memory extract` + whole-vault `knowledge export|import` shipped; `memory.auto_extract` default off; packer inject is opt-in / default-off)* | M | Memanto #5, OKF #16 | PR 1’s `okf.py` *or* land parser in this PR and have wiki call it |
 | **3** | **Interactive session + `/compact` + `/cost`** — JSONL session, budget never drops latest pack, heuristic compact, print packed/full tokens + loop attempts. Tiny: `--profile sage` flag pack + `path:symbol` system line + `expand_on=explain`. *(session + slash cmds + sage + cite line shipped; LLM compact / eval session fixture still open)* | M | Strands #3, Forge #13, Claurst #2, Loop #18, Headroom remainder #1 | None (CCR/loop exist) |
 | **4** | **Secret redaction + audit JSONL** — strip key/token patterns before assemble; append query/chunk_ids/tokens/model. *(redact + audit JSONL + `audit show` shipped; optional max-token hard stop still open)* | S | Governance #19, Proxima `analyze_file` strip | None. **Do this before binding a network port** |
-| **5** | **`doctor` + `mcp serve` / `POST /v1/retrieve`** — probe embed/LLM with ordered fallbacks; expose `retrieve`, `retrieve_chunk`, `graph_neighbors`. Optional SQLite query-hash cache. *(`doctor` + localhost HTTP/MCP + bind guard + redacted bodies + optional query-hash cache shipped; no stdio MCP / no public bind without `--allow-public`)* | L (or S doctor + M serve) | Agent-Reach #11, OpenHuman #8, Proxima #9, Forge #13 | PR 4 preferred. Query cache can split as S |
+| **5** | **`doctor` + `mcp serve` / `mcp stdio` / `POST /v1/retrieve`** — probe embed/LLM with ordered fallbacks; expose `retrieve`, `retrieve_chunk`, `graph_neighbors`. Optional SQLite query-hash cache. *(`doctor` + localhost HTTP/MCP + **stdio MCP** + bind guard + redacted bodies + optional query-hash cache shipped; no public bind without `--allow-public`)* | L (or S doctor + M serve) | Agent-Reach #11, OpenHuman #8, Proxima #9, Forge #13 | PR 4 preferred. Query cache can split as S |
 
 **Immediately after these (not in the 5):** grow the eval hard-set (LLM-in-production #20); TurboVec default flip after recall gates (#15, protocol+opt-in+A/B shipped); Jina/`index-url` (#11/#22, P2); path templates + `calls` quality (#14).
 
@@ -62,12 +62,12 @@ Order is RAG-quality first (Recall@k, citation-path, tokens), then ops/distribut
 - **Risk / complexity / local-first:** Low. False-positive redaction of example keys in *this* repo’s tests — allowlist fixtures. No OPA. Repo scan of harness/docs only hit `tests/test_redact.py` fixtures.
 - **PR size / deps:** S. Before G5. Shipped.
 
-### G5. Doctor + retrieve API + MCP (P1) — done (remainder: stdio MCP / eval-path cache)
+### G5. Doctor + retrieve API + MCP (P1) — done (remainder: eval-path cache)
 
 - **Steal:** Agent-Reach channel probe; OpenHuman/Forge MCP tools; Proxima OpenAI-shaped local HTTP (**retrieve**, not their chat gateway).
 - **Sources:** #11, #8, #13, #9
-- **Shipped:** `python main.py doctor` (Python/deps/index/graph/embed/redact/audit/LLM-key; no network; actionable hints; exit 1 on required fails). `python main.py serve` / `mcp serve` / `api serve` bind **127.0.0.1** (`GET /health`, `POST /v1/retrieve`, `POST /mcp`). MCP tools: `retrieve`, `retrieve_chunk`, `doctor`, `wiki_show`, `memory_brief`, `graph_neighbors`. Bodies go through `redact_and_audit`. `--allow-public` is the documented dangerous all-interfaces opt-in (no auth). Optional SQLite query-hash cache. Same `Retriever` + pack/loop flags as CLI. Does not start on import.
-- **Change:** Problem — other agents cannot use our index; embed/LLM failures are silent. Outcome — remaining: stdio MCP transport; query cache on eval/interactive (serve-path only today); live embed ping (intentionally skipped — no network).
+- **Shipped:** `python main.py doctor` (Python/deps/index/graph/embed/redact/audit/LLM-key; no network; actionable hints; exit 1 on required fails). `python main.py serve` / `mcp serve` / `api serve` bind **127.0.0.1** (`GET /health`, `POST /v1/retrieve`, `POST /mcp`). `python main.py mcp stdio` (also `mcp serve --stdio`) speaks the same JSON-RPC tool surface on stdin/stdout with **no network bind**; logs on stderr. MCP tools: `retrieve`, `retrieve_chunk`, `doctor`, `wiki_show`, `memory_brief`, `graph_neighbors`. Bodies go through `redact_and_audit`. `--allow-public` is the documented dangerous all-interfaces opt-in (no auth). Optional SQLite query-hash cache. Same `Retriever` + pack/loop flags as CLI. Does not start on import.
+- **Change:** Problem — other agents cannot use our index; embed/LLM failures are silent. Outcome — remaining: query cache on eval/interactive (serve-path only today); live embed ping (intentionally skipped — no network). Stdio MCP **done**.
 - **Metric move:** Product/latency for *clients*; eval Recall@k of the retrieve endpoint **equals** CLI `eval` (same `Retriever`). Doctor: no metric, contract tests. Optional query cache: p50 **down** on second suite pass, Recall@k identical.
 - **Risk / complexity / local-first:** Medium–high (serve). Bind localhost default. No hosted `:sync`. Redaction (G4) runs on the serve path.
 - **PR size / deps:** L, or split doctor S + serve M. Depends on G4. Shipped.
@@ -131,7 +131,7 @@ Order is RAG-quality first (Recall@k, citation-path, tokens), then ops/distribut
 
 - **Steal:** Proxima SQLite sidecar (only the retrieve cache, not four memory DBs).
 - **Sources:** #9
-- **Shipped:** `.code-harness/query_cache.sqlite` on `serve` / `mcp serve` / `api serve` (`--no-cache` to disable). Key includes query, repo, embed model, retrieval snapshot, pack mode, index fingerprint (chroma/graph mtime).
+- **Shipped:** `.code-harness/query_cache.sqlite` on `serve` / `mcp serve` / `mcp stdio` / `api serve` (`--no-cache` to disable). Key includes query, repo, embed model, retrieval snapshot, pack mode, index fingerprint (chroma/graph mtime).
 - **Change:** Problem — repeated interactive/eval questions re-embed. Outcome — remaining: wire the same cache into `query` / `eval` / interactive.
 - **Metric move:** p50 **down** on warm second `eval` pass; Recall@k identical (assert).
 - **Risk / complexity / local-first:** Low if keyed on full config snapshot (already in eval JSON).

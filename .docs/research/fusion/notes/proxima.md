@@ -23,7 +23,7 @@ Do **not** steal: browser session emulation, 40 MCP chat tools, crew/consensus m
 | Steal | Status | Module |
 |-------|--------|--------|
 | Corrective retrieve loop | **done** (`harness/loop.py`, opt-in `--loop`) | query loop |
-| `POST /v1/retrieve` + MCP retrieve | **done** (`serve` / `mcp serve`, 127.0.0.1) | `harness/serve.py` |
+| `POST /v1/retrieve` + MCP retrieve | **done** (`serve` / `mcp serve` on 127.0.0.1; `mcp stdio` no bind) | `harness/serve.py` |
 | SQLite `(query_hash, repo, config) → chunk_ids` | **partial** — serve path only | `QueryCache` beside Chroma |
 | Secret strip on assemble | **done** (`harness/redact.py`, default-on pack/LLM) | context builder |
 | Browser session LLM routing | **reject** — ToS + not retrieval | — |

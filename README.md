@@ -220,6 +220,36 @@ curl -s http://127.0.0.1:7432/v1/retrieve \
 
 Does **not** start on import. Index stays on disk; this is not Forge hosted `:sync` and not a cloud deploy.
 
+### `mcp stdio` — IDE MCP over stdin/stdout
+
+Same tool surface as `POST /mcp`, but JSON-RPC on **stdin/stdout** (no port, no bind). Status logs go to **stderr** so stdout stays protocol-only. Index the repo first (`python main.py index .`).
+
+```bash
+python main.py mcp stdio .
+python main.py mcp serve --stdio .
+python main.py mcp --stdio
+```
+
+Wire Cursor / other MCP hosts to the subprocess (not `http://127.0.0.1:7432/mcp`):
+
+```json
+{
+  "mcpServers": {
+    "code-harness": {
+      "command": "python3",
+      "args": [
+        "/absolute/path/to/code-harness/main.py",
+        "mcp",
+        "stdio",
+        "/absolute/path/to/your-indexed-repo"
+      ]
+    }
+  }
+}
+```
+
+Cursor: Settings → MCP → add the server above (or merge into `~/.cursor/mcp.json`). Claude Desktop uses the same `mcpServers` shape in its config file. The process must be able to import this repo (`cwd` can be the harness checkout or the target repo; pass an absolute `main.py`). Outbound tool payloads still go through `redact_and_audit`.
+
 ### `audit` — Secret redaction log
 
 Outbound packed/LLM text is redacted by default (API keys, tokens, PEM blocks, `.env` assignments, Bearer headers, connection-string passwords). Session JSONL and chat prints use the same helper. Wiki generate strips env-like echoes. Memory brief/export redact only when `--redact` is passed.

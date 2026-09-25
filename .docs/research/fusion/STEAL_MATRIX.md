@@ -121,8 +121,8 @@ Mini-deepens for thin cards: [notes/](notes/).
 - **Best stealable ideas:** (1) MCP tools `retrieve` / `retrieve_chunk` / `memory.search`. (2) Privacy-mode story (local embed + local LLM). TokenJuice ≈ CCR (already). Memory Tree ≈ OKF+gloss (build ours, don’t take GPL core).
 - **Why it matters:** Distribution (other agents bring the loop). Local-first UX. Tokens already covered by packer.
 - **Map to module:** NEW MCP/CLI serve; doctor; memory/wiki (shared with #5/#16/#23).
-- **Status:** `partial` — localhost MCP tools `retrieve` / `retrieve_chunk` / `doctor` / `wiki_show` / `memory_brief` / `graph_neighbors` shipped (`python main.py mcp serve`, `POST /mcp`). Documented loopback-only profile. Desktop/OAuth/A2A **reject**.
-- **Fusion priority:** P1 (MCP with Forge/Proxima). **Delta:** no stdio MCP transport; HTTP JSON-RPC on 127.0.0.1 is the v1 surface.
+- **Status:** `partial` — MCP tools `retrieve` / `retrieve_chunk` / `doctor` / `wiki_show` / `memory_brief` / `graph_neighbors` shipped on localhost HTTP (`python main.py mcp serve`, `POST /mcp`) **and** stdio (`python main.py mcp stdio`). Documented loopback-only HTTP profile. Desktop/OAuth/A2A **reject**.
+- **Fusion priority:** P1 (MCP with Forge/Proxima). **Delta:** Desktop/OAuth/A2A remain reject; HTTP stays loopback-only. Stdio transport **done**.
 - **Evidence:** fusion-note
 
 ## 9. Proxima
@@ -170,9 +170,9 @@ Mini-deepens for thin cards: [notes/](notes/).
 - **Links:** https://github.com/tailcallhq/forgecode · https://forgecode.dev · deep [../deep/forgecode.md](../deep/forgecode.md)
 - **Best stealable ideas:** (1) Read-only **sage** profile (flag pack, not a new runtime). (2) Conversation `:compact` ≠ retrieval packer. (3) Env knobs for top_k / pack / loops. (4) Local index as `:sync` replacement via MCP.
 - **Why it matters:** UX clarity; tokens; **privacy** vs hosted `api.forgecode.dev`. We win as the better local indexer.
-- **Map to module:** CLI `--profile sage` **done**; env `CODEHARNESS_PACK_MODE` **done**; `/compact` **done**; MCP **done** (`mcp serve` / `POST /mcp` retrieve tools).
-- **Status:** `partial` — sage flag pack + conversation compact + localhost MCP retrieve shipped. Stay CLI-RAG; do not build Rust TUI / muse / sandbox worktrees. Hosted `:sync` **reject**.
-- **Fusion priority:** P1 sage+compact with session **shipped**; P1 MCP with OpenHuman/Proxima **shipped**. Remainder: caveman prompt.
+- **Map to module:** CLI `--profile sage` **done**; env `CODEHARNESS_PACK_MODE` **done**; `/compact` **done**; MCP **done** (`mcp serve` / `mcp stdio` / `POST /mcp` retrieve tools).
+- **Status:** `partial` — sage flag pack + conversation compact + localhost HTTP + stdio MCP retrieve shipped. Stay CLI-RAG; do not build Rust TUI / muse / sandbox worktrees. Hosted `:sync` **reject**.
+- **Fusion priority:** P1 sage+compact with session **shipped**; P1 MCP with OpenHuman/Proxima **shipped** (HTTP + stdio). Remainder: caveman prompt.
 - **Evidence:** deep-dive
 
 ## 14. Code graph (Code-Graph-RAG + papers)
@@ -286,7 +286,7 @@ Mini-deepens for thin cards: [notes/](notes/).
 | Grade / rewrite / HyDE-on-retry / deepen / easy BM25 / `--verify` hook | `harness/loop.py` |
 | exposes / tested_by / gloss / beam / Mermaid | `harness/kg_enrich.py`, `KnowledgeGraph` |
 | Secret redaction + audit JSONL | `harness/redact.py`, `harness/audit.py` |
-| `doctor` + localhost MCP / `POST /v1/retrieve` | `harness/doctor.py`, `harness/serve.py` |
+| `doctor` + localhost MCP / stdio MCP / `POST /v1/retrieve` | `harness/doctor.py`, `harness/serve.py` |
 
 ## Biggest underextracted sources
 
@@ -294,8 +294,8 @@ Sources with the most **material delta** still on the table (not rejects):
 
 1. **Google Code Wiki + OKF** — `wiki generate` + WikiPage emit + `--dirty` / watch hook + opt-in RRF `wiki_weight` + full-vault `knowledge export|import` shipped; remaining: chat-over-wiki via CCR, packer prefix-load of `knowledge/**/*.md`, LLM polish.
 2. **Memanto** — typed store + supersession + brief + heuristic auto-extract shipped (opt-in); remaining: BM25-over-memory and eval “why” fixtures.
-3. **Strands + Forge + Claurst** — session `/compact` `/cost` sage + localhost MCP retrieve shipped; remaining: caveman, graph-explorer digest.
-4. **Agent-Reach + Proxima + OpenHuman** — doctor + query cache + MCP/`POST /v1/retrieve` **shipped** (loopback). Remainder: Jina ingest, stdio MCP, serve-cache on eval/interactive.
+3. **Strands + Forge + Claurst** — session `/compact` `/cost` sage + localhost HTTP + stdio MCP retrieve shipped; remaining: caveman, graph-explorer digest.
+4. **Agent-Reach + Proxima + OpenHuman** — doctor + query cache + MCP/`POST /v1/retrieve` + **stdio MCP** **shipped** (loopback HTTP / no-bind stdio). Remainder: Jina ingest, serve-cache on eval/interactive.
 5. **TurboVec** — protocol + opt-in backend + eval A/B gate shipped; still experimental, not default. Remainder: dual-write, TQ+ calibrate, default flip.
 6. **Headroom remainder** — expand-on-explain, stable cache key, type-aware pack.
 7. **Code-graph remainder** — path templates, `calls` quality (regex is the real accuracy bug).

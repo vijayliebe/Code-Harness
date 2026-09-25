@@ -82,7 +82,7 @@ PR 3 should implement **max_loops + easy-path + budget**, not the full session p
 
 ## 5. Packaging later (PR 8)
 
-`code-harness mcp serve` exposing `retrieve`, `retrieve_chunk`, `graph_neighbors` lets a Strands/Claude/Forge agent use us as the indexer. That is the intended integration, not `pip install strands-harness` inside this repo.
+`code-harness mcp serve` (HTTP loopback) or `mcp stdio` exposing `retrieve`, `retrieve_chunk`, `graph_neighbors` lets a Strands/Claude/Forge agent use us as the indexer. That is the intended integration, not `pip install strands-harness` inside this repo.
 
 ## 6. Acceptance (when the loop PR lands)
 

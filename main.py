@@ -949,13 +949,66 @@ def cmd_doctor(args):
         sys.exit(report.exit_code)
 
 
+def _wants_stdio(args) -> bool:
+    if getattr(args, "mcp_cmd", None) == "stdio":
+        return True
+    return bool(getattr(args, "stdio", False))
+
+
+def _build_serve_cache(args, config, log):
+    from harness.serve import QueryCache
+
+    serve_cfg = getattr(config, "serve", None) or {}
+    use_cache = serve_cfg.get("cache") is not False
+    if getattr(args, "no_cache", False):
+        use_cache = False
+    if not use_cache:
+        return None
+    cache_path = getattr(args, "cache_path", None) or serve_cfg.get("cache_path")
+    if not cache_path:
+        cache_path = os.path.join(config.repo_path, ".code-harness", "query_cache.sqlite")
+    elif not os.path.isabs(cache_path):
+        cache_path = os.path.join(config.repo_path, cache_path)
+    cache = QueryCache(cache_path)
+    log(f"[*] query cache: {cache_path}")
+    return cache
+
+
+def _load_serve_service(args, log):
+    from harness.serve import build_retrieve_service
+
+    config = _load_config(args)
+    config.repo_path = os.path.abspath(getattr(args, "repo", None) or ".")
+    repo_name = _derive_repo_name(args)
+    cache = _build_serve_cache(args, config, log)
+    log(f"[*] Loading retrieve service for {config.repo_path} (repo: {repo_name})")
+    try:
+        return build_retrieve_service(config, repo_name, cache=cache)
+    except Exception as exc:
+        log(f"[!] Failed to load index: {exc}")
+        log(f"    hint: python main.py index {config.repo_path}")
+        sys.exit(1)
+
+
+def cmd_mcp_stdio(args):
+    from harness.serve import serve_stdio
+
+    def log(msg):
+        print(msg, file=sys.stderr)
+
+    log("[*] MCP stdio (JSON-RPC on stdin/stdout, no network bind)")
+    service = _load_serve_service(args, log)
+    serve_stdio(service)
+
+
 def cmd_serve(args):
+    if _wants_stdio(args):
+        return cmd_mcp_stdio(args)
+
     from harness.serve import (
         DEFAULT_HOST,
         DEFAULT_PORT,
         BindError,
-        QueryCache,
-        build_retrieve_service,
         make_server,
         resolve_bind_host,
         serve_forever,
@@ -963,7 +1016,6 @@ def cmd_serve(args):
 
     config = _load_config(args)
     config.repo_path = os.path.abspath(getattr(args, "repo", None) or ".")
-    repo_name = _derive_repo_name(args)
     serve_cfg = getattr(config, "serve", None) or {}
     host = getattr(args, "host", None) or serve_cfg.get("host") or DEFAULT_HOST
     port = getattr(args, "port", None)
@@ -976,26 +1028,7 @@ def cmd_serve(args):
         print(f"[!] {exc}")
         sys.exit(2)
 
-    use_cache = serve_cfg.get("cache") is not False
-    if getattr(args, "no_cache", False):
-        use_cache = False
-    cache = None
-    if use_cache:
-        cache_path = getattr(args, "cache_path", None) or serve_cfg.get("cache_path")
-        if not cache_path:
-            cache_path = os.path.join(config.repo_path, ".code-harness", "query_cache.sqlite")
-        elif not os.path.isabs(cache_path):
-            cache_path = os.path.join(config.repo_path, cache_path)
-        cache = QueryCache(cache_path)
-        print(f"[*] query cache: {cache_path}")
-
-    print(f"[*] Loading retrieve service for {config.repo_path} (repo: {repo_name})")
-    try:
-        service = build_retrieve_service(config, repo_name, cache=cache)
-    except Exception as exc:
-        print(f"[!] Failed to load index: {exc}")
-        print(f"    hint: python main.py index {config.repo_path}")
-        sys.exit(1)
+    service = _load_serve_service(args, print)
 
     try:
         server = make_server(host=bind, port=int(port), service=service, allow_public=allow_public)
@@ -1049,6 +1082,33 @@ def _add_serve_flags(parser, include_repo=True):
     _add_profile_flag(parser)
     _add_redact_flag(parser)
     parser.set_defaults(func=cmd_serve)
+
+
+def _add_stdio_flag(parser):
+    parser.add_argument(
+        "--stdio",
+        action="store_true",
+        help="Speak MCP JSON-RPC on stdin/stdout (no network bind)",
+    )
+
+
+def _add_mcp_stdio_flags(parser):
+    parser.add_argument("repo", nargs="?", default=".", help="Repository path")
+    parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Disable the optional query-hash retrieve cache",
+    )
+    parser.add_argument(
+        "--cache-path",
+        default=None,
+        help="SQLite query cache path (default: <repo>/.code-harness/query_cache.sqlite)",
+    )
+    _add_pack_flags(parser)
+    _add_loop_flags(parser)
+    _add_profile_flag(parser)
+    _add_redact_flag(parser)
+    parser.set_defaults(func=cmd_serve, mcp_cmd="stdio")
 
 
 def _add_redact_flag(parser):
@@ -1575,6 +1635,7 @@ Examples:
    %(prog)s doctor ./my-project                           # Local health check
    %(prog)s serve ./my-project                            # POST /v1/retrieve on 127.0.0.1
    %(prog)s mcp serve ./my-project                        # MCP tools + retrieve (localhost)
+   %(prog)s mcp stdio ./my-project                        # MCP JSON-RPC on stdin/stdout (IDE)
    %(prog)s api serve ./my-project                        # Alias for serve
    %(prog)s watch ./my-project                            # Watch and auto re-index
   %(prog)s eval . --suite .docs/research/eval/code-harness.fixture.yaml
@@ -1995,7 +2056,8 @@ Examples:
 
     _SERVE_DESC = (
         "Localhost retrieve API + MCP tools. POST /v1/retrieve and GET /health "
-        "bind 127.0.0.1 only. --allow-public is dangerous (no auth)."
+        "bind 127.0.0.1 only. --allow-public is dangerous (no auth). "
+        "Use `mcp stdio` (or `mcp serve --stdio`) for stdin/stdout JSON-RPC."
     )
     srv = subparsers.add_parser(
         "serve",
@@ -2006,11 +2068,12 @@ Examples:
 
     mcp = subparsers.add_parser(
         "mcp",
-        help="MCP tool server (localhost retrieve on 127.0.0.1)",
+        help="MCP tool server (localhost HTTP or stdio)",
         description=_SERVE_DESC,
     )
     mcp.set_defaults(func=cmd_serve, repo=".")
     _add_serve_flags(mcp, include_repo=False)
+    _add_stdio_flag(mcp)
     mcp_sub = mcp.add_subparsers(dest="mcp_cmd")
     mcp_serve = mcp_sub.add_parser(
         "serve",
@@ -2018,6 +2081,18 @@ Examples:
         description=_SERVE_DESC,
     )
     _add_serve_flags(mcp_serve)
+    _add_stdio_flag(mcp_serve)
+    mcp_stdio = mcp_sub.add_parser(
+        "stdio",
+        help="MCP JSON-RPC on stdin/stdout (no network bind)",
+        description=(
+            "Speak MCP over stdin/stdout for Cursor and other IDE clients. "
+            "Same tools as POST /mcp (retrieve, retrieve_chunk, doctor, "
+            "wiki_show, memory_brief, graph_neighbors). Logs go to stderr; "
+            "stdout is protocol only. Does not bind a port."
+        ),
+    )
+    _add_mcp_stdio_flags(mcp_stdio)
 
     api = subparsers.add_parser(
         "api",
