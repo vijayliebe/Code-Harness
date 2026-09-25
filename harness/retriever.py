@@ -46,6 +46,13 @@ class Retriever:
         self.sparse_weight = ret_cfg.get("sparse_weight", 0.25)
         self.graph_weight = ret_cfg.get("graph_weight", 0.2)
         self.wiki_weight = float(ret_cfg.get("wiki_weight", 0.0) or 0.0)
+        try:
+            from .wiki_chat import WIKI_MODE_WEIGHT, wiki_mode_enabled
+
+            if wiki_mode_enabled(config) and self.wiki_weight <= 0:
+                self.wiki_weight = WIKI_MODE_WEIGHT
+        except Exception:
+            pass
         self.top_k = ret_cfg.get("top_k", 30)
         self.rerank_top_k = ret_cfg.get("rerank_top_k", 15)
         self.expand_neighbors = ret_cfg.get("expand_neighbors", 3)
@@ -245,6 +252,13 @@ class Retriever:
 
         fused.sort(key=lambda r: r.score, reverse=True)
         top = fused[:k]
+        try:
+            from .wiki_chat import prefer_wiki_results, wiki_mode_enabled
+
+            if wiki_mode_enabled(self.config):
+                top = prefer_wiki_results(top)
+        except Exception:
+            pass
 
         if debug:
             return top, {

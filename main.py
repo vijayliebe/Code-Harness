@@ -164,6 +164,8 @@ def cmd_query(args):
     print(f"\n[*] Retrieving context for: {query}\n")
     if context_builder.pack_mode != "full":
         print(f"[*] Pack mode: {context_builder.pack_mode}")
+    if (getattr(config, "chat", None) or {}).get("wiki_mode"):
+        print("[*] Wiki mode: knowledge/wiki first (CCR expand to path:symbol)")
     if config.retrieval.get("max_loops", 0):
         print(f"[*] Query loop: max_loops={config.retrieval.get('max_loops')}")
 
@@ -204,6 +206,7 @@ def cmd_query(args):
     if expand_ids:
         context = context_builder.expand_into_context(context, expand_ids)
         print(f"[*] Expanded {len(expand_ids)} chunk(s)")
+    context = _maybe_wiki_expand(config, context_builder, retriever, report, context)
     if debug:
         print(f"[*] Context pack={report.pack_mode} tokens_full={report.prompt_tokens_full} "
               f"tokens_packed={report.prompt_tokens_packed} prefix={report.prefix_hash}")
@@ -302,7 +305,8 @@ def cmd_interactive(args):
 
     print("=" * 60)
     print("  Code Harness - Interactive Session")
-    print(f"  profile={session.profile}  pack={context_builder.pack_mode}")
+    wiki_bit = "  wiki=on" if session.wiki_mode else ""
+    print(f"  profile={session.profile}  pack={context_builder.pack_mode}{wiki_bit}")
     print("  /help /compact /cost /profile /exit")
     print("=" * 60)
     print()
@@ -358,6 +362,14 @@ def cmd_interactive(args):
             if result.wiki_page:
                 _print_wiki_page(config, result.wiki_page)
                 continue
+            if result.kind == "wiki" and result.wiki_mode is not None:
+                from harness.wiki_chat import apply_wiki_mode, sync_retriever
+
+                apply_wiki_mode(config, result.wiki_mode)
+                sync_retriever(retriever, config)
+                context_builder = ContextBuilder(config)
+                print(result.message)
+                continue
             if result.message:
                 print(result.message)
             if result.kind == "compact":
@@ -400,6 +412,7 @@ def cmd_interactive(args):
             if expand_ids:
                 context = context_builder.expand_into_context(context, expand_ids)
                 print(f"[*] auto-expand {len(expand_ids)} omitted chunk(s) (explain/omit)")
+        context = _maybe_wiki_expand(config, context_builder, retriever, report, context)
         context_history.append(context)
 
         session.record_turn(SessionTurn(role="user", text=query))
@@ -937,6 +950,23 @@ def _print_wiki_page(config, page: str):
         print(f"[!] {exc}")
 
 
+def _maybe_wiki_expand(config, context_builder, retriever, report, context: str) -> str:
+    """CCR-expand ``path:symbol`` cites from packed wiki pages when wiki mode is on."""
+    from harness.wiki_chat import seed_ccr_cache, wiki_expand_ids, wiki_mode_enabled
+
+    if not wiki_mode_enabled(config) or report is None:
+        return context
+    chunks = getattr(retriever, "_all_chunks", None) or []
+    extra = wiki_expand_ids(report, chunks)
+    if not extra:
+        return context
+    wanted = set(extra)
+    seed_ccr_cache(context_builder, [c for c in chunks if getattr(c, "id", None) in wanted])
+    expanded = context_builder.expand_into_context(context, extra)
+    print(f"[*] wiki expand {len(extra)} linked path:symbol chunk(s)")
+    return expanded
+
+
 def cmd_doctor(args):
     from harness.doctor import run_doctor
 
@@ -1153,6 +1183,14 @@ def _add_pack_flags(parser):
         help=(
             "Prefix a bounded knowledge/** slice after project docs "
             "(default off; budget context.knowledge_token_budget, 800 tokens)"
+        ),
+    )
+    parser.add_argument(
+        "--wiki",
+        action="store_true",
+        help=(
+            "Chat-over-wiki: retrieve/pack knowledge/wiki first, "
+            "CCR-expand linked path:symbol (default off; env CODEHARNESS_WIKI_MODE=1)"
         ),
     )
 
@@ -1547,6 +1585,12 @@ def _load_config(args) -> Config:
         config.context["knowledge_prefix"] = True
     if getattr(args, "include_knowledge_prefix", False):
         config.context["knowledge_prefix"] = True
+    env_wiki = os.environ.get("CODEHARNESS_WIKI_MODE", "").strip().lower()
+    wiki_on = env_wiki in ("1", "true", "yes", "on") or getattr(args, "wiki", False)
+    if wiki_on or (getattr(config, "chat", None) or {}).get("wiki_mode"):
+        from harness.wiki_chat import apply_wiki_mode
+
+        apply_wiki_mode(config, True)
 
     env_redact = os.environ.get("CODEHARNESS_REDACT", "").strip().lower()
     if env_redact in ("0", "false", "off", "no"):
@@ -1625,6 +1669,7 @@ Examples:
   %(prog)s query ./my-project -q "how does auth work?"   # Query with AI
   %(prog)s query ./my-project --no-llm -q "find auth"    # Show context only
   %(prog)s chat ./my-project                             # Interactive session
+  %(prog)s chat ./my-project --wiki                      # Ask the living wiki
   %(prog)s chat ./my-project --profile sage              # Sage pack + expand
   %(prog)s interactive ./my-project                      # Alias for chat
    %(prog)s index ./my-project --embed-model all-MiniLM-L6-v2

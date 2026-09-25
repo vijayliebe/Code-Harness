@@ -71,6 +71,8 @@ Turns are stored as JSONL under `.code-harness/sessions/` (ephemeral dialogue �
 
 `--profile sage` (or `CODEHARNESS_PROFILE=sage`, or `/profile sage`) is a flag pack: `pack_mode=ccr_lite`, `max_loops=1`, larger graph expand, higher pack budget. It does **not** retune RRF weights. One-shot `query` stays unchanged unless you pass `--profile`.
 
+`--wiki` (or `CODEHARNESS_WIKI_MODE=1`, config `chat.wiki_mode`, or `/wiki` / `/wiki on` in the session) is **chat-over-wiki**: retrieve and pack `kind=wiki` / `knowledge/wiki/**` first, keep code as fallback when the vault is sparse, and CCR-expand linked `` `path:symbol` `` cites when the pack needs depth. **Default is off** (eval-safe; ordinary chat/query ranking unchanged). System framing then says: answer from the wiki first and cite `` `knowledge/wiki/<page>` `` plus `` `path:symbol` ``.
+
 System framing always includes a `path:symbol` citation instruction. Explain/why queries (and packs that omit >50% of bodies with no loop) auto-expand a few cached chunks.
 
 ```
@@ -80,6 +82,8 @@ System framing always includes a `path:symbol` citation instruction. Explain/why
 /profile default|sage     Switch the flag pack
 /expand <id|path:symbol>  Print a CCR-cached original (`/retrieve` is an alias)
 /memory brief             Dump the typed memory brief
+/wiki                     Toggle chat-over-wiki (ask the living wiki)
+/wiki on|off              Enable or disable wiki mode
 /wiki <page>              Show a generated wiki page
 /llm on|off               Enable/disable AI responses
 /context                  Show the last retrieved context
@@ -144,6 +148,15 @@ python main.py wiki generate . --module harness --out knowledge/wiki
 OKF = [Open Knowledge Format (Google SPEC v0.2)](https://github.com/GoogleCloudPlatform/open-knowledge-format/blob/main/SPEC.md). We emit a code-repo subset (`type: WikiPage`, `okf_version: "0.2"`, `x_codeharness` citations). See `harness/okf.py` for the field mapping. Missing graph → clear error asking you to `index` first.
 
 Indexed wiki pages (`kind=wiki` or `knowledge/wiki/<page>`) can join hybrid RRF as a fourth list when `retrieval.wiki_weight > 0`. **Default is `0.0`** (off — eval-safe; existing dense/BM25/graph ranking unchanged). A careful starting weight is `0.08`–`0.12`. Source citations stay `` `path:symbol` ``; wiki hits may cite `knowledge/wiki/<page>`.
+
+Chat-over-wiki is a separate UX switch, not a new generator:
+
+```bash
+python main.py chat . --wiki
+python main.py query . --wiki --no-llm -q "how does context assembly fit?"
+```
+
+`--wiki` / `chat.wiki_mode` turns on the wiki RRF channel (weight `0.15` when `wiki_weight` is still `0.0`), prefers wiki pages in the pack, prefix-loads the vault if the index is sparse, and CCR-expands linked `` `path:symbol` `` / child pages. Code cites stay allowed. Turn it off and ranking/prompt are the previous defaults.
 
 ### `memory` — Typed project memory + OKF import/export
 
@@ -431,6 +444,9 @@ Key settings:
     "dir": ".code-harness/sessions",
     "keep_recent": 1
   },
+  "chat": {
+    "wiki_mode": false
+  },
   "redaction": {
     "enabled": true,
     "audit": true,
@@ -466,6 +482,7 @@ Global flags:
 | `--embed-model` | Embedding model name |
 | `--repo-name` | Override auto-derived repository name |
 | `--profile` | `default` or `sage` (query/chat). Env: `CODEHARNESS_PROFILE` |
+| `--wiki` | Chat-over-wiki (query/chat). Config: `chat.wiki_mode`. Env: `CODEHARNESS_WIKI_MODE` |
 
 ## Embedding Providers
 
@@ -603,6 +620,7 @@ code-harness/
 │   ├── kg_enrich.py               exposes / tested_by / gloss + Mermaid export
 │   ├── okf.py                     OKF (Google SPEC v0.2) WikiPage + vault export
 │   ├── wiki.py                    Deterministic wiki generate from the KG
+│   ├── wiki_chat.py               Opt-in chat-over-wiki retrieve/pack/CCR expand
 │   ├── repo_graph.py              Inter-repo relationship graph
 │   ├── retriever.py               Hybrid retrieval (dense + sparse + graph + cross-encoder)
 │   ├── context_builder.py         Context assembly (MMR, prefix docs, full | ccr_lite pack)
@@ -613,7 +631,7 @@ code-harness/
 │   ├── doctor.py                  Local health checks (no network)
 │   ├── serve.py                   Localhost POST /v1/retrieve + MCP JSON-RPC
 │   └── utils.py                   Shared utilities (retry, import/export extraction)
-├── tests/                         Offline unit tests (eval, CCR, loop, KG, wiki, memory, vault OKF)
+├── tests/                         Offline unit tests (eval, CCR, loop, KG, wiki, wiki-chat, memory, vault OKF)
 ├── knowledge/
 │   ├── gloss/                     Human gloss notes (entity frontmatter)
 │   ├── memory/                    Typed OKF Decision/Error/Preference/Fact

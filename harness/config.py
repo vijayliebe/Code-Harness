@@ -69,6 +69,10 @@ DEFAULT_CONFIG = {
         "keep_recent": 1,
     },
 
+    "chat": {
+        "wiki_mode": False,
+    },
+
     "memory": {
         "auto_extract": False,
     },
@@ -165,6 +169,7 @@ class Config:
     context: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["context"]))
     ccr: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["ccr"]))
     session: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["session"]))
+    chat: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["chat"]))
     memory: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["memory"]))
     redaction: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["redaction"]))
     serve: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["serve"]))
@@ -212,6 +217,7 @@ class Config:
             "context": self.context,
             "ccr": self.ccr,
             "session": self.session,
+            "chat": self.chat,
             "memory": self.memory,
             "redaction": self.redaction,
             "serve": self.serve,

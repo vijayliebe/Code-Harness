@@ -46,6 +46,8 @@ HELP_TEXT = """Commands:
   /profile default|sage    Switch pack/expand profile (does not retune RRF)
   /expand <id|path:symbol> Print a cached chunk (alias: /retrieve)
   /memory brief            Dump the typed memory brief
+  /wiki                    Toggle chat-over-wiki (ask the living wiki)
+  /wiki on|off             Enable or disable wiki mode
   /wiki <page>             Show a generated wiki page
   /llm on|off              Enable/disable LLM responses
   /context                 Show the last retrieved context
@@ -114,6 +116,7 @@ class CommandResult:
     profile: Optional[str] = None
     expand_ref: Optional[str] = None
     wiki_page: Optional[str] = None
+    wiki_mode: Optional[bool] = None
     memory_brief: bool = False
     llm: Optional[bool] = None
     clear_screen: bool = False
@@ -229,6 +232,7 @@ class Session:
         self._config = config
         self._redact = redact
         self._audit_path = audit_path
+        self.wiki_mode = bool((getattr(config, "chat", None) or {}).get("wiki_mode"))
         self.turns: List[SessionTurn] = []
         self._prompt_tokens = 0
         self._packed_tokens = 0
@@ -577,8 +581,21 @@ def handle_slash(session: Session, command: SlashCommand) -> CommandResult:
         return CommandResult(kind="memory", message="", memory_brief=True)
     if kind == "wiki":
         page = (command.args or "").strip()
+        key = page.lower()
         if not page:
-            return CommandResult(kind="wiki", message="[!] Usage: /wiki <page>")
+            session.wiki_mode = not session.wiki_mode
+            return CommandResult(
+                kind="wiki",
+                message=f"[*] wiki mode={'on' if session.wiki_mode else 'off'}",
+                wiki_mode=session.wiki_mode,
+            )
+        if key in ("on", "off"):
+            session.wiki_mode = key == "on"
+            return CommandResult(
+                kind="wiki",
+                message=f"[*] wiki mode={'on' if session.wiki_mode else 'off'}",
+                wiki_mode=session.wiki_mode,
+            )
         return CommandResult(kind="wiki", message="", wiki_page=page)
     if kind == "llm":
         flag = (command.args or "").split(None, 1)[0].lower() if command.args else ""

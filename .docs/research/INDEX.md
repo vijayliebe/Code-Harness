@@ -81,6 +81,6 @@ Spine on the KG-enrichment tip: eval harness, CCR-lite packer, corrective loop, 
 | forgecode | [deep/forgecode.md](deep/forgecode.md) | **Partially fused** — pack env knob. Delta: sage profile, `/compact`, MCP-as-`:sync` |
 | code graph | [deep/code-graph.md](deep/code-graph.md) | **Partially fused** — exposes/tested_by/gloss + beam + Mermaid. Delta: path templates, `calls` quality |
 | turboVec | [deep/turbovec.md](deep/turbovec.md) | **Design-only** (blocked on recall gates) |
-| OKF (Google SPEC) | [deep/okf.md](deep/okf.md) | **Partially fused** — WikiPage emit + typed memory + full-vault `knowledge export|import` + opt-in packer prefix-load. Delta: chat-over-wiki / BM25-over-memory |
+| OKF (Google SPEC) | [deep/okf.md](deep/okf.md) | **Partially fused** — WikiPage emit + typed memory + full-vault `knowledge export|import` + opt-in packer prefix-load + chat-over-wiki. Delta: BM25-over-memory |
 | Prompt→Loop→Graph | [deep/prompt-loop-graph-engineering.md](deep/prompt-loop-graph-engineering.md) | **Partially fused** — eval + loop. Delta: session state, `path:symbol` cites |
-| Google Code Wiki | [deep/google-code-wiki.md](deep/google-code-wiki.md) | **Partially fused** — `wiki generate` + Mermaid + `--dirty` / watch + opt-in wiki RRF. Delta: chat-over-wiki, LLM polish |
+| Google Code Wiki | [deep/google-code-wiki.md](deep/google-code-wiki.md) | **Partially fused** — `wiki generate` + Mermaid + `--dirty` / watch + opt-in wiki RRF + chat-over-wiki via CCR. Delta: LLM polish |
