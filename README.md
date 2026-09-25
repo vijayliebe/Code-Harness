@@ -14,8 +14,9 @@ python main.py index /path/to/your/repo
 # Query it
 python main.py query /path/to/your/repo -q "how does authentication work?"
 
-# Interactive mode
-python main.py interactive /path/to/your/repo
+# Interactive session (aliases: chat, session, repl)
+python main.py chat /path/to/your/repo
+python main.py chat /path/to/your/repo --profile sage
 ```
 
 ## Commands
@@ -54,22 +55,32 @@ Hybrid retrieval: dense vector search (semantic), BM25 keyword index (exact name
 | `--pack-mode` | `full` (default) or `ccr_lite` — pack signatures + key spans after MMR |
 | `--expand-chunk ID` | Inject a cached original chunk into the prompt (repeatable) |
 
-### `interactive` — Interactive REPL mode
+### `chat` / `session` / `interactive` — Multi-turn REPL
 
 ```bash
-python main.py interactive ./my-project
-python main.py interactive --cross-repo ./my-project
+python main.py chat ./my-project
+python main.py session ./my-project --profile sage
+python main.py interactive --cross-repo ./my-project   # same command
 ```
 
-Type questions continuously. Commands within the session:
+Turns are stored as JSONL under `.code-harness/sessions/` (ephemeral dialogue — not typed memory and not the code index). `/compact` is extractive conversation compression (keep user lines + the latest pack ids); it is not the CCR packer. `/cost` prints packed vs full prompt tokens, completion tokens, loop attempts, and approx $ when `llm.input_usd_per_1m` / `llm.output_usd_per_1m` are set. Without an LLM key the session still retrieves, packs, and prints context.
+
+`--profile sage` (or `CODEHARNESS_PROFILE=sage`, or `/profile sage`) is a flag pack: `pack_mode=ccr_lite`, `max_loops=1`, larger graph expand, higher pack budget. It does **not** retune RRF weights. One-shot `query` stays unchanged unless you pass `--profile`.
+
+System framing always includes a `path:symbol` citation instruction. Explain/why queries (and packs that omit >50% of bodies with no loop) auto-expand a few cached chunks.
 
 ```
-/help           Show available commands
-/llm on|off     Enable/disable AI responses
-/context        Show the last retrieved context
-/retrieve <id>  Print a CCR-cached original chunk (`/expand` is an alias)
-/clear          Clear the screen
-/quit           Exit
+/help                     Show available commands
+/compact                  Summarize older turns; never drop the latest pack
+/cost                     Session token counters (+ $ if a rate is configured)
+/profile default|sage     Switch the flag pack
+/expand <id|path:symbol>  Print a CCR-cached original (`/retrieve` is an alias)
+/memory brief             Dump the typed memory brief
+/wiki <page>              Show a generated wiki page
+/llm on|off               Enable/disable AI responses
+/context                  Show the last retrieved context
+/clear                    Clear the screen
+/exit                     Leave (`/quit` is an alias)
 ```
 
 ### CCR-lite packer (`--pack-mode ccr_lite`)
@@ -260,12 +271,18 @@ Key settings:
     "citation_threshold": 0.5
   },
   "context": {
-    "pack_mode": "full"
+    "pack_mode": "full",
+    "max_tokens_multiplier": 2
   },
   "ccr": {
     "first_lines": 12,
     "last_lines": 8,
-    "spill_dir": ".code-harness/ccr"
+    "spill_dir": ".code-harness/ccr",
+    "expand_on": []
+  },
+  "session": {
+    "dir": ".code-harness/sessions",
+    "keep_recent": 1
   },
   "vector_store": {
     "hnsw_ef_search": 256,
@@ -289,6 +306,7 @@ Global flags:
 | `--llm-model` | LLM model name (e.g. gpt-4o, claude-3-opus) |
 | `--embed-model` | Embedding model name |
 | `--repo-name` | Override auto-derived repository name |
+| `--profile` | `default` or `sage` (query/chat). Env: `CODEHARNESS_PROFILE` |
 
 ## Embedding Providers
 

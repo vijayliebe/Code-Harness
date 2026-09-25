@@ -51,6 +51,7 @@ DEFAULT_CONFIG = {
         "include_memory_brief": False,
         "memory_brief_tokens": 800,
         "memory_dir": None,
+        "max_tokens_multiplier": 2,
     },
     "ccr": {
         "first_lines": 12,
@@ -59,6 +60,11 @@ DEFAULT_CONFIG = {
         "spill_dir": ".code-harness/ccr",
         "spill": None,
         "expand_on": [],
+    },
+
+    "session": {
+        "dir": ".code-harness/sessions",
+        "keep_recent": 1,
     },
 
     "retrieval": {
@@ -129,6 +135,7 @@ class Config:
     indexing: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["indexing"]))
     context: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["context"]))
     ccr: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["ccr"]))
+    session: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["session"]))
     repo_path: str = "."
     verbose: bool = False
 
@@ -166,6 +173,7 @@ class Config:
             "indexing": self.indexing,
             "context": self.context,
             "ccr": self.ccr,
+            "session": self.session,
             "repo_path": self.repo_path,
             "verbose": self.verbose,
         }

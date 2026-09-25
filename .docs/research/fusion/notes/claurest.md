@@ -20,8 +20,8 @@ Claurst is a **Rust Claude-Code-style terminal agent** (GPL-3.0; ideas only). Li
 
 | Steal | Status on this branch | Module |
 |-------|----------------------|--------|
-| Heuristic `/compact` in `interactive` (keep user lines + last pack IDs) | **gap** | CLI / NEW `session.py` |
-| `/cost` printing packed vs full tokens + loop attempts | **partial** — eval JSON has tokens/latency; interactive does not | eval + CLI |
+| Heuristic `/compact` in `interactive` (keep user lines + last pack IDs) | **done** | CLI / `session.py` |
+| `/cost` printing packed vs full tokens + loop attempts | **done** — REPL `/cost`; eval JSON already had the numbers | eval + CLI |
 | Terse / caveman system prompt (“do not restate retrieved code”) | **gap** | context builder / LLM |
 | ACP server | **reject** as v1 — MCP `retrieve` is the local-first equivalent | — |
 | `/goal`, `/share`, ultracode swarms | **reject** — agent clone | — |

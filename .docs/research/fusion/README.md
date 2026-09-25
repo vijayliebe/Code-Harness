@@ -15,6 +15,8 @@ Spine already shipped on `cursor/kg-enrichment-3590` (and ancestors):
 
 Fusion PR #1 (wiki generate MVP) adds `wiki generate|list|show` — OKF `WikiPage` markdown under `knowledge/wiki/`, `path:symbol` cites, Mermaid from the KG.
 
-Fusion PR #2 (typed memory) adds `memory add|list|brief|export|import` — OKF `Decision`/`Error`/`Preference`/`Fact` under `knowledge/memory/`, supersede/tombstone, `memory brief` ≤800 tokens, OKF unknown-key round-trip. Query-path inject is opt-in. Mapping: [notes/memory-okf.md](notes/memory-okf.md). RRF wiki boost / watch regen / session compact are still open.
+Fusion PR #2 (typed memory) adds `memory add|list|brief|export|import` — OKF `Decision`/`Error`/`Preference`/`Fact` under `knowledge/memory/`, supersede/tombstone, `memory brief` ≤800 tokens, OKF unknown-key round-trip. Query-path inject is opt-in. Mapping: [notes/memory-okf.md](notes/memory-okf.md). RRF wiki boost / watch regen remain open.
+
+Fusion PR #3 (interactive session) adds `chat` / `session` / `repl` aliases, JSONL under `.code-harness/sessions/`, heuristic `/compact` + `/cost`, `--profile sage`, and a `path:symbol` system line. Expand-on-explain is session/sage-scoped.
 
 Read [../INDEX.md](../INDEX.md) → this pack → [../deep/INTEGRATION_PLAN.md](../deep/INTEGRATION_PLAN.md) for the original sequence.
