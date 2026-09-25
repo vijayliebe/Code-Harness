@@ -359,7 +359,8 @@ def cmd_interactive(args):
         f"  profile={session.profile}  pack={context_builder.pack_mode}"
         f"{wiki_bit}{clear_bit}{verify_bit}{event_bit}"
     )
-    print("  /help /compact /cost /profile /verify /done /exit")
+    search_bit = " /search" if session.event_session else ""
+    print(f"  /help /compact{search_bit} /cost /profile /verify /done /exit")
     print("=" * 60)
     print()
 
@@ -1862,6 +1863,62 @@ def cmd_watch(args):
     print("[*] File watcher stopped.")
 
 
+def cmd_session_search(args):
+    """FTS over a typed event-session log. Legacy turn JSONL is refused."""
+    from harness.session_fts import SessionSearchError, format_hits, search_session
+
+    query = (getattr(args, "query_flag", None) or getattr(args, "query", None) or "").strip()
+    if not query:
+        print('[!] session search requires a query (`session search "…"` or -q)')
+        sys.exit(2)
+    try:
+        payload = search_session(
+            query,
+            path=getattr(args, "session", None),
+            repo=getattr(args, "repo", None) or ".",
+            top_k=int(getattr(args, "top_k", None) or 10),
+        )
+    except SessionSearchError as exc:
+        print(f"[!] {exc}")
+        sys.exit(1)
+    hits = payload.get("hits") or []
+    if not hits:
+        print("[*] no matches")
+        return
+    print(format_hits(hits))
+
+
+_GLOBAL_VALUE_FLAGS = frozenset(
+    {
+        "-c",
+        "--config",
+        "--llm-provider",
+        "--llm-model",
+        "--embed-model",
+        "--repo-name",
+    }
+)
+
+
+def rewrite_session_search_argv(argv=None):
+    """Keep ``session`` as the interactive alias; map ``session search`` → session-search."""
+    raw = list(sys.argv[1:] if argv is None else argv)
+    i = 0
+    while i < len(raw):
+        tok = raw[i]
+        if tok in _GLOBAL_VALUE_FLAGS:
+            i += 2
+            continue
+        if tok.startswith("-"):
+            i += 1
+            continue
+        if tok == "session" and i + 1 < len(raw) and raw[i + 1] == "search":
+            raw[i] = "session-search"
+            del raw[i + 1]
+        break
+    return raw
+
+
 def _load_config(args) -> Config:
     if hasattr(args, 'config') and args.config:
         config = Config.from_file(args.config)
@@ -2015,6 +2072,8 @@ Examples:
    %(prog)s memory list .
    %(prog)s memory brief . -q "why chroma?"
    %(prog)s memory search . -q "chroma default"
+   %(prog)s session search "prefix-stable packing"
+   %(prog)s session search -q packing --session .code-harness/sessions/evt.jsonl
    %(prog)s memory export . ./okf-bundle
    %(prog)s memory import . ./okf-bundle
    %(prog)s memory extract . --dry-run
@@ -2355,6 +2414,33 @@ Examples:
     )
     wiki_show.set_defaults(func=cmd_wiki)
 
+    sess_search = subparsers.add_parser(
+        "session-search",
+        help='FTS over an event-session log (also: session search "…")',
+    )
+    sess_search.add_argument("query", nargs="?", default="", help="Full-text query")
+    sess_search.add_argument("repo", nargs="?", default=".", help="Repository path")
+    sess_search.add_argument(
+        "-q",
+        "--query",
+        dest="query_flag",
+        default=None,
+        help="Full-text query (alternative to the positional)",
+    )
+    sess_search.add_argument(
+        "--session",
+        default=None,
+        help="Event-session JSONL (default: last file under <repo>/.code-harness/sessions)",
+    )
+    sess_search.add_argument(
+        "--top-k",
+        dest="top_k",
+        type=int,
+        default=10,
+        help="Max hits to print (default: 10)",
+    )
+    sess_search.set_defaults(func=cmd_session_search)
+
     mem = subparsers.add_parser(
         "memory",
         help="Typed project memory (decision/error/preference/fact) + OKF import/export",
@@ -2628,7 +2714,7 @@ Examples:
         description=(
             "Speak MCP over stdin/stdout for Cursor and other IDE clients. "
             "Same tools as POST /mcp (retrieve, retrieve_chunk, doctor, "
-            "wiki_show, memory_brief, graph_neighbors). Logs go to stderr; "
+            "wiki_show, memory_brief, graph_neighbors, search_session). Logs go to stderr; "
             "stdout is protocol only. Does not bind a port."
         ),
     )
@@ -2649,7 +2735,7 @@ Examples:
     )
     _add_serve_flags(api_serve)
 
-    args = parser.parse_args()
+    args = parser.parse_args(rewrite_session_search_argv())
 
     if args.command is None:
         parser.print_help()

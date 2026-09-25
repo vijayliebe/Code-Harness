@@ -23,7 +23,7 @@ Official **DeepSeek AI** open-source agent harness (`dsh`, developer preview). T
 | Event-sourced session + `derive_messages` | `harness/events.py`, `harness/session.py` | **shipped opt-in** (`--event-session`, default off) |
 | Prefix-stable packing / KV | `harness/prefix.py`, `ContextBuilder` | **shipped opt-in** (implied by event-session; `--prefix-stable`) |
 | Retrieve as `agent/pre-step` | `harness/prestep.py` | **shipped, default on** (`--no-retrieve-prestep` skips) |
-| Session-event FTS | NEW beside `memory search` | **later** |
+| Session-event FTS | `harness/session_fts.py` beside `memory search` | **shipped** (`session search` / `/search` / `search_session`) |
 | `llm-retry` listener | query / LLM prepare | **gap** |
 
 Default interactive JSONL (`event: turn`) is unchanged when the flag is off. `migrate_legacy_events()` reads old files.
@@ -36,7 +36,17 @@ Default interactive JSONL (`event: turn`) is unchanged when the flag is off. `mi
 | `context.prefix_stable` / `--prefix-stable` / `CODEHARNESS_PREFIX_STABLE` | **off** (on when event-session is on, unless `--no-prefix-stable`) |
 | `prestep.retrieve` / `--retrieve-prestep` / `CODEHARNESS_RETRIEVE_PRESTEP` | **on** (`--no-retrieve-prestep` / env `0` skips) |
 
-`RetrievePreStep` is the first `before_model` hook. A second hook (memory brief, verify prep) registers with `default_registry().register(...)` or `HookRegistry([MemoryBriefPreStep(), RetrievePreStep()])`. Session-event FTS stays a later PR.
+`RetrievePreStep` is the first `before_model` hook. A second hook (memory brief, verify prep) registers with `default_registry().register(...)` or `HookRegistry([MemoryBriefPreStep(), RetrievePreStep()])`.
+
+Session-event FTS is **shipped** (DeepSeek steal wave **5/5**). It indexes typed events (`user` / `assistant` / `tool_use` / `tool_result` / `system` / `compact`; skips `meta` / `clear` / `verify`) into a co-located SQLite FTS5 sidecar (`<session>.fts.sqlite`). Incremental on append; rebuild on `migrate_legacy_session_file` or a stale sidecar.
+
+| Knob | Default |
+|------|---------|
+| FTS itself | **on whenever a typed event log exists** (no extra flag) |
+| `/search` in the REPL | requires `--event-session` (legacy turn JSONL is not indexed) |
+| `python main.py session search "…"` | requires a typed event JSONL (`--session` or last file under `.code-harness/sessions/`) |
+
+Not BM25-over-memory. Do not mix the sidecar into Chroma.
 
 Event types (local vocabulary, not DeepSeek’s 13-type TS envelope): `user`, `assistant`, `tool_use`, `tool_result`, `system`, `compact`, `clear`, `verify`, `meta`.
 

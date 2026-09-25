@@ -179,6 +179,7 @@ class TestMcpStdioProtocol(unittest.TestCase):
             "wiki_show",
             "memory_brief",
             "graph_neighbors",
+            "search_session",
         ):
             self.assertIn(expected, names)
 

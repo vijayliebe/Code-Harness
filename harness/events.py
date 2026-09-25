@@ -16,6 +16,9 @@ on disk so resume is deterministic.
 
 This is a Code-Harness seam, not a Cordis / ``@deepseek-ai/*`` vendor.
 Do not copy DeepSeek's 13-type TypeScript envelope wholesale.
+
+Session-event FTS (steal #5) lives in ``session_fts.py``: ``EventLog.append``
+optionally indexes into a co-located SQLite FTS5 sidecar.
 """
 
 from __future__ import annotations
@@ -355,8 +358,9 @@ def _turn_from_tool(use: Optional[ModelMessage], result: ModelMessage):
 class EventLog:
     """JSONL-backed append-only log. Projection is cached until the next append."""
 
-    def __init__(self, path: Optional[str] = None):
+    def __init__(self, path: Optional[str] = None, fts=None):
         self.path = path
+        self.fts = fts
         self.events: List[SessionEvent] = []
         self._seq = 0
         self._generation = 0
@@ -386,6 +390,8 @@ class EventLog:
                 os.makedirs(parent, exist_ok=True)
             with open(self.path, "a", encoding="utf-8") as fh:
                 fh.write(json.dumps(event.to_dict(), ensure_ascii=False) + "\n")
+        if self.fts is not None:
+            self.fts.index_event(event)
         return event
 
     def derive_messages(self) -> List[ModelMessage]:
@@ -423,6 +429,8 @@ class EventLog:
             if event.type == "compact":
                 log._generation = max(log._generation, int(event.replace_generation or 0))
             log.events.append(event)
+        if log.fts is not None:
+            log.fts.sync(log.events, source_path=path)
         return log
 
 
@@ -608,4 +616,7 @@ def migrate_legacy_session_file(src: str, dest: Optional[str] = None) -> str:
     with open(dest, "w", encoding="utf-8") as fh:
         for event in events:
             fh.write(json.dumps(event.to_dict(), ensure_ascii=False) + "\n")
+    from .session_fts import SessionEventIndex
+
+    SessionEventIndex.for_log(dest)
     return dest

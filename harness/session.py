@@ -1,4 +1,4 @@
-"""Interactive session: slash commands, heuristic /compact, /cost, sage profile.
+"""Interactive session: slash commands, heuristic /compact, /search, /cost, sage profile.
 
 Conversation compact is not the CCR packer. Tool-result clearing (opt-in)
 is not compact: it only stubs re-fetchable retrieve dumps. Session JSONL is
@@ -61,6 +61,7 @@ SAGE_PROFILE = {
 HELP_TEXT = """Commands:
   /help                    Show this help
   /compact                 Summarize older turns; keep latest pack
+  /search <query>          FTS over the event log (requires --event-session)
   /clear-tool-results      Replace aged retrieve dumps with re-fetch stubs
   /cost                    Session tokens + approx $ if a rate is set
   /profile default|sage    Switch pack/expand profile (does not retune RRF)
@@ -309,6 +310,7 @@ class Session:
             event_session = event_session_enabled(config=config)
         self.event_session = bool(event_session)
         self._log = None
+        self._fts = None
         self._prefix_freeze = None
         self.prefix_digest = ""
         self.turns: List[SessionTurn] = []
@@ -327,6 +329,7 @@ class Session:
                 os.makedirs(self.session_dir, exist_ok=True)
                 path = os.path.join(self.session_dir, f"{self.session_id}.jsonl")
             self._log = EventLog(path)
+            self._bind_fts(path)
             self._log.append(
                 make_event(
                     "meta",
@@ -409,6 +412,7 @@ class Session:
         session.session_dir = session_dir
         session._log = log
         session.event_session = True
+        session._bind_fts(path)
         session._rebuild_cost_from_events()
         session._refresh_derived()
         return session
@@ -441,6 +445,38 @@ class Session:
 
     def _tokens(self, text: str) -> int:
         return int(self.estimate_fn(text or ""))
+
+    def _bind_fts(self, path: Optional[str] = None) -> None:
+        from .session_fts import SessionEventIndex, default_fts_path
+
+        jsonl = path or (self._log.path if self._log is not None else None)
+        self._fts = SessionEventIndex(default_fts_path(jsonl) if jsonl else None)
+        if self._log is not None:
+            self._log.fts = self._fts
+            if self._log.events:
+                self._fts.sync(
+                    self._log.events,
+                    source_path=jsonl,
+                    session_id=self.session_id,
+                )
+
+    def search_events(self, query: str, top_k: int = 10):
+        """Ranked FTS hits over this session's event log."""
+        from .session_fts import SessionSearchError
+
+        if not self.event_session or self._log is None:
+            raise SessionSearchError(
+                "/search requires --event-session (typed event log). "
+                "Legacy transcripts are not indexed."
+            )
+        if self._fts is None:
+            self._bind_fts(self._log.path)
+        self._fts.sync(
+            self._log.events,
+            source_path=self._log.path,
+            session_id=self.session_id,
+        )
+        return self._fts.search(query, top_k=top_k)
 
     def record_turn(self, turn: SessionTurn) -> None:
         from .redact import redact_and_audit, redaction_enabled
@@ -1070,6 +1106,27 @@ def handle_slash(session: Session, command: SlashCommand) -> CommandResult:
     kind = command.canonical
     if kind == "help":
         return CommandResult(kind="help", message=HELP_TEXT.strip())
+    if kind == "search":
+        from .session_fts import SessionSearchError, format_hits
+
+        if not session.event_session or session._log is None:
+            return CommandResult(
+                kind="search",
+                message=(
+                    "[!] /search requires --event-session (event log). "
+                    "Legacy transcripts are not indexed."
+                ),
+            )
+        if not command.args:
+            return CommandResult(kind="search", message="[!] Usage: /search <query>")
+        try:
+            hits = session.search_events(command.args)
+        except SessionSearchError as exc:
+            return CommandResult(kind="search", message=f"[!] {exc}")
+        return CommandResult(
+            kind="search",
+            message=format_hits(hits) or "[*] no matches",
+        )
     if kind == "cost":
         return CommandResult(kind="cost", message=session.format_cost())
     if kind == "exit":
