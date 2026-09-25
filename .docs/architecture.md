@@ -183,6 +183,7 @@ retrieve(query, debug=False)
   ├── Sparse (25%): BM25 keyword scoring
   ├── Graph (20%): beam neighbor expansion (width=6, depth=2; `expand_mode=bfs` for old BFS)
   ├── Wiki (opt-in): `kind=wiki` / `knowledge/wiki/` channel via RRF when `wiki_weight` > 0 (default 0.0)
+  ├── Memory (opt-in): on-the-fly BM25 over active `knowledge/memory/**` when `memory_weight` > 0 (default 0.0) or `--include-memory-search`
   ├── Chat-over-wiki (opt-in): `chat.wiki_mode` / `--wiki` prefers wiki hits then falls back to code; CCR expands linked `path:symbol`
   ├── Fusion: RRF with k=60
   ├── Cross-encoder rerank: cross-encoder/ms-marco-MiniLM-L-6-v2

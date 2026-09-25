@@ -160,7 +160,7 @@ python main.py query . --wiki --no-llm -q "how does context assembly fit?"
 
 ### `memory` — Typed project memory + OKF import/export
 
-Local store of `decision` / `error` / `preference` / `fact` beside the code index (not written into Chroma). Files are OKF markdown under `knowledge/memory/` (override with `--dir`; `.code-harness/memory/` is also read if present). New entries with `--supersedes <id>` tombstone the old file (`status: superseded`). `memory brief` packs **active** entries only, hard-capped at 800 tokens (same `len//4` estimator as the packer).
+Local store of `decision` / `error` / `preference` / `fact` beside the code index (not written into Chroma). Files are OKF markdown under `knowledge/memory/` (override with `--dir`; `.code-harness/memory/` is also read if present). New entries with `--supersedes <id>` tombstone the old file (`status: superseded`). `memory brief` packs **active** entries only, hard-capped at 800 tokens (same `len//4` estimator as the packer). `memory search` is on-the-fly BM25 over those same active files (debug; superseded excluded).
 
 ```bash
 python main.py memory add . --type decision --title "Default vector backend stays Chroma" \
@@ -169,6 +169,7 @@ python main.py memory add . --type decision --title "Default vector backend stay
 python main.py memory list .
 python main.py memory list . --all --as-of 2026-06-01
 python main.py memory brief . -q "why chroma?"
+python main.py memory search . -q "chroma default"
 python main.py memory export . ./okf-bundle
 python main.py memory import . ./okf-bundle
 ```
@@ -177,9 +178,13 @@ Query/interactive can inject the brief **between** project docs and packed hits,
 
 ```bash
 python main.py query . --no-llm --include-memory-brief -q "why is Chroma the default?"
+python main.py query . --no-llm --include-memory-search -q "why is Chroma the default?"
 python main.py memory brief . --redact
+python main.py memory search . -q "chroma default" --redact
 python main.py memory export . ./okf-bundle --redact
 ```
+
+Active memory can also join hybrid RRF as a fifth list when `retrieval.memory_weight > 0`. **Default is `0.0`** (off — eval-safe; wiki/code ranking unchanged). `--include-memory-search` / `CODEHARNESS_MEMORY_SEARCH=1` applies weight `0.15` when the configured weight is still `0.0`. Hits cite `knowledge/memory/<kind>/<file>` and keep the OKF `mem/…` id. The packer drops memory RRF hits already injected by `--include-memory-brief` and path-dedupes them against `--include-knowledge-prefix`.
 
 ### `knowledge` — Full-vault OKF export/import
 
@@ -226,7 +231,7 @@ python main.py serve . --host 0.0.0.0 --allow-public
 | `POST /v1/retrieve` | `{"query": "...", "top_k": 20, "pack_mode": "full"}` → ranked ids/paths + packed context |
 | `POST /mcp` | JSON-RPC 2.0 `initialize` / `tools/list` / `tools/call` |
 
-MCP tools: `retrieve`, `retrieve_chunk`, `doctor`, `wiki_show`, `memory_brief`, `graph_neighbors`. Same pipeline flags as `query` (`--pack-mode`, `--loop`, `--profile sage`, `--include-memory-brief`, `--include-knowledge-prefix`, `--no-redact`).
+MCP tools: `retrieve`, `retrieve_chunk`, `doctor`, `wiki_show`, `memory_brief`, `graph_neighbors`. Same pipeline flags as `query` (`--pack-mode`, `--loop`, `--profile sage`, `--include-memory-brief`, `--include-memory-search`, `--include-knowledge-prefix`, `--no-redact`).
 
 ```bash
 curl -s http://127.0.0.1:7432/health
@@ -415,6 +420,7 @@ Key settings:
     "sparse_weight": 0.25,
     "graph_weight": 0.2,
     "wiki_weight": 0.0,
+    "memory_weight": 0.0,
     "top_k": 30,
     "rerank_top_k": 15,
     "expand_mode": "beam",
@@ -431,6 +437,7 @@ Key settings:
     "pack_mode": "full",
     "max_tokens_multiplier": 2,
     "include_memory_brief": false,
+    "include_memory_search": false,
     "knowledge_prefix": false,
     "knowledge_token_budget": 800
   },

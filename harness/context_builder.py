@@ -26,6 +26,20 @@ class ContextReport:
 CONTEXT_FILE_NAMES = ["ARCHITECTURE.md", "AGENTS.md", "CLAUDE.md"]
 
 
+def _is_memory_result_chunk(chunk: Chunk) -> bool:
+    meta = getattr(chunk, "metadata", None) or {}
+    if str(meta.get("kind") or "").lower() == "memory":
+        return True
+    if str(meta.get("memory_kind") or "").strip():
+        return True
+    try:
+        from .okf import is_memory_path
+
+        return is_memory_path(getattr(chunk, "file_path", None) or "")
+    except Exception:
+        return False
+
+
 def _chunk_similarity(a: Chunk, b: Chunk) -> float:
     if a.file_path == b.file_path:
         return 0.6
@@ -119,6 +133,7 @@ class ContextBuilder:
         except Exception:
             pass
         mmr_ms = (time.perf_counter() - started) * 1000.0
+        scored = self._drop_prefixed_memory(scored, memory_brief, knowledge_prefix)
         packed_full: List[RetrievalResult] = []
         packed_lite: List[RetrievalResult] = []
         full_context = self._assemble_context(
@@ -293,6 +308,37 @@ class ContextBuilder:
             )
         except Exception:
             return ""
+
+    def _drop_prefixed_memory(
+        self,
+        results: List[RetrievalResult],
+        memory_brief: str = "",
+        knowledge_prefix: str = "",
+    ) -> List[RetrievalResult]:
+        """Avoid double-stuffing memory already in the brief or vault prefix."""
+        if not results:
+            return results
+        context_cfg = getattr(self.config, "context", None) or {}
+        drop_all = bool(context_cfg.get("include_memory_brief"))
+        blob = f"{memory_brief or ''}\n{knowledge_prefix or ''}"
+        kept: List[RetrievalResult] = []
+        for result in results:
+            chunk = result.chunk
+            if not _is_memory_result_chunk(chunk):
+                kept.append(result)
+                continue
+            if drop_all:
+                continue
+            keys = [
+                chunk.id,
+                chunk.file_path,
+                (chunk.metadata or {}).get("id"),
+                chunk.entity_name,
+            ]
+            if any(key and str(key) in blob for key in keys if key):
+                continue
+            kept.append(result)
+        return kept
 
     def _deduplicate(self, results: List[RetrievalResult]) -> List[RetrievalResult]:
         seen_content: set = set()

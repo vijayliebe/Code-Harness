@@ -750,7 +750,7 @@ def cmd_memory(args):
         if parser is not None:
             parser.print_help()
         else:
-            print("usage: main.py memory {add,list,brief,export,import,extract}")
+            print("usage: main.py memory {add,list,brief,search,export,import,extract}")
         sys.exit(2)
 
     repo = getattr(args, "repo", None) or "."
@@ -810,6 +810,33 @@ def cmd_memory(args):
                 return
             print(brief.text.rstrip())
             print(f"\n[*] tokens={brief.token_count} entries={len(brief.entry_ids)}")
+            return
+
+        if action == "search":
+            query = getattr(args, "query", None) or ""
+            if not str(query).strip():
+                print("[!] memory search requires -q / --query")
+                sys.exit(2)
+            hits = store.search(query, top_k=int(getattr(args, "top_k", None) or 10))
+            if not hits:
+                print(f"[!] No active memory matches in {memory_dir}")
+                return
+            lines = [f"[*] Memory search in {memory_dir}"]
+            for i, hit in enumerate(hits, 1):
+                cite = hit.cite or hit.entry.rel_path
+                lines.append(
+                    f"    {i}. [{hit.entry.kind}] {hit.entry.id}  {cite}  score={hit.score:.4f}"
+                )
+                lines.append(f"        {hit.entry.title}")
+                snippet = (hit.entry.description or "").strip()
+                if snippet:
+                    lines.append(f"        {snippet}")
+            text = "\n".join(lines)
+            if getattr(args, "redact", False):
+                from harness.redact import redact_and_audit
+
+                text = redact_and_audit(text, action="redact.memory").text
+            print(text)
             return
 
         if action == "export":
@@ -1176,6 +1203,14 @@ def _add_pack_flags(parser):
         "--include-memory-brief",
         action="store_true",
         help="Inject typed memory brief (≤800 tokens) after project docs (default off)",
+    )
+    parser.add_argument(
+        "--include-memory-search",
+        action="store_true",
+        help=(
+            "Opt-in BM25-over-memory RRF channel "
+            "(default off; sets retrieval.memory_weight when it is still 0.0)"
+        ),
     )
     parser.add_argument(
         "--include-knowledge-prefix",
@@ -1580,6 +1615,11 @@ def _load_config(args) -> Config:
         config.context["include_memory_brief"] = True
     if getattr(args, "include_memory_brief", False):
         config.context["include_memory_brief"] = True
+    env_mem_search = os.environ.get("CODEHARNESS_MEMORY_SEARCH", "").strip().lower()
+    if env_mem_search in ("1", "true", "yes", "on") or getattr(args, "include_memory_search", False):
+        from harness.memory import apply_memory_search
+
+        apply_memory_search(config, True)
     env_knowledge = os.environ.get("CODEHARNESS_KNOWLEDGE_PREFIX", "").strip().lower()
     if env_knowledge in ("1", "true", "yes", "on"):
         config.context["knowledge_prefix"] = True
@@ -1635,12 +1675,14 @@ def _print_debug_trace(query: str, trace: dict):
     print("\n" + "=" * 70)
     print("  RETRIEVAL DEBUG TRACE")
     print("=" * 70)
-    for source_name in ("dense", "sparse", "graph", "reranked"):
+    for source_name in ("dense", "sparse", "graph", "wiki", "memory", "reranked"):
         results = trace.get(source_name, [])
         label_map = {
             "dense": f"DENSE (Vector DB) — {len(results)} results",
             "sparse": f"SPARSE (BM25) — {len(results)} results",
             "graph": f"GRAPH (Knowledge Graph) — {len(results)} results",
+            "wiki": f"WIKI (opt-in) — {len(results)} results",
+            "memory": f"MEMORY (BM25, opt-in) — {len(results)} results",
             "reranked": f"CROSS-ENCODER RERANKED — {len(results)} results",
         }
         print(f"\n  [{label_map[source_name]}]")
@@ -1682,6 +1724,7 @@ Examples:
    %(prog)s memory add . --type decision --title "Keep Chroma" --body "Until TurboVec gates pass." --link harness/vector_store.py:VectorStore
    %(prog)s memory list .
    %(prog)s memory brief . -q "why chroma?"
+   %(prog)s memory search . -q "chroma default"
    %(prog)s memory export . ./okf-bundle
    %(prog)s memory import . ./okf-bundle
    %(prog)s memory extract . --dry-run
@@ -1972,6 +2015,31 @@ Examples:
         help="Strip secrets from the printed brief (default off)",
     )
     mem_brief.set_defaults(func=cmd_memory)
+
+    mem_search = mem_sub.add_parser(
+        "search",
+        help="BM25 search active memories (debug; excludes superseded)",
+    )
+    mem_search.add_argument("repo", nargs="?", default=".", help="Repository path")
+    mem_search.add_argument("-q", "--query", required=True, help="Lexical query")
+    mem_search.add_argument(
+        "--dir",
+        default=None,
+        help="Memory directory (default: <repo>/knowledge/memory)",
+    )
+    mem_search.add_argument(
+        "--top-k",
+        dest="top_k",
+        type=int,
+        default=10,
+        help="Max hits to print (default: 10)",
+    )
+    mem_search.add_argument(
+        "--redact",
+        action="store_true",
+        help="Strip secrets from the printed hits (default off)",
+    )
+    mem_search.set_defaults(func=cmd_memory)
 
     mem_export = mem_sub.add_parser("export", help="Write an OKF markdown bundle")
     mem_export.add_argument("repo", nargs="?", default=".", help="Repository path")
