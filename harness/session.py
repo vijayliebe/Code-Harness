@@ -1,7 +1,8 @@
 """Interactive session: slash commands, heuristic /compact, /cost, sage profile.
 
-Conversation compact is not the CCR packer. Session JSONL is not typed memory
-and is not written into the code index.
+Conversation compact is not the CCR packer. Tool-result clearing (opt-in)
+is not compact: it only stubs re-fetchable retrieve dumps. Session JSONL is
+not typed memory and is not written into the code index.
 """
 
 from __future__ import annotations
@@ -14,6 +15,15 @@ from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Sequence
 
 from .config import DEFAULT_CONFIG, Config
+from .tool_clear import (
+    ClearToolResult,
+    clear_tool_results as apply_clear_tool_results,
+    dump_payload,
+    is_placeholder,
+    is_refetchable_dump,
+    should_clear,
+    tool_result_clearing_enabled,
+)
 
 
 CITATION_INSTRUCTION = (
@@ -42,6 +52,7 @@ SAGE_PROFILE = {
 HELP_TEXT = """Commands:
   /help                    Show this help
   /compact                 Summarize older turns; keep latest pack
+  /clear-tool-results      Replace aged retrieve dumps with re-fetch stubs
   /cost                    Session tokens + approx $ if a rate is set
   /profile default|sage    Switch pack/expand profile (does not retune RRF)
   /expand <id|path:symbol> Print a cached chunk (alias: /retrieve)
@@ -89,6 +100,11 @@ class SessionTurn:
     completion_tokens: int = 0
     loop_attempts: int = 0
     pack_mode: str = "full"
+    paths: List[str] = field(default_factory=list)
+    tool_name: str = ""
+    tool_args: str = ""
+    tool_result: str = ""
+    cleared: bool = False
 
 
 @dataclass
@@ -99,6 +115,8 @@ class SessionCost:
     completion_tokens: int = 0
     loop_attempts: int = 0
     approx_usd: Optional[float] = None
+    tool_result_tokens_freed: int = 0
+    tool_results_cleared: int = 0
 
 
 @dataclass
@@ -219,6 +237,9 @@ class Session:
         redact: Optional[bool] = None,
         audit_path: Optional[str] = None,
         config: Optional[Config] = None,
+        clear_tool_results: Optional[bool] = None,
+        clear_tool_keep: Optional[int] = None,
+        clear_tool_token_trigger: Optional[int] = None,
     ):
         self.repo = repo
         self.profile = (profile or "default").strip().lower() or "default"
@@ -232,6 +253,18 @@ class Session:
         self._config = config
         self._redact = redact
         self._audit_path = audit_path
+        session_cfg = getattr(config, "session", None) or {}
+        if clear_tool_results is None:
+            clear_tool_results = tool_result_clearing_enabled(config=config)
+        self.clear_tool_results_enabled = bool(clear_tool_results)
+        if clear_tool_keep is None:
+            clear_tool_keep = session_cfg.get("clear_tool_keep") or session_cfg.get(
+                "keep_recent"
+            ) or keep_recent
+        self.clear_tool_keep = max(1, int(clear_tool_keep or 1))
+        if clear_tool_token_trigger is None:
+            clear_tool_token_trigger = session_cfg.get("clear_tool_token_trigger") or 0
+        self.clear_tool_token_trigger = max(0, int(clear_tool_token_trigger or 0))
         self.wiki_mode = bool((getattr(config, "chat", None) or {}).get("wiki_mode"))
         self.query_cache = None
         self.turns: List[SessionTurn] = []
@@ -240,6 +273,8 @@ class Session:
         self._full_tokens = 0
         self._completion_tokens = 0
         self._loop_attempts = 0
+        self._tool_result_tokens_freed = 0
+        self._tool_results_cleared = 0
         if self.session_dir:
             os.makedirs(self.session_dir, exist_ok=True)
             self._append_jsonl(
@@ -275,6 +310,26 @@ class Session:
                 session_id=self.session_id,
             )
             turn.text = result.text
+            if turn.tool_result:
+                dumped = redact_and_audit(
+                    turn.tool_result,
+                    action="redact.session",
+                    config=self._config,
+                    enabled=True,
+                    audit_path=self._audit_path,
+                    session_id=self.session_id,
+                )
+                turn.tool_result = dumped.text
+            if turn.tool_args:
+                args = redact_and_audit(
+                    turn.tool_args,
+                    action="redact.session",
+                    config=self._config,
+                    enabled=True,
+                    audit_path=self._audit_path,
+                    session_id=self.session_id,
+                )
+                turn.tool_args = args.text
         self.turns.append(turn)
         if turn.role == "assistant" or turn.packed_tokens or turn.completion_tokens:
             self._prompt_tokens += int(turn.packed_tokens or 0)
@@ -294,6 +349,11 @@ class Session:
                     "completion_tokens": turn.completion_tokens,
                     "loop_attempts": turn.loop_attempts,
                     "pack_mode": turn.pack_mode,
+                    "paths": list(turn.paths or []),
+                    "tool_name": turn.tool_name,
+                    "tool_args": turn.tool_args,
+                    "tool_result": turn.tool_result,
+                    "cleared": bool(turn.cleared),
                 }
             )
 
@@ -331,6 +391,8 @@ class Session:
             completion_tokens=self._completion_tokens,
             loop_attempts=self._loop_attempts,
             approx_usd=usd,
+            tool_result_tokens_freed=self._tool_result_tokens_freed,
+            tool_results_cleared=self._tool_results_cleared,
         )
 
     def format_cost(self) -> str:
@@ -346,6 +408,12 @@ class Session:
                 f"  query cache:            {int(getattr(cache, 'hits', 0) or 0)} hit / "
                 f"{int(getattr(cache, 'misses', 0) or 0)} miss\n"
             )
+        clear_line = ""
+        if cost.tool_result_tokens_freed or cost.tool_results_cleared:
+            clear_line = (
+                f"  tool-result tokens freed: {cost.tool_result_tokens_freed} "
+                f"({cost.tool_results_cleared} dump(s))\n"
+            )
         return (
             "session cost\n"
             f"  prompt tokens (packed): {cost.prompt_tokens}\n"
@@ -353,6 +421,7 @@ class Session:
             f"  completion tokens:      {cost.completion_tokens}\n"
             f"  loop attempts:          {cost.loop_attempts}\n"
             f"{cache_line}"
+            f"{clear_line}"
             f"  {usd_line}"
         )
 
@@ -404,7 +473,62 @@ class Session:
     def history_tokens(self) -> int:
         return self._tokens(self.history_for_prompt())
 
+    def clear_tool_results(
+        self,
+        keep_n: Optional[int] = None,
+        token_trigger: Optional[int] = None,
+        enabled: Optional[bool] = None,
+    ) -> ClearToolResult:
+        """Replace aged retrieve/tool dumps. Slash can pass ``enabled=True``."""
+        on = self.clear_tool_results_enabled if enabled is None else bool(enabled)
+        result = apply_clear_tool_results(
+            self.turns,
+            keep_n=keep_n if keep_n is not None else self.clear_tool_keep,
+            token_trigger=(
+                token_trigger
+                if token_trigger is not None
+                else self.clear_tool_token_trigger
+            ),
+            estimate_fn=self.estimate_fn,
+            enabled=on,
+        )
+        if result.fired:
+            self._tool_result_tokens_freed += int(result.tokens_freed or 0)
+            self._tool_results_cleared += int(result.cleared or 0)
+            if self.session_dir:
+                self._append_jsonl(
+                    {
+                        "event": "clear_tool_results",
+                        "cleared": result.cleared,
+                        "kept": result.kept,
+                        "tokens_freed": result.tokens_freed,
+                    }
+                )
+        return result
+
+    def maybe_clear_tool_results(self) -> ClearToolResult:
+        """Auto-clear before a model call when the opt-in policy fires."""
+        if not self.clear_tool_results_enabled:
+            return ClearToolResult(kept=sum(1 for t in self.turns if is_refetchable_dump(t)))
+        if not should_clear(
+            self.turns,
+            keep_n=self.clear_tool_keep,
+            token_trigger=self.clear_tool_token_trigger,
+            estimate_fn=self.estimate_fn,
+        ):
+            return ClearToolResult(
+                kept=sum(1 for t in self.turns if is_refetchable_dump(t))
+            )
+        return self.clear_tool_results(enabled=True)
+
+    def history_for_model(self) -> str:
+        """History framed for the next LLM call; clears aged dumps when enabled."""
+        self.maybe_clear_tool_results()
+        return self.history_for_prompt()
+
     def compact(self, keep_recent: Optional[int] = None) -> CompactResult:
+        if self.clear_tool_results_enabled:
+            self.clear_tool_results(enabled=True)
         keep_n = max(1, int(keep_recent or self.keep_recent))
         pairs = _dialogue_pairs(self.turns)
         if len(pairs) <= keep_n and not any(t.role == "compact" for t in self.turns):
@@ -493,12 +617,19 @@ class Session:
     def _render_turn(self, turn: SessionTurn) -> str:
         label = turn.role.capitalize()
         ids = f"  pack={','.join(turn.chunk_ids)}" if turn.chunk_ids else ""
-        return f"{label}: {turn.text}{ids}"
+        body = turn.text or ""
+        dump = turn.tool_result or ""
+        include_dump = bool(dump) and (
+            self.clear_tool_results_enabled or turn.cleared or is_placeholder(dump)
+        )
+        if include_dump and dump not in body:
+            body = f"{body}\n{dump}".strip() if body else dump
+        return f"{label}: {body}{ids}"
 
     def _render_stub(self, turn: SessionTurn) -> str:
         if turn.chunk_ids:
             return f"{turn.role} pack: {', '.join(turn.chunk_ids)}"
-        snippet = _first_line(turn.text, 80)
+        snippet = _first_line(turn.text or dump_payload(turn), 80)
         return f"{turn.role}: {snippet}" if snippet else ""
 
     def _append_jsonl(self, event: Dict) -> None:
@@ -551,11 +682,24 @@ def handle_slash(session: Session, command: SlashCommand) -> CommandResult:
         return CommandResult(kind="exit", message="bye", should_exit=True)
     if kind == "compact":
         result = session.compact()
+        extra = ""
+        if session._tool_result_tokens_freed:
+            extra = f" (tool-result tokens freed: {session._tool_result_tokens_freed})"
         msg = (
             f"[*] compact: dropped {result.dropped_turns} turn(s), "
-            f"kept {result.kept_turns}\n{result.summary}"
+            f"kept {result.kept_turns}{extra}\n{result.summary}"
         )
         return CommandResult(kind="compact", message=msg)
+    if kind in ("clear-tool-results", "clear_tool_results"):
+        result = session.clear_tool_results(enabled=True)
+        if result.fired:
+            msg = (
+                f"[*] clear-tool-results: cleared {result.cleared} dump(s), "
+                f"kept {result.kept}, tokens freed {result.tokens_freed}"
+            )
+        else:
+            msg = "[*] clear-tool-results: nothing to clear (latest pack kept)"
+        return CommandResult(kind="clear_tool_results", message=msg)
     if kind == "profile":
         name = (command.args or "").split(None, 1)[0] if command.args else ""
         if not name:

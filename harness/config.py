@@ -68,6 +68,9 @@ DEFAULT_CONFIG = {
     "session": {
         "dir": ".code-harness/sessions",
         "keep_recent": 1,
+        "clear_tool_results": False,
+        "clear_tool_keep": 1,
+        "clear_tool_token_trigger": 0,
     },
 
     "chat": {

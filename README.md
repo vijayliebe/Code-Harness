@@ -67,7 +67,7 @@ python main.py session ./my-project --profile sage
 python main.py interactive --cross-repo ./my-project   # same command
 ```
 
-Turns are stored as JSONL under `.code-harness/sessions/` (ephemeral dialogue — not typed memory and not the code index). `/compact` is extractive conversation compression (keep user lines + the latest pack ids); it is not the CCR packer. `/cost` prints packed vs full prompt tokens, completion tokens, loop attempts, query-cache hit/miss when `--query-cache` is on, and approx $ when `llm.input_usd_per_1m` / `llm.output_usd_per_1m` are set. Without an LLM key the session still retrieves, packs, and prints context.
+Turns are stored as JSONL under `.code-harness/sessions/` (ephemeral dialogue — not typed memory and not the code index). `/compact` is extractive conversation compression (keep user lines + the latest pack ids); it is not the CCR packer. Opt-in **tool-result clearing** (`--clear-tool-results`, `CODEHARNESS_CLEAR_TOOL_RESULTS=1`, or `session.clear_tool_results`) replaces aged retrieve/`tool_result` dumps with short placeholders that keep `chunk_id` / path / tool+args so `/expand` and `retrieve_chunk` still work. **Default is off.** `/compact` runs clearing as a micro-step only when the flag is on; `/clear-tool-results` is the explicit slash. `/cost` prints packed vs full prompt tokens, completion tokens, loop attempts, query-cache hit/miss when `--query-cache` is on, **tool-result tokens freed** when clearing fires, and approx $ when `llm.input_usd_per_1m` / `llm.output_usd_per_1m` are set. Without an LLM key the session still retrieves, packs, and prints context.
 
 `--profile sage` (or `CODEHARNESS_PROFILE=sage`, or `/profile sage`) is a flag pack: `pack_mode=ccr_lite`, `max_loops=1`, larger graph expand, higher pack budget. It does **not** retune RRF weights. One-shot `query` stays unchanged unless you pass `--profile`.
 
@@ -78,6 +78,7 @@ System framing always includes a `path:symbol` citation instruction. Explain/why
 ```
 /help                     Show available commands
 /compact                  Summarize older turns; never drop the latest pack
+/clear-tool-results       Replace aged retrieve dumps with re-fetch stubs
 /cost                     Session token counters (+ $ if a rate is configured)
 /profile default|sage     Switch the flag pack
 /expand <id|path:symbol>  Print a CCR-cached original (`/retrieve` is an alias)
@@ -455,7 +456,10 @@ Key settings:
   },
   "session": {
     "dir": ".code-harness/sessions",
-    "keep_recent": 1
+    "keep_recent": 1,
+    "clear_tool_results": false,
+    "clear_tool_keep": 1,
+    "clear_tool_token_trigger": 0
   },
   "chat": {
     "wiki_mode": false
@@ -497,6 +501,7 @@ Global flags:
 | `--profile` | `default` or `sage` (query/chat). Env: `CODEHARNESS_PROFILE` |
 | `--wiki` | Chat-over-wiki (query/chat). Config: `chat.wiki_mode`. Env: `CODEHARNESS_WIKI_MODE` |
 | `--query-cache` | Opt-in retrieve/pack cache for `query` / `chat` / `eval` (default off). Env: `CODEHARNESS_QUERY_CACHE=1`. `--no-query-cache` disables. Serve stays default-on (`--no-cache`). |
+| `--clear-tool-results` | Opt-in session retrieve/tool dump clearing (default off). Env: `CODEHARNESS_CLEAR_TOOL_RESULTS=1`. Knobs: `--clear-tool-keep`, `--clear-tool-token-trigger`. |
 
 ## Embedding Providers
 
