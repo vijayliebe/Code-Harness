@@ -23,7 +23,7 @@ Mini-deepens for thin cards: [notes/](notes/).
 | 2 | Claurest (Claurst) | partial | P1 | fusion-note |
 | 3 | Strands Harness | partial | P1 | deep-dive |
 | 4 | OpenMontage | reject | — | fusion-note |
-| 5 | Memanto | gap | P0 | deep-dive |
+| 5 | Memanto | partial | P0 | deep-dive |
 | 6 | Obsidian | partial | P1 | fusion-note |
 | 7 | Jitro | reject | — | weak-primary |
 | 8 | OpenHuman | gap | P1 | fusion-note |
@@ -91,7 +91,7 @@ Mini-deepens for thin cards: [notes/](notes/).
 - **Best stealable ideas:** (1) Typed memories (`decision` / `error` / `preference` / `fact`) **beside** the code index. (2) Conflict **supersession** + `as-of`, not silent overwrite. (3) `memory brief` on interactive start (≤800 tokens).
 - **Why it matters:** Accuracy on “why did we…?” without polluting chunk embeddings. Tokens: brief ≪ re-retrieving narrative docs. Ops: git-reviewable facts.
 - **Map to module:** NEW `harness/memory.py` + CLI `memory`; context builder prefix (semi-stable, after ARCHITECTURE, before packed hits).
-- **Status:** `gap` — gloss is entity-attached tribal knowledge, **not** typed project memory. Do not vendor Memanto. OKF is the interchange (Google SPEC; Memanto is implementer).
+- **Status:** `partial` — `harness/memory.py` + CLI `memory add|list|brief|export|import` shipped: four types, supersede/tombstone, `memory brief` ≤800 tokens, OKF markdown under `knowledge/memory/`. Query-path inject is default-off (`--include-memory-brief`). **Delta:** no observe/auto-extract from sessions; no BM25-over-memory index; no eval “why did we…?” fixtures yet. Do not vendor Memanto. OKF is the interchange (Google SPEC; Memanto is implementer).
 - **Fusion priority:** P0
 - **Evidence:** deep-dive
 
@@ -200,8 +200,8 @@ Mini-deepens for thin cards: [notes/](notes/).
 - **Links:** https://github.com/GoogleCloudPlatform/open-knowledge-format/blob/main/SPEC.md · repo + Cloud blog · Memanto is **implementer** · deep [../deep/okf.md](../deep/okf.md)
 - **Best stealable ideas:** (1) Markdown+YAML concepts, path identity, required `type`, preserve unknown keys. (2) `knowledge/` as prefix source. (3) `okf_version: "0.2"` + `x_codeharness` extensions.
 - **Why it matters:** Portability across Claude/Cursor/Memanto; git-diffable wiki/memory; tokens via brief pages vs chat logs.
-- **Map to module:** `harness/okf.py` (WikiPage emit); memory + full import/export still NEW.
-- **Status:** `partial` — `wiki generate` writes SPEC v0.2 `WikiPage` markdown (`type`, path identity, `okf_version: "0.2"`, unknown-key round-trip, `x_codeharness`). **Delta:** typed memory files, `knowledge export|import`, prefix-load of all `knowledge/**/*.md`. Attested Computation **out of scope**.
+- **Map to module:** `harness/okf.py` (WikiPage + typed memory); CLI `memory export|import`.
+- **Status:** `partial` — `wiki generate` writes SPEC v0.2 `WikiPage`; `memory export|import` round-trips `Decision`/`Error`/`Preference`/`Fact` with unknown-key preservation (`x_memanto` / `x_other`). Shared parser, path identity, `okf_version: "0.2"`, `x_codeharness`. **Delta:** no `knowledge export|import` of the whole vault; no prefix-load of all `knowledge/**/*.md`. Attested Computation **out of scope**.
 - **Fusion priority:** P0 (same wave as memory; wiki emits `WikiPage`)
 - **Evidence:** deep-dive
 
@@ -290,8 +290,8 @@ Mini-deepens for thin cards: [notes/](notes/).
 
 Sources with the most **material delta** still on the table (not rejects):
 
-1. **Google Code Wiki + OKF** — `wiki generate` + WikiPage emit shipped; remaining: watch regen, RRF wiki boost, typed-memory interchange.
-2. **Memanto** — typed memory + supersession + brief unused.
+1. **Google Code Wiki + OKF** — `wiki generate` + WikiPage emit shipped; memory OKF import/export shipped; remaining: watch regen, RRF wiki boost, prefix-load of `knowledge/**/*.md`.
+2. **Memanto** — typed store + supersession + brief shipped; remaining: observe/auto-extract and eval “why” fixtures.
 3. **Strands + Forge + Claurst** — session budget, `/compact`, `/cost`, sage profile.
 4. **Agent-Reach + Proxima + OpenHuman** — doctor, query cache, MCP/`POST /v1/retrieve`.
 5. **TurboVec** — designed, blocked on recall, zero code.

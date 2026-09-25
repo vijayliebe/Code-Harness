@@ -24,6 +24,30 @@ WikiPage field mapping (Code-Harness emit → SPEC v0.2)
 | x_codeharness    | vendor bag (like ``x_memanto``)   | repo, kind, citations, graph_hash|
 | body             | markdown after frontmatter        | sections + Mermaid + ``path:symbol`` cites |
 
+Typed memory field mapping (same parser; no second schema)
+----------------------------------------------------------
+| Field            | SPEC role                         | We emit                          |
+|------------------|-----------------------------------|----------------------------------|
+| type             | required concept type             | ``Decision`` / ``Error`` / ``Preference`` / ``Fact`` |
+| title            | human name                        | required                          |
+| description      | short summary                     | first line of body when omitted   |
+| generated        | provenance                        | ``false`` (human-written)         |
+| verified         | trust                             | ``human``                         |
+| timestamp        | lifecycle                         | ISO-8601                          |
+| id               | extension (path is identity)      | ``mem/YYYYMMDD-slug``             |
+| status           | lifecycle extension               | ``active`` / ``superseded`` / ``forgotten`` |
+| supersedes       | reconcile pointer                 | prior ``id`` or relative path     |
+| tags             | optional labels                   | caller-supplied                   |
+| okf_version      | pin                               | ``"0.2"``                         |
+| x_codeharness    | vendor bag                        | kind=memory, memory_kind, links, id, status, supersedes |
+| body             | markdown after frontmatter        | prose + optional ``path:symbol`` cites |
+
+CLI kinds are lowercase (``decision`` / ``error`` / ``preference`` / ``fact``);
+the OKF ``type`` field is PascalCase to match ``WikiPage``. Unknown keys
+(including foreign ``x_memanto`` / ``x_other``) stay in ``extras`` and survive
+export → import. Path identity remains the file path; ``id`` is an extension
+so ``supersedes`` can point at a stable name.
+
 Citations in the body use Code Wiki style ``path:symbol``
 (e.g. ``harness/chunker.py:CodeChunker``), never chunk UUIDs.
 """
@@ -39,6 +63,8 @@ import yaml
 
 OKF_VERSION = "0.2"
 WIKI_PAGE_TYPE = "WikiPage"
+MEMORY_KINDS = ("decision", "error", "preference", "fact")
+MEMORY_OKF_TYPES = {kind: kind.capitalize() for kind in MEMORY_KINDS}
 
 FRONTMATTER_RE = re.compile(r"\A---\s*\n(.*?)\n---\s*\n?", re.DOTALL)
 
@@ -52,6 +78,9 @@ _KNOWN_FIELDS = (
     "tags",
     "okf_version",
     "x_codeharness",
+    "id",
+    "status",
+    "supersedes",
 )
 
 _SYMBOL_KINDS = frozenset({
@@ -121,7 +150,11 @@ def _as_version(value: Any) -> str:
 
 @dataclass
 class WikiPage:
-    """OKF-compatible WikiPage (markdown+frontmatter or dict)."""
+    """OKF-compatible concept (markdown+frontmatter or dict).
+
+    Named WikiPage for the wiki MVP; the same record is the memory
+    interchange type (``type: Decision`` / ``Error`` / …).
+    """
 
     title: str
     type: str = WIKI_PAGE_TYPE
@@ -134,6 +167,9 @@ class WikiPage:
     extras: Dict[str, Any] = field(default_factory=dict)
     body: str = ""
     x_codeharness: Dict[str, Any] = field(default_factory=dict)
+    id: Optional[str] = None
+    status: Optional[str] = None
+    supersedes: Optional[str] = None
 
     def to_frontmatter(self) -> Dict[str, Any]:
         data: Dict[str, Any] = {
@@ -146,6 +182,12 @@ class WikiPage:
         data["verified"] = self.verified
         if self.timestamp:
             data["timestamp"] = self.timestamp
+        if self.id:
+            data["id"] = self.id
+        if self.status:
+            data["status"] = self.status
+        if self.supersedes:
+            data["supersedes"] = self.supersedes
         if self.tags:
             data["tags"] = list(self.tags)
         data["okf_version"] = _Quoted(_as_version(self.okf_version))
@@ -210,8 +252,68 @@ def parse_okf_markdown(text: str) -> WikiPage:
         extras=extras,
         body=body,
         x_codeharness=dict(xch),
+        id=str(meta["id"]) if meta.get("id") else None,
+        status=str(meta["status"]) if meta.get("status") else None,
+        supersedes=str(meta["supersedes"]) if meta.get("supersedes") else None,
     )
 
 
 def default_wiki_dir(repo_path: str) -> str:
     return os.path.join(repo_path or ".", "knowledge", "wiki")
+
+
+def default_memory_dir(repo_path: str) -> str:
+    return os.path.join(repo_path or ".", "knowledge", "memory")
+
+
+def default_local_memory_dir(repo_path: str) -> str:
+    return os.path.join(repo_path or ".", ".code-harness", "memory")
+
+
+def normalize_memory_kind(value: Any) -> Optional[str]:
+    text = str(value or "").strip().lower()
+    if text in MEMORY_KINDS:
+        return text
+    return None
+
+
+def okf_type_for_kind(kind: str) -> str:
+    normalized = normalize_memory_kind(kind) or (kind or "").strip()
+    return MEMORY_OKF_TYPES.get(normalized, normalized.capitalize() or "Fact")
+
+
+def is_memory_page(page: WikiPage) -> bool:
+    if normalize_memory_kind(page.type):
+        return True
+    bag = page.x_codeharness or {}
+    if str(bag.get("kind") or "").lower() == "memory":
+        return True
+    if normalize_memory_kind(bag.get("memory_kind")):
+        return True
+    return False
+
+
+def walk_okf_markdown(root: str) -> List[tuple]:
+    """Yield ``(abs_path, WikiPage)`` for every ``*.md`` under *root*. Fail-soft."""
+    results: List[tuple] = []
+    if not root or not os.path.isdir(root):
+        return results
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(
+            d for d in dirnames if d not in {".git", "__pycache__", ".code-harness"}
+        )
+        for name in sorted(filenames):
+            if not name.endswith(".md"):
+                continue
+            path = os.path.join(dirpath, name)
+            try:
+                with open(path, encoding="utf-8", errors="replace") as fh:
+                    results.append((path, parse_okf_markdown(fh.read())))
+            except OSError:
+                continue
+    return results
+
+
+def estimate_tokens(text: str) -> int:
+    """Same estimator as ``ContextBuilder`` (``len // 4``)."""
+    return len(text or "") // 4

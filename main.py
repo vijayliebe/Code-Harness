@@ -553,6 +553,111 @@ def cmd_wiki(args):
         return
 
 
+def cmd_memory(args):
+    from harness.memory import MemoryError, MemoryStore
+    from harness.okf import default_memory_dir
+
+    action = getattr(args, "memory_cmd", None)
+    if not action:
+        parser = getattr(args, "memory_parser", None)
+        if parser is not None:
+            parser.print_help()
+        else:
+            print("usage: main.py memory {add,list,brief,export,import}")
+        sys.exit(2)
+
+    repo = getattr(args, "repo", None) or "."
+    config = _load_config(args)
+    config.repo_path = os.path.abspath(repo)
+    memory_dir = getattr(args, "dir", None) or default_memory_dir(config.repo_path)
+    store = MemoryStore(config.repo_path, memory_dir=memory_dir)
+
+    try:
+        if action == "add":
+            body = _memory_body(args)  # MemoryError if missing
+            links = getattr(args, "link", None) or []
+            entry = store.add(
+                kind=args.type,
+                title=args.title,
+                body=body,
+                links=links,
+                tags=getattr(args, "tag", None) or [],
+                supersedes=getattr(args, "supersedes", None),
+                timestamp=getattr(args, "timestamp", None),
+                entry_id=getattr(args, "id", None),
+            )
+            print(f"[+] Memory {entry.kind} {entry.id}")
+            print(f"    {entry.rel_path}")
+            if entry.links:
+                print(f"    links: {', '.join(entry.links)}")
+            if entry.supersedes:
+                print(f"    supersedes: {entry.supersedes}")
+            return
+
+        if action == "list":
+            rows = store.list(
+                kind=getattr(args, "type", None),
+                as_of=getattr(args, "as_of", None),
+                include_inactive=bool(getattr(args, "all", False)),
+            )
+            if not rows:
+                print(f"[!] No memory entries in {memory_dir}")
+                print(f"    Run: python main.py memory add {repo} --type decision --title '...' --body '...'")
+                return
+            print(f"[*] Memory entries in {memory_dir}")
+            for entry in rows:
+                cites = f"  {', '.join(entry.links)}" if entry.links else ""
+                pointer = f"  supersedes={entry.supersedes}" if entry.supersedes else ""
+                print(
+                    f"    [{entry.status}] {entry.kind} {entry.id}: {entry.title}{cites}{pointer}"
+                )
+            return
+
+        if action == "brief":
+            brief = store.brief(query=getattr(args, "query", None) or "")
+            if not brief.text:
+                print(f"[!] No active memory to brief in {memory_dir}")
+                return
+            print(brief.text.rstrip())
+            print(f"\n[*] tokens={brief.token_count} entries={len(brief.entry_ids)}")
+            return
+
+        if action == "export":
+            dest = getattr(args, "bundle", None) or getattr(args, "out", None)
+            if not dest:
+                print("[!] memory export requires a destination directory")
+                sys.exit(2)
+            count = store.export_okf(dest)
+            print(f"[+] Exported {count} OKF concept(s) → {dest}")
+            return
+
+        if action == "import":
+            src = getattr(args, "bundle", None)
+            if not src:
+                print("[!] memory import requires a source bundle directory")
+                sys.exit(2)
+            count = store.import_okf(src)
+            print(f"[+] Imported {count} OKF concept(s) → {memory_dir}")
+            return
+    except MemoryError as exc:
+        print(f"[!] {exc}")
+        sys.exit(1)
+
+
+def _memory_body(args) -> str:
+    body_file = getattr(args, "body_file", None)
+    if body_file:
+        if body_file == "-":
+            return sys.stdin.read()
+        with open(body_file, encoding="utf-8") as fh:
+            return fh.read()
+    body = getattr(args, "body", None)
+    if body is None:
+        from harness.memory import MemoryError
+        raise MemoryError("memory add requires --body or --body-file")
+    return body
+
+
 def _add_pack_flags(parser):
     parser.add_argument(
         "--pack-mode",
@@ -566,6 +671,11 @@ def _add_pack_flags(parser):
         dest="expand_chunks",
         metavar="ID",
         help="Materialize a cached original chunk into the prompt (repeatable)",
+    )
+    parser.add_argument(
+        "--include-memory-brief",
+        action="store_true",
+        help="Inject typed memory brief (≤800 tokens) after project docs (default off)",
     )
 
 
@@ -831,6 +941,11 @@ def _load_config(args) -> Config:
         config.context["pack_mode"] = args.pack_mode
     if getattr(args, "spill_ccr", False):
         config.ccr["spill"] = True
+    env_brief = os.environ.get("CODEHARNESS_MEMORY_BRIEF", "").strip().lower()
+    if env_brief in ("1", "true", "yes", "on"):
+        config.context["include_memory_brief"] = True
+    if getattr(args, "include_memory_brief", False):
+        config.context["include_memory_brief"] = True
 
     _apply_loop_args(config, args)
 
@@ -899,6 +1014,11 @@ Examples:
    %(prog)s wiki generate ./my-project                    # Living wiki from the KG
    %(prog)s wiki list ./my-project
    %(prog)s wiki show architecture
+   %(prog)s memory add . --type decision --title "Keep Chroma" --body "Until TurboVec gates pass." --link harness/vector_store.py:VectorStore
+   %(prog)s memory list .
+   %(prog)s memory brief . -q "why chroma?"
+   %(prog)s memory export . ./okf-bundle
+   %(prog)s memory import . ./okf-bundle
    %(prog)s watch ./my-project                            # Watch and auto re-index
   %(prog)s eval . --suite .docs/research/eval/code-harness.fixture.yaml
   %(prog)s eval . --suite .docs/research/eval/code-harness.fixture.yaml --loop
@@ -1062,6 +1182,96 @@ Examples:
         help="Wiki directory (default: <repo>/knowledge/wiki)",
     )
     wiki_show.set_defaults(func=cmd_wiki)
+
+    mem = subparsers.add_parser(
+        "memory",
+        help="Typed project memory (decision/error/preference/fact) + OKF import/export",
+    )
+    mem.set_defaults(func=cmd_memory, memory_parser=mem)
+    mem_sub = mem.add_subparsers(dest="memory_cmd")
+
+    mem_add = mem_sub.add_parser("add", help="Write one OKF memory concept")
+    mem_add.add_argument("repo", nargs="?", default=".", help="Repository path")
+    mem_add.add_argument(
+        "--type",
+        required=True,
+        help="decision | error | preference | fact",
+    )
+    mem_add.add_argument("--title", required=True, help="Required human title")
+    mem_add.add_argument("--body", default=None, help="Memory body (prose)")
+    mem_add.add_argument(
+        "--body-file",
+        default=None,
+        help="Read body from a file (use - for stdin)",
+    )
+    mem_add.add_argument(
+        "--link",
+        action="append",
+        default=[],
+        metavar="PATH:SYMBOL",
+        help="Optional path:symbol citation (repeatable)",
+    )
+    mem_add.add_argument(
+        "--tag",
+        action="append",
+        default=[],
+        help="Optional tag (repeatable)",
+    )
+    mem_add.add_argument("--supersedes", default=None, help="Id of the entry this replaces")
+    mem_add.add_argument("--id", default=None, help="Override generated mem/YYYYMMDD-slug id")
+    mem_add.add_argument("--timestamp", default=None, help="ISO-8601 timestamp (default: now UTC)")
+    mem_add.add_argument(
+        "--dir",
+        default=None,
+        help="Memory directory (default: <repo>/knowledge/memory)",
+    )
+    mem_add.set_defaults(func=cmd_memory)
+
+    mem_list = mem_sub.add_parser("list", help="List typed memories")
+    mem_list.add_argument("repo", nargs="?", default=".", help="Repository path")
+    mem_list.add_argument("--type", default=None, help="Filter by kind")
+    mem_list.add_argument("--as-of", dest="as_of", default=None, help="ISO-8601 as-of filter")
+    mem_list.add_argument(
+        "--all",
+        action="store_true",
+        help="Include superseded / forgotten tombstones",
+    )
+    mem_list.add_argument(
+        "--dir",
+        default=None,
+        help="Memory directory (default: <repo>/knowledge/memory)",
+    )
+    mem_list.set_defaults(func=cmd_memory)
+
+    mem_brief = mem_sub.add_parser("brief", help="Pack active memories (≤800 tokens)")
+    mem_brief.add_argument("repo", nargs="?", default=".", help="Repository path")
+    mem_brief.add_argument("-q", "--query", default="", help="Optional ranking query")
+    mem_brief.add_argument(
+        "--dir",
+        default=None,
+        help="Memory directory (default: <repo>/knowledge/memory)",
+    )
+    mem_brief.set_defaults(func=cmd_memory)
+
+    mem_export = mem_sub.add_parser("export", help="Write an OKF markdown bundle")
+    mem_export.add_argument("repo", nargs="?", default=".", help="Repository path")
+    mem_export.add_argument("bundle", help="Destination directory")
+    mem_export.add_argument(
+        "--dir",
+        default=None,
+        help="Memory directory (default: <repo>/knowledge/memory)",
+    )
+    mem_export.set_defaults(func=cmd_memory)
+
+    mem_import = mem_sub.add_parser("import", help="Import an OKF markdown bundle")
+    mem_import.add_argument("repo", nargs="?", default=".", help="Repository path")
+    mem_import.add_argument("bundle", help="Source bundle directory")
+    mem_import.add_argument(
+        "--dir",
+        default=None,
+        help="Memory directory (default: <repo>/knowledge/memory)",
+    )
+    mem_import.set_defaults(func=cmd_memory)
 
     args = parser.parse_args()
 

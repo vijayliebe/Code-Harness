@@ -55,8 +55,10 @@ def _find_context_files(repo_root: str, names: Optional[List[str]] = None) -> Di
     return found
 
 
-def _prefix_hash(project_docs: Dict[str, str]) -> str:
+def _prefix_hash(project_docs: Dict[str, str], extra: str = "") -> str:
     blob = "".join(project_docs[name] for name in sorted(project_docs))
+    if extra:
+        blob += extra
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:12]
 
 
@@ -99,14 +101,19 @@ class ContextBuilder:
             )
 
         project_docs = self._load_project_context()
+        memory_brief = self._load_memory_brief(query)
         deduplicated = self._deduplicate(results)
         started = time.perf_counter()
         scored = self._rerank(query, deduplicated)
         mmr_ms = (time.perf_counter() - started) * 1000.0
         packed_full: List[RetrievalResult] = []
         packed_lite: List[RetrievalResult] = []
-        full_context = self._assemble_context(query, scored, project_docs, packed=packed_full)
-        lite_context = self._assemble_ccr_lite(query, scored, project_docs, packed=packed_lite)
+        full_context = self._assemble_context(
+            query, scored, project_docs, packed=packed_full, memory_brief=memory_brief,
+        )
+        lite_context = self._assemble_ccr_lite(
+            query, scored, project_docs, packed=packed_lite, memory_brief=memory_brief,
+        )
         if self.pack_mode == "ccr_lite":
             context = lite_context
             packed = packed_lite
@@ -144,7 +151,7 @@ class ContextBuilder:
             pack_mode=self.pack_mode,
             prompt_tokens_full=tokens_full,
             prompt_tokens_packed=tokens_packed,
-            prefix_hash=_prefix_hash(project_docs),
+            prefix_hash=_prefix_hash(project_docs, memory_brief),
             omitted_chunk_ids=omitted_ids,
         )
 
@@ -168,6 +175,23 @@ class ContextBuilder:
         context_cfg = getattr(self.config, "context", None) or {}
         names = context_cfg.get("prefix_files") or CONTEXT_FILE_NAMES
         return _find_context_files(repo_root, names)
+
+    def _load_memory_brief(self, query: str) -> str:
+        """Opt-in typed-memory prefix. Default off so the query path is unchanged."""
+        context_cfg = getattr(self.config, "context", None) or {}
+        if not context_cfg.get("include_memory_brief"):
+            return ""
+        try:
+            from .memory import BRIEF_TOKEN_CAP, MemoryStore
+
+            store = MemoryStore.for_repo(
+                self.config.repo_path or ".",
+                memory_dir=context_cfg.get("memory_dir") or None,
+            )
+            cap = int(context_cfg.get("memory_brief_tokens") or BRIEF_TOKEN_CAP)
+            return store.brief(query=query or "", max_tokens=cap).text
+        except Exception:
+            return ""
 
     def _deduplicate(self, results: List[RetrievalResult]) -> List[RetrievalResult]:
         seen_content: set = set()
@@ -259,7 +283,8 @@ class ContextBuilder:
     def _assemble_context(self, query: str,
                           results: List[RetrievalResult],
                           project_docs: Optional[Dict[str, str]] = None,
-                          packed: Optional[List[RetrievalResult]] = None) -> str:
+                          packed: Optional[List[RetrievalResult]] = None,
+                          memory_brief: str = "") -> str:
         sections = []
         total_estimate = 0
         max_estimate = self.max_context_tokens
@@ -283,6 +308,11 @@ class ContextBuilder:
                         doc_entry = f"{header}```\n{content[:remaining * 4]}...\n```\n"
                         sections.append(doc_entry)
                     break
+
+        if memory_brief:
+            brief_entry = memory_brief if memory_brief.endswith("\n") else memory_brief + "\n"
+            total_estimate += self._estimate_tokens(brief_entry)
+            sections.append(brief_entry)
 
         by_file: Dict[str, List[RetrievalResult]] = {}
         for r in results:
@@ -335,7 +365,8 @@ class ContextBuilder:
     def _assemble_ccr_lite(self, query: str,
                            results: List[RetrievalResult],
                            project_docs: Optional[Dict[str, str]] = None,
-                           packed: Optional[List[RetrievalResult]] = None) -> str:
+                           packed: Optional[List[RetrievalResult]] = None,
+                           memory_brief: str = "") -> str:
         """KV-cache-friendly pack: stable project docs, then volatile hits."""
         ccr = getattr(self.config, "ccr", None) or {}
         first = int(ccr.get("first_lines", 12))
@@ -359,6 +390,11 @@ class ContextBuilder:
                     if remaining > 80:
                         sections.append(f"{header}```\n{content[:remaining * 4]}...\n```\n")
                     break
+
+        if memory_brief:
+            brief_entry = memory_brief if memory_brief.endswith("\n") else memory_brief + "\n"
+            total_estimate += self._estimate_tokens(brief_entry)
+            sections.append(brief_entry)
 
         sections.append(f"# Query: {query}\n")
         sections.append("## Relevant Code Context\n")
