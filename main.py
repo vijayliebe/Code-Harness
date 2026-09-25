@@ -666,6 +666,67 @@ def cmd_wiki(args):
         return
 
 
+def cmd_knowledge(args):
+    from harness.okf import (
+        VaultError,
+        default_okf_bundle_dir,
+        export_vault,
+        import_vault,
+    )
+
+    action = getattr(args, "knowledge_cmd", None)
+    if not action:
+        parser = getattr(args, "knowledge_parser", None)
+        if parser is not None:
+            parser.print_help()
+        else:
+            print("usage: main.py knowledge {export,import}")
+        sys.exit(2)
+
+    if action == "export":
+        repo = getattr(args, "repo", None) or "."
+        dest = getattr(args, "out", None) or default_okf_bundle_dir(repo)
+        try:
+            manifest = export_vault(repo, dest, redact=bool(getattr(args, "redact", False)))
+        except VaultError as exc:
+            print(f"[!] {exc}")
+            sys.exit(1)
+        total = int(manifest.counts.get("total") or 0)
+        if total == 0:
+            print(f"[!] Empty knowledge vault in {repo}")
+            print(f"    Wrote manifest → {dest}")
+            return
+        print(f"[+] Exported {total} OKF file(s) → {dest}")
+        print(
+            f"    wiki={manifest.counts.get('wiki', 0)} "
+            f"memory={manifest.counts.get('memory', 0)} "
+            f"gloss={manifest.counts.get('gloss', 0)} "
+            f"other={manifest.counts.get('other', 0)}"
+        )
+        return
+
+    if action == "import":
+        bundle = getattr(args, "bundle", None)
+        repo = getattr(args, "repo", None) or "."
+        try:
+            manifest = import_vault(bundle, repo)
+        except VaultError as exc:
+            print(f"[!] {exc}")
+            sys.exit(1)
+        total = int(manifest.counts.get("total") or 0)
+        if total == 0:
+            print(f"[!] Empty OKF bundle: {bundle}")
+            return
+        print(f"[+] Imported {total} OKF file(s) → {repo}")
+        print(
+            f"    wiki={manifest.counts.get('wiki', 0)} "
+            f"memory={manifest.counts.get('memory', 0)} "
+            f"gloss={manifest.counts.get('gloss', 0)} "
+            f"other={manifest.counts.get('other', 0)}"
+        )
+        return
+
+
 def cmd_memory(args):
     from harness.memory import MemoryError, MemoryStore
     from harness.okf import default_memory_dir
@@ -1506,6 +1567,8 @@ Examples:
    %(prog)s memory export . ./okf-bundle
    %(prog)s memory import . ./okf-bundle
    %(prog)s memory extract . --dry-run
+   %(prog)s knowledge export . --out ./okf-bundle
+   %(prog)s knowledge import ./okf-bundle --repo ./other-repo
    %(prog)s memory extract . --session .code-harness/sessions/20260925.jsonl
    %(prog)s audit show --last 20
    %(prog)s audit tail --path .code-harness/audit/audit.jsonl
@@ -1843,6 +1906,43 @@ Examples:
         help="Memory directory (default: <repo>/knowledge/memory)",
     )
     mem_extract.set_defaults(func=cmd_memory)
+
+    know = subparsers.add_parser(
+        "knowledge",
+        aliases=["okf"],
+        help="Full-vault OKF export/import (wiki + memory + gloss)",
+    )
+    know.set_defaults(func=cmd_knowledge, knowledge_parser=know)
+    know_sub = know.add_subparsers(dest="knowledge_cmd")
+
+    know_export = know_sub.add_parser(
+        "export",
+        help="Export the knowledge vault as an OKF bundle",
+    )
+    know_export.add_argument("repo", nargs="?", default=".", help="Repository path")
+    know_export.add_argument(
+        "--out",
+        default=None,
+        help="Destination bundle directory (default: <repo>/.code-harness/okf-bundle)",
+    )
+    know_export.add_argument(
+        "--redact",
+        action="store_true",
+        help="Strip secrets from exported OKF files (default off)",
+    )
+    know_export.set_defaults(func=cmd_knowledge)
+
+    know_import = know_sub.add_parser(
+        "import",
+        help="Import an OKF vault bundle into a repository",
+    )
+    know_import.add_argument("bundle", help="Source bundle directory")
+    know_import.add_argument(
+        "--repo",
+        default=".",
+        help="Destination repository (default: .)",
+    )
+    know_import.set_defaults(func=cmd_knowledge)
 
     audit = subparsers.add_parser(
         "audit",
