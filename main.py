@@ -317,6 +317,9 @@ def cmd_interactive(args):
         config=config,
         redact=config.redaction.get("enabled", True) and config.redaction.get("session", True),
         audit_path=config.redaction.get("audit_path"),
+        clear_tool_results=bool(session_cfg.get("clear_tool_results")),
+        clear_tool_keep=session_cfg.get("clear_tool_keep"),
+        clear_tool_token_trigger=session_cfg.get("clear_tool_token_trigger"),
     )
     query_cache = _build_query_cache(args, config, print)
     session.query_cache = query_cache
@@ -324,7 +327,8 @@ def cmd_interactive(args):
     print("=" * 60)
     print("  Code Harness - Interactive Session")
     wiki_bit = "  wiki=on" if session.wiki_mode else ""
-    print(f"  profile={session.profile}  pack={context_builder.pack_mode}{wiki_bit}")
+    clear_bit = "  clear-tool-results=on" if session.clear_tool_results_enabled else ""
+    print(f"  profile={session.profile}  pack={context_builder.pack_mode}{wiki_bit}{clear_bit}")
     print("  /help /compact /cost /profile /exit")
     print("=" * 60)
     print()
@@ -397,6 +401,9 @@ def cmd_interactive(args):
         from harness.loop import LoopConfig, QueryLoop, verify_answer
         from harness.query_cache import run_with_query_cache
 
+        if session.clear_tool_results_enabled:
+            session.maybe_clear_tool_results()
+
         loop = QueryLoop(retriever, context_builder, LoopConfig.from_mapping(config.retrieval))
         generate = None
         can_generate = llm_available and llm is not None and _llm_ready(llm, config)
@@ -450,7 +457,7 @@ def cmd_interactive(args):
         else:
             if answer is None:
                 system_prompt = context_builder.build_system_prompt()
-                history = session.history_for_prompt()
+                history = session.history_for_model()
                 if history:
                     context = context.rstrip() + "\n\n## Session history\n" + history + "\n"
                 if args.stream:
@@ -472,6 +479,10 @@ def cmd_interactive(args):
                 completion_tokens=completion,
                 loop_attempts=int(getattr(outcome, "attempts", 1) or 1),
                 pack_mode=report.pack_mode,
+                paths=list(report.packed_paths or []),
+                tool_name="retrieve",
+                tool_args=query,
+                tool_result=context or "",
             )
         )
         print()
@@ -1223,6 +1234,38 @@ def _add_query_cache_flags(parser):
     )
 
 
+def _add_clear_tool_result_flags(parser):
+    parser.add_argument(
+        "--clear-tool-results",
+        action="store_true",
+        dest="clear_tool_results",
+        help=(
+            "Replace aged retrieve/tool dumps with re-fetch placeholders "
+            "(default off; env CODEHARNESS_CLEAR_TOOL_RESULTS=1)"
+        ),
+    )
+    parser.add_argument(
+        "--no-clear-tool-results",
+        action="store_true",
+        dest="no_clear_tool_results",
+        help="Disable tool-result clearing (CODEHARNESS_CLEAR_TOOL_RESULTS=0)",
+    )
+    parser.add_argument(
+        "--clear-tool-keep",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Keep the latest N retrieve dumps when clearing (default: session.clear_tool_keep / 1)",
+    )
+    parser.add_argument(
+        "--clear-tool-token-trigger",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Also clear older dumps when dump tokens exceed N (0 = keep-N only)",
+    )
+
+
 def _add_redact_flag(parser):
     parser.add_argument(
         "--no-redact",
@@ -1784,6 +1827,10 @@ def _load_config(args) -> Config:
     if env_audit in ("0", "false", "off", "no"):
         config.redaction["audit"] = False
 
+    from harness.tool_clear import apply_clear_tool_config
+
+    apply_clear_tool_config(config, args)
+
     _apply_loop_args(config, args)
 
     env_backend = os.environ.get("CODEHARNESS_VECTOR_BACKEND", "").strip()
@@ -1945,6 +1992,7 @@ Examples:
     _add_profile_flag(int_p)
     _add_redact_flag(int_p)
     _add_query_cache_flags(int_p)
+    _add_clear_tool_result_flags(int_p)
     int_p.set_defaults(func=cmd_interactive)
 
     info = subparsers.add_parser("info", help="Show repository information")

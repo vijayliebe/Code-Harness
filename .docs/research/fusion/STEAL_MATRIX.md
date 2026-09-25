@@ -1,6 +1,6 @@
 # Steal matrix — every INDEX resource
 
-Inventory of [../INDEX.md](../INDEX.md) (23 items, including fuzzy-resolved names). Status is judged against **this branch tip**: eval harness, CCR-lite packer, corrective query loop, KG enrichment, wiki, typed memory+OKF + heuristic `memory extract` (opt-in auto), session `/compact`/`/cost`, secret redaction + audit JSONL, doctor + localhost MCP / `POST /v1/retrieve`, **experimental TurboVec backend (recall-gated) + fixture-suite A/B table**.
+Inventory of [../INDEX.md](../INDEX.md) (24 items, including fuzzy-resolved names). Status is judged against **this branch tip**: eval harness, CCR-lite packer, corrective query loop, KG enrichment, wiki, typed memory+OKF + heuristic `memory extract` (opt-in auto), session `/compact`/`/cost` + **opt-in tool-result clearing**, secret redaction + audit JSONL, doctor + localhost MCP / `POST /v1/retrieve`, **experimental TurboVec backend (recall-gated) + fixture-suite A/B table**.
 
 **This is not a claim that fusion is complete.** Rows marked `done` mean the *stealable mechanism* is in-tree; siblings on the same card may still be `gap`.
 
@@ -42,6 +42,7 @@ Mini-deepens for thin cards: [notes/](notes/).
 | 21 | WorkOS | reject | — | fusion-note |
 | 22 | Firecrawl | gap | P2 | fusion-note |
 | 23 | Google Code Wiki | partial | P0 | deep-dive |
+| 24 | Claude Code harness | partial | P1 | fusion-note |
 
 ---
 
@@ -61,7 +62,7 @@ Mini-deepens for thin cards: [notes/](notes/).
 - **Best stealable ideas:** (1) Interactive `/compact` of *dialogue* (keep user lines + last pack IDs). (2) `/cost` — show packed vs full tokens and loop attempts in the REPL. (3) Optional terse system prompt (do not restate retrieved code).
 - **Why it matters:** Tokens/UX on multi-turn `interactive` (today unbounded). Ops: users optimize what they see. ACP is editor distribution — MCP retrieve is the local equivalent.
 - **Map to module:** CLI (`chat`/`session`/`interactive`); `harness/session.py`; eval already has the numbers `/cost` would print.
-- **Status:** `partial` — `/compact` + `/cost` + session JSONL **shipped**. **Delta:** caveman prompt. **Reject** `/goal` `/share` ultracode (agent clone). GPL — ideas only.
+- **Status:** `partial` — `/compact` + `/cost` + session JSONL **shipped**. Opt-in tool-result clearing is the Claude Code sibling (**#24**), not conversation compact. **Delta:** caveman prompt. **Reject** `/goal` `/share` ultracode (agent clone). GPL — ideas only.
 - **Fusion priority:** P1 for compact+cost. P3 for caveman.
 - **Evidence:** fusion-note (live README skim)
 
@@ -71,7 +72,7 @@ Mini-deepens for thin cards: [notes/](notes/).
 - **Best stealable ideas:** (1) Context-budget policy — never drop latest query + top pack; summarize/drop older packs. (2) Session ≠ long-term memory ≠ code index. (3) Explicit loop stops (grade / coverage / max_loops / easy path).
 - **Why it matters:** Tokens on interactive; accuracy by not mixing chat into Chroma; latency via BM25-only easy path (already in loop).
 - **Map to module:** query loop (`harness/loop.py` — **done** for stops/easy/HyDE-on-retry); NEW session store; later MCP.
-- **Status:** `partial` — loop policy shipped (`max_loops` default 0); session JSONL + never-drop-latest-pack budget **shipped**. **Delta:** no subagent graph-explorer, no `create_harness` factory (correctly skipped).
+- **Status:** `partial` — loop policy shipped (`max_loops` default 0); session JSONL + never-drop-latest-pack budget **shipped**. Tool-result clearing (keep latest pack / latest user, drop aged retrieve dumps) **shipped** opt-in. **Delta:** no subagent graph-explorer, no `create_harness` factory (correctly skipped). **Later:** event-sourced session.
 - **Fusion priority:** P1 session+budget. P2 graph-explorer subagent after wiki. Do not `pip install strands-harness`.
 - **Evidence:** deep-dive
 
@@ -275,6 +276,16 @@ Mini-deepens for thin cards: [notes/](notes/).
 - **Fusion priority:** P0
 - **Evidence:** deep-dive
 
+## 24. Claude Code harness
+
+- **Links:** https://docs.anthropic.com/en/docs/claude-code · Anthropic cookbook context-management · first-pass [../claude-code-harness.md](../claude-code-harness.md)
+- **Best stealable ideas:** (1) **Tool-result clearing** — keep `tool_use` / pack / `chunk_id` records, replace aged re-fetchable `tool_result` / retrieve dumps with short placeholders. (2) Distinct from conversation `/compact` (never silently drop user/assistant prose). (3) Later: verify-gate, event-sourced session.
+- **Why it matters:** After long retrieve/tool turns, bulky dumps dominate session history. The model can re-call retrieve / `retrieve_chunk` if the placeholder still names the id.
+- **Map to module:** `harness/tool_clear.py`, `harness/session.py` (`/clear-tool-results`, `/compact` micro-step, `/cost` tokens-freed), CCR packer `retrieve_chunk`.
+- **Status:** `partial` — tool-result clearing **shipped** (opt-in, default **off**: `--clear-tool-results` / `CODEHARNESS_CLEAR_TOOL_RESULTS=1` / `session.clear_tool_results`; `clear_tool_keep` default 1; `clear_tool_token_trigger` default 0). **Delta / later:** verify-gate, event-sourced session. Do not change retrieval defaults.
+- **Fusion priority:** P1 (clearing done). Verify-gate and event-session stay later.
+- **Evidence:** fusion-note
+
 ---
 
 ## Already fused (do not rebuild)
@@ -287,6 +298,7 @@ Mini-deepens for thin cards: [notes/](notes/).
 | exposes / tested_by / gloss / beam / Mermaid | `harness/kg_enrich.py`, `KnowledgeGraph` |
 | Secret redaction + audit JSONL | `harness/redact.py`, `harness/audit.py` |
 | `doctor` + localhost MCP / stdio MCP / `POST /v1/retrieve` | `harness/doctor.py`, `harness/serve.py` |
+| Session tool-result clearing (opt-in; keep ids, placeholder dumps) | `harness/tool_clear.py`, `harness/session.py` |
 
 ## Biggest underextracted sources
 
@@ -294,7 +306,7 @@ Sources with the most **material delta** still on the table (not rejects):
 
 1. **Google Code Wiki + OKF** — `wiki generate` + WikiPage emit + `--dirty` / watch hook + opt-in RRF `wiki_weight` + full-vault `knowledge export|import` + opt-in packer prefix-load of `knowledge/**/*.md` + chat-over-wiki via CCR shipped; remaining: LLM polish.
 2. **Memanto** — typed store + supersession + brief + heuristic auto-extract + opt-in BM25-over-memory RRF shipped; remaining: eval “why” fixtures.
-3. **Strands + Forge + Claurst** — session `/compact` `/cost` sage + localhost HTTP + stdio MCP retrieve shipped; remaining: caveman, graph-explorer digest.
+3. **Strands + Forge + Claurst + Claude Code** — session `/compact` `/cost` sage + **opt-in tool-result clearing** + localhost HTTP + stdio MCP retrieve shipped; remaining: caveman, graph-explorer digest, verify-gate, event-session.
 4. **Agent-Reach + Proxima + OpenHuman** — doctor + query cache + MCP/`POST /v1/retrieve` + **stdio MCP** **shipped** (loopback HTTP / no-bind stdio). Query cache now covers serve + opt-in query/chat/eval. Remainder: Jina ingest.
 5. **TurboVec** — protocol + opt-in backend + eval A/B gate + **fixture-suite A/B table** shipped; still experimental, not default. Remainder: dual-write, TQ+ calibrate, default flip.
 6. **Headroom remainder** — expand-on-explain, stable cache key, type-aware pack.

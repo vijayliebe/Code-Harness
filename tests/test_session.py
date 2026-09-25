@@ -403,6 +403,7 @@ class TestCliAffordance(unittest.TestCase):
             self.assertEqual(run.returncode, 0, run.stderr)
             self.assertIn("--profile", run.stdout)
             self.assertIn("sage", run.stdout)
+            self.assertIn("--clear-tool-results", run.stdout)
 
         top = subprocess.run(
             [sys.executable, "main.py", "--help"],
