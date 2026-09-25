@@ -301,12 +301,20 @@ def _result_dict(result) -> Dict[str, Any]:
 
 def _index_fingerprint(config: Config, repo_path: str, repo_name: str) -> str:
     parts: List[str] = []
-    persist = (config.vector_store or {}).get("persist_directory") or ".code-harness/chromadb"
+    from .vector_store import normalize_backend_name, resolved_persist_directory
+
+    persist = resolved_persist_directory(config)
     if not os.path.isabs(persist):
         persist = os.path.join(repo_path or ".", persist)
+    kind = normalize_backend_name((config.vector_store or {}).get("type", "chromadb"))
     sqlite = os.path.join(persist, "chroma.sqlite3")
     if os.path.isfile(sqlite):
         parts.append(f"chroma:{os.path.getmtime(sqlite)}")
+    for name in ("index.tvim", "sidecar.json", "store.json", "manifest.json"):
+        path = os.path.join(persist, name)
+        if os.path.isfile(path):
+            parts.append(f"{kind}:{name}:{os.path.getmtime(path)}")
+            break
     from .knowledge_graph import KnowledgeGraph
 
     kg_path = KnowledgeGraph(config, repo_name=repo_name).persist_path

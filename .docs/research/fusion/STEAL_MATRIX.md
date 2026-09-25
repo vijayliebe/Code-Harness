@@ -1,6 +1,6 @@
 # Steal matrix — every INDEX resource
 
-Inventory of [../INDEX.md](../INDEX.md) (23 items, including fuzzy-resolved names). Status is judged against **this branch tip**: eval harness, CCR-lite packer, corrective query loop, KG enrichment, wiki, typed memory+OKF, session `/compact`/`/cost`, secret redaction + audit JSONL, **doctor + localhost MCP / `POST /v1/retrieve`**.
+Inventory of [../INDEX.md](../INDEX.md) (23 items, including fuzzy-resolved names). Status is judged against **this branch tip**: eval harness, CCR-lite packer, corrective query loop, KG enrichment, wiki, typed memory+OKF, session `/compact`/`/cost`, secret redaction + audit JSONL, doctor + localhost MCP / `POST /v1/retrieve`, **experimental TurboVec backend (recall-gated)**.
 
 **This is not a claim that fusion is complete.** Rows marked `done` mean the *stealable mechanism* is in-tree; siblings on the same card may still be `gap`.
 
@@ -33,7 +33,7 @@ Mini-deepens for thin cards: [notes/](notes/).
 | 12 | Medium interview repos | reject | — | first-pass |
 | 13 | ForgeCode | partial | P1 | deep-dive |
 | 14 | Code graph | partial | P1 | deep-dive |
-| 15 | TurboVec | gap | P1 | deep-dive |
+| 15 | TurboVec | partial | P1 | deep-dive |
 | 16 | OKF (Google SPEC) | partial | P0 | deep-dive |
 | 17 | AirLLM | reject | — | fusion-note |
 | 18 | Prompt→Loop→Graph | partial | P1 | deep-dive |
@@ -191,8 +191,8 @@ Mini-deepens for thin cards: [notes/](notes/).
 - **Best stealable ideas:** (1) Optional 4-bit TurboQuant backend. (2) BM25∪graph **allowlist inside SIMD** then dense. (3) Incremental `sync()` with `watch`.
 - **Why it matters:** Latency + RAM on multi-repo indexes. Accuracy **risk** (quantized ANN).
 - **Map to module:** vector store (`vector_store.type`); retriever dense stage only — do not replace RRF.
-- **Status:** `gap` — Chroma remains default. **Blocked** on eval recall gates (≥ −2 Recall@10 vs Chroma). Dual-write spike first.
-- **Fusion priority:** P1 experimental after a larger fixture set (see eval gap). Not one of the next-5 until wiki/memory land.
+- **Status:** `partial` — `VectorStore` protocol + `chromadb` default + opt-in `turbovec` (`IdMapIndex` / sidecar) + `eval --compare-backends` Recall@k / nDCG@k gate. Default stays Chroma. **Delta:** dual-write spike, TQ+ `calibrate`, default flip after gates, incremental `sync()` cost vs Chroma upsert.
+- **Fusion priority:** P1 experimental; stay opt-in until Recall@10 ≥ −2 pts and Recall@30 ≥ −1 vs Chroma (also 5% relative).
 - **Evidence:** deep-dive (no extra fusion note)
 
 ## 16. OKF — Open Knowledge Format (Google SPEC)
@@ -296,6 +296,6 @@ Sources with the most **material delta** still on the table (not rejects):
 2. **Memanto** — typed store + supersession + brief shipped; remaining: observe/auto-extract and eval “why” fixtures.
 3. **Strands + Forge + Claurst** — session `/compact` `/cost` sage + localhost MCP retrieve shipped; remaining: caveman, graph-explorer digest.
 4. **Agent-Reach + Proxima + OpenHuman** — doctor + query cache + MCP/`POST /v1/retrieve` **shipped** (loopback). Remainder: Jina ingest, stdio MCP, serve-cache on eval/interactive.
-5. **TurboVec** — designed, blocked on recall, zero code.
+5. **TurboVec** — protocol + opt-in backend + eval A/B gate shipped; still experimental, not default. Remainder: dual-write, TQ+ calibrate, default flip.
 6. **Headroom remainder** — expand-on-explain, stable cache key, type-aware pack.
 7. **Code-graph remainder** — path templates, `calls` quality (regex is the real accuracy bug).

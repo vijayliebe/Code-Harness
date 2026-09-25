@@ -40,6 +40,9 @@ def cmd_index(args):
     print(f"[*] Repo name: {repo_name}")
     print(f"[*] Config: embedding={config.embedding['model']}, "
           f"provider={config.embedding['provider']}")
+    from harness.vector_store import describe_backend
+
+    print(f"[*] Vector backend: {describe_backend(config)}")
     print()
 
     parser = CodeParser(config)
@@ -85,7 +88,10 @@ def cmd_index(args):
     # Incremental: only delete chunks for this repo, not the entire collection
     vs.delete_by_repo(repo_name)
     vs.add_chunks(chunks, embeddings, repo_name=repo_name)
-    print(f"[*] Vector store: {vs.count()} chunks indexed (total across all repos)")
+    vs.persist()
+    print(f"[*] Vector store ({vs.backend_name}): {vs.count()} chunks indexed (total across all repos)")
+    if vs.experimental:
+        print("[!] Experimental backend: switching to/from Chroma requires a full re-index.")
 
     # Pre-warm BM25 disk cache for fast cold starts
     retriever = Retriever(config, embedder, vs, kg, repo_name=repo_name)
@@ -1021,8 +1027,84 @@ def _print_loop_debug(outcome):
     print("=" * 70 + "\n")
 
 
+def _eval_snapshot(config, context_builder, backend_name: str) -> Dict:
+    return {
+        "retrieval": dict(config.retrieval),
+        "embedding": {
+            "provider": config.embedding.get("provider"),
+            "model": config.embedding.get("model"),
+        },
+        "llm": {
+            "max_tokens": config.llm.get("max_tokens"),
+        },
+        "chunking": dict(config.chunking),
+        "context": dict(config.context),
+        "ccr": dict(config.ccr),
+        "pack_mode": context_builder.pack_mode,
+        "vector_backend": backend_name,
+        "loop": {
+            "max_loops": config.retrieval.get("max_loops", 0),
+            "grade_threshold": config.retrieval.get("grade_threshold", 0.35),
+            "citation_threshold": config.retrieval.get("citation_threshold", 0.5),
+        },
+    }
+
+
+def _run_eval_backend(config, fixtures, meta, suite_path, repo_name, k, loop_config):
+    from harness.eval import run_eval
+    from harness.vector_store import BackendUnavailable, describe_backend
+
+    print(f"[*] Vector backend: {describe_backend(config)}")
+    try:
+        vs = VectorStore(config)
+    except BackendUnavailable as exc:
+        return None, str(exc)
+    count = vs.count()
+    print(f"[*] Vector store ({vs.backend_name}): {count} chunks (total)")
+    if count == 0:
+        return None, (
+            f"no index for {vs.backend_name}; "
+            f"run python main.py index <repo> --vector-backend {vs.backend_name} "
+            "(rebuild required when switching backends)"
+        )
+    embedder = Embedder(config)
+    print(f"[*] Loading index for: {os.path.abspath(config.repo_path)} (repo: {repo_name})")
+    kg = KnowledgeGraph(config, repo_name=repo_name)
+    kg.load()
+    retriever = Retriever(config, embedder, vs, kg, repo_name=repo_name)
+    if retriever.try_load_bm25():
+        print("[*] BM25 index loaded from disk")
+    else:
+        chunks = vs.get_all(repo_name=repo_name)
+        retriever.index_chunks(chunks, persist=False)
+        print("[*] BM25 index rebuilt from vector store")
+    context_builder = ContextBuilder(config)
+    report = run_eval(
+        fixtures=fixtures,
+        retriever=retriever,
+        context_builder=context_builder,
+        k=k,
+        suite_name=meta["suite"],
+        suite_path=suite_path,
+        repo_path=config.repo_path,
+        repo_name=repo_name,
+        config_snapshot=_eval_snapshot(config, context_builder, vs.backend_name),
+        loop_config=loop_config,
+    )
+    return report, None
+
+
 def cmd_eval(args):
-    from harness.eval import load_suite, print_summary, run_eval, write_report
+    from harness.eval import load_suite, print_summary, write_report
+    from harness.vector_eval import (
+        compare_backend_reports,
+        gate_exit_code,
+        parse_backend_list,
+        print_backend_comparison,
+        probe_backend,
+        selected_backend_name,
+    )
+    from harness.vector_store import apply_vector_backend
 
     suite_path = args.suite
     try:
@@ -1043,72 +1125,91 @@ def cmd_eval(args):
     config = _load_config(args)
     config.repo_path = args.repo or "."
     repo_name = _derive_repo_name(args)
-
-    vs = VectorStore(config)
-    count = vs.count()
-    print(f"[*] Vector store: {count} chunks (total)")
-    if count == 0:
-        print("[!] No indexed data. Run 'python main.py index <repo>' first, then re-run eval.")
-        sys.exit(1)
-
-    embedder = Embedder(config)
-    print(f"[*] Loading index for: {os.path.abspath(config.repo_path)} (repo: {repo_name})")
-    kg = KnowledgeGraph(config, repo_name=repo_name)
-    kg.load()
-    retriever = Retriever(config, embedder, vs, kg, repo_name=repo_name)
-    if retriever.try_load_bm25():
-        print("[*] BM25 index loaded from disk")
-    else:
-        chunks = vs.get_all(repo_name=repo_name)
-        retriever.index_chunks(chunks, persist=False)
-        print("[*] BM25 index rebuilt from vector store")
-
-    context_builder = ContextBuilder(config)
-    k = args.k or meta.get("k") or config.retrieval.get("top_k", 10)
-    k = int(k)
-
-    snapshot = {
-        "retrieval": dict(config.retrieval),
-        "embedding": {
-            "provider": config.embedding.get("provider"),
-            "model": config.embedding.get("model"),
-        },
-        "llm": {
-            "max_tokens": config.llm.get("max_tokens"),
-        },
-        "chunking": dict(config.chunking),
-        "context": dict(config.context),
-        "ccr": dict(config.ccr),
-        "pack_mode": context_builder.pack_mode,
-        "loop": {
-            "max_loops": config.retrieval.get("max_loops", 0),
-            "grade_threshold": config.retrieval.get("grade_threshold", 0.35),
-            "citation_threshold": config.retrieval.get("citation_threshold", 0.5),
-        },
-    }
-
     from harness.loop import LoopConfig
 
     loop_config = LoopConfig.from_mapping(config.retrieval)
     if loop_config.max_loops:
         print(f"[*] Query loop: max_loops={loop_config.max_loops}")
 
+    k = args.k or meta.get("k") or config.retrieval.get("top_k", 10)
+    k = int(k)
+    selected = selected_backend_name(config)
+    compare_names = parse_backend_list(getattr(args, "compare_backends", None))
+    if selected == "turbovec" and "chromadb" not in compare_names:
+        compare_names = ["chromadb", "turbovec"] + [n for n in compare_names if n not in ("chromadb", "turbovec")]
+    if not compare_names:
+        compare_names = [selected]
+
     print(f"[*] Scoring {len(fixtures)} queries at k={k} (retrieval only, no LLM)\n")
-    report = run_eval(
-        fixtures=fixtures,
-        retriever=retriever,
-        context_builder=context_builder,
-        k=k,
-        suite_name=meta["suite"],
-        suite_path=suite_path,
-        repo_path=config.repo_path,
-        repo_name=repo_name,
-        config_snapshot=snapshot,
-        loop_config=loop_config,
-    )
-    out_path = write_report(report, args.output)
-    print_summary(report)
-    print(f"[+] Wrote eval report: {out_path}")
+    reports = {}
+    skips = {}
+    for name in compare_names:
+        ok, reason = probe_backend(name, config)
+        if not ok:
+            print(f"[!] Skipping {name}: {reason}")
+            skips[name] = reason
+            continue
+        cfg_one = Config.from_dict({
+            "embedding": dict(config.embedding),
+            "chunking": dict(config.chunking),
+            "vector_store": dict(config.vector_store),
+            "knowledge_graph": dict(config.knowledge_graph),
+            "repo_graph": dict(config.repo_graph),
+            "retrieval": dict(config.retrieval),
+            "llm": dict(config.llm),
+            "indexing": dict(config.indexing),
+            "context": dict(config.context),
+            "ccr": dict(config.ccr),
+            "session": dict(config.session),
+            "redaction": dict(config.redaction),
+            "serve": dict(config.serve),
+            "repo_path": config.repo_path,
+            "verbose": config.verbose,
+        })
+        apply_vector_backend(cfg_one, name)
+        report, err = _run_eval_backend(
+            cfg_one, fixtures, meta, suite_path, repo_name, k, loop_config
+        )
+        if err:
+            print(f"[!] Skipping {name}: {err}")
+            skips[name] = err
+            continue
+        reports[name] = report
+        print_summary(report)
+
+    primary = reports.get(selected)
+    if primary is None and selected not in reports:
+        if selected in skips:
+            print(f"[!] Selected backend {selected} unavailable: {skips[selected]}")
+            sys.exit(1)
+        print("[!] No indexed data. Run 'python main.py index <repo>' first, then re-run eval.")
+        sys.exit(1)
+
+    if primary is not None:
+        out_path = write_report(primary, args.output)
+        print(f"[+] Wrote eval report: {out_path}")
+
+    if len(compare_names) > 1 or selected == "turbovec":
+        baseline = reports.get("chromadb")
+        candidate = reports.get("turbovec")
+        skip_reason = skips.get("turbovec", "")
+        if candidate is None and "turbovec" not in skips and "turbovec" not in compare_names:
+            skip_reason = skip_reason or "turbovec not in --compare-backends"
+        result = compare_backend_reports(
+            baseline,
+            candidate,
+            baseline_name="chromadb",
+            candidate_name="turbovec",
+            k=k,
+            relative_tolerance=getattr(args, "gate_tolerance", None) or 0.05,
+            force_experimental=bool(getattr(args, "force_experimental", False)),
+            skip_reason=skip_reason,
+        )
+        print_backend_comparison(result)
+        code = gate_exit_code(result, selected)
+        if code:
+            print("[!] Experimental backend missed the recall gate. Stay on chromadb or pass --force-experimental.")
+            sys.exit(code)
 
 
 def cmd_visualize(args):
@@ -1257,6 +1358,13 @@ def _load_config(args) -> Config:
 
     _apply_loop_args(config, args)
 
+    env_backend = os.environ.get("CODEHARNESS_VECTOR_BACKEND", "").strip()
+    backend_name = getattr(args, "vector_backend", None) or env_backend or None
+    if backend_name:
+        from harness.vector_store import apply_vector_backend
+
+        apply_vector_backend(config, backend_name)
+
     if not args.llm_provider:
         config.llm["provider"] = os.environ.get("LLM_PROVIDER", config.llm["provider"])
     else:
@@ -1357,6 +1465,11 @@ Examples:
     idx.add_argument("repo", nargs="?", default=".", help="Repository path")
     idx.add_argument("--save-config", nargs="?", const=True, help="Save config to file")
     idx.add_argument("--embed-model", help="Embedding model name (overrides config)")
+    idx.add_argument(
+        "--vector-backend",
+        default=None,
+        help="Dense backend: chromadb (default) or turbovec (experimental). Rebuild required on switch.",
+    )
     idx.set_defaults(func=cmd_index)
 
     q = subparsers.add_parser("query", help="Query the indexed repository")
@@ -1436,6 +1549,27 @@ Examples:
     ev.add_argument("--k", type=int, default=None, help="Recall/nDCG cutoff (default: suite k or config top_k)")
     ev.add_argument("--output", "-o", help="JSON report path (default: .code-harness/eval/{suite}-{timestamp}.json)")
     ev.add_argument("--dry-run", action="store_true", help="Validate the suite without retrieving")
+    ev.add_argument(
+        "--vector-backend",
+        default=None,
+        help="Dense backend for this run: chromadb (default) or turbovec (experimental)",
+    )
+    ev.add_argument(
+        "--compare-backends",
+        default=None,
+        help="Comma list to A/B (e.g. chromadb,turbovec). Prints Recall@k / nDCG@k side-by-side.",
+    )
+    ev.add_argument(
+        "--force-experimental",
+        action="store_true",
+        help="Do not fail when the experimental backend misses the recall gate",
+    )
+    ev.add_argument(
+        "--gate-tolerance",
+        type=float,
+        default=None,
+        help="Relative Recall/nDCG drop allowed vs chromadb (default: 0.05)",
+    )
     ev.add_argument(
         "--pack-mode",
         choices=["full", "ccr_lite"],
