@@ -147,14 +147,31 @@ class Retriever:
             started = time.perf_counter()
             query_embedding = self.embedder.embed_query(query, expand=True)
 
-            dense_results = self.vector_store.search(
-                query_embedding, top_k=k * 2, repo_name=self.repo_name or None
-            )
-            latencies_ms["dense"] = (time.perf_counter() - started) * 1000.0
+            use_allowlist = bool(getattr(self.vector_store, "supports_allowlist", False))
+            if use_allowlist:
+                embed_ms = (time.perf_counter() - started) * 1000.0
+                started_sparse = time.perf_counter()
+                sparse_results = self._bm25_search(query, top_k=max(k * 3, 200)) if self._bm25_index else []
+                latencies_ms["bm25"] = (time.perf_counter() - started_sparse) * 1000.0
+                allowlist = [r.chunk.id for r in sparse_results[:200] if getattr(r.chunk, "id", None)]
+                allow_arg = allowlist if len(allowlist) >= 20 else None
+                started_dense = time.perf_counter()
+                dense_results = self.vector_store.search(
+                    query_embedding,
+                    top_k=k * 2,
+                    repo_name=self.repo_name or None,
+                    allowlist_ids=allow_arg,
+                )
+                latencies_ms["dense"] = embed_ms + (time.perf_counter() - started_dense) * 1000.0
+            else:
+                dense_results = self.vector_store.search(
+                    query_embedding, top_k=k * 2, repo_name=self.repo_name or None
+                )
+                latencies_ms["dense"] = (time.perf_counter() - started) * 1000.0
 
-            started = time.perf_counter()
-            sparse_results = self._bm25_search(query, top_k=k * 3) if self._bm25_index else []
-            latencies_ms["bm25"] = (time.perf_counter() - started) * 1000.0
+                started = time.perf_counter()
+                sparse_results = self._bm25_search(query, top_k=k * 3) if self._bm25_index else []
+                latencies_ms["bm25"] = (time.perf_counter() - started) * 1000.0
 
             started = time.perf_counter()
             graph_results = self._graph_search(

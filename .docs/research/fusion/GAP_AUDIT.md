@@ -16,7 +16,7 @@ Order is RAG-quality first (Recall@k, citation-path, tokens), then ops/distribut
 | **4** | **Secret redaction + audit JSONL** — strip key/token patterns before assemble; append query/chunk_ids/tokens/model. *(redact + audit JSONL + `audit show` shipped; optional max-token hard stop still open)* | S | Governance #19, Proxima `analyze_file` strip | None. **Do this before binding a network port** |
 | **5** | **`doctor` + `mcp serve` / `POST /v1/retrieve`** — probe embed/LLM with ordered fallbacks; expose `retrieve`, `retrieve_chunk`, `graph_neighbors`. Optional SQLite query-hash cache. *(`doctor` + localhost HTTP/MCP + bind guard + redacted bodies + optional query-hash cache shipped; no stdio MCP / no public bind without `--allow-public`)* | L (or S doctor + M serve) | Agent-Reach #11, OpenHuman #8, Proxima #9, Forge #13 | PR 4 preferred. Query cache can split as S |
 
-**Immediately after these (not in the 5):** grow the eval hard-set (LLM-in-production #20); TurboVec dual-write (#15, blocked on recall); Jina/`index-url` (#11/#22, P2); path templates + `calls` quality (#14).
+**Immediately after these (not in the 5):** grow the eval hard-set (LLM-in-production #20); TurboVec default flip after recall gates (#15, protocol+opt-in+A/B shipped); Jina/`index-url` (#11/#22, P2); path templates + `calls` quality (#14).
 
 ---
 
@@ -99,14 +99,15 @@ Order is RAG-quality first (Recall@k, citation-path, tokens), then ops/distribut
 - **Risk / complexity / local-first:** Low for key+expand; do not import `headroom-ai`.
 - **PR size / deps:** S if not folded into G3. P2 compressors: L, only if eval shows non-code tokens dominating.
 
-### G9. TurboVec experimental backend (P1, blocked)
+### G9. TurboVec experimental backend (P1, partial)
 
 - **Steal:** TurboQuant + allowlist hybrid + incremental sync.
 - **Sources:** #15
-- **Change:** Problem — Chroma RAM/disk on multi-repo. Outcome — dual-write spike, then `vector_store.type: turbovec` opt-in. Default stays Chroma until Recall@10 ≥ −2 pts, Recall@30 ≥ −1, dense p50 ≤ 1.0×.
-- **Metric move:** dense-stage p50 and RSS **down** *if* gates pass; otherwise **reject default**. Measure: same suite, two backends, table in the PR.
+- **Shipped:** `vector_store.type: chromadb|turbovec` (aliases `chroma` / `turbo-vec`). `TurboVecStore` wraps real `turbovec.IdMapIndex` (`add_with_ids` / `search(..., allowlist=)` / `sync`) plus a JSON sidecar for chunk text. `eval --compare-backends chromadb,turbovec` prints Recall@k / nDCG@k and fails if turbovec is selected and below chromadb by >5% relative or the deep-dive point gates (R@10 −2 pts, R@30 −1). `--force-experimental` bypasses. Optional extra: `requirements-turbovec.txt`. Retriever uses BM25 allowlist (≥20 ids) only when the backend `supports_allowlist`. Default remains Chroma.
+- **Change:** Problem — Chroma RAM/disk on multi-repo. Outcome remaining — dual-write spike; TQ+ `calibrate`; flip default only after Recall@10 ≥ −2 pts, Recall@30 ≥ −1, dense p50 ≤ 1.0× on the fixture suite.
+- **Metric move:** dense-stage p50 and RSS **down** *if* gates pass; otherwise **reject default**. Measure: `eval --compare-backends`.
 - **Risk / complexity / local-first:** High (recall cliff, sidecar text, extra Rust wheel). Optional extra dep only.
-- **PR size / deps:** L. **Depends on G6.** Do not start before wiki/memory unless a spike is explicitly wanted.
+- **PR size / deps:** L. Wiki/memory already landed on this parent tip.
 
 ### G10. Self-RAG auto `--no-llm` (P2)
 

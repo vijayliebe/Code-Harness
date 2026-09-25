@@ -117,6 +117,11 @@ DEFAULT_CONFIG = {
         "hnsw_ef_search": 256,
         "hnsw_ef_construction": 200,
         "hnsw_m": 32,
+        "turbovec": {
+            "bits": 4,
+            "persist_directory": ".code-harness/turbovec",
+            "use_stub": False,
+        },
     },
 
     "indexing": {
@@ -163,7 +168,13 @@ class Config:
         config = cls()
         for section in DEFAULT_CONFIG:
             if section in d:
-                setattr(config, section, {**getattr(config, section), **d[section]})
+                merged = {**getattr(config, section), **d[section]}
+                if section == "vector_store":
+                    base_tv = getattr(config, section).get("turbovec") or {}
+                    incoming_tv = d[section].get("turbovec") if isinstance(d[section], dict) else None
+                    if isinstance(base_tv, dict) or isinstance(incoming_tv, dict):
+                        merged["turbovec"] = {**base_tv, **(incoming_tv or {})}
+                setattr(config, section, merged)
         if "repo_path" in d:
             config.repo_path = d["repo_path"]
         if "verbose" in d:

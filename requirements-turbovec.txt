@@ -1,0 +1,5 @@
+# Optional experimental dense backend (TurboQuant / IdMapIndex).
+# Not required for the default Chroma path or the unittest suite.
+#   pip install -r requirements-turbovec.txt
+# Equivalent extra name: turbovec
+turbovec>=1.0.0,<2

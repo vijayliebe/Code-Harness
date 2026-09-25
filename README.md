@@ -247,11 +247,43 @@ python main.py index .
 python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml
 python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --dry-run
 python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --loop
+python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --compare-backends chromadb,turbovec
 ```
 
 Reports Recall@k, nDCG@k, citation-path hit rate, stage latency (dense / BM25 / graph / CE / MMR), estimated prompt tokens after context assembly (`prompt_tokens_full` vs `prompt_tokens_packed`), and easy/hard splits. Writes `.code-harness/eval/{suite}-{timestamp}.json`. Use `--pack-mode ccr_lite` to score citation paths against packed headers (Recall@k is unchanged). `--loop` / `--max-loops N` is opt-in; default remains one-shot.
 
-See [`.docs/research/eval/README.md`](.docs/research/eval/README.md) for the fixture schema and failure taxonomy (`dense_miss | bm25_miss | graph_miss | rerank_drop | packer_drop`).
+`--compare-backends chromadb,turbovec` prints a side-by-side Recall@k / nDCG@k table. If `turbovec` is the selected backend and it misses the gate (more than 5% relative drop, or the deep-dive point limits: Recall@10 −2 pts / Recall@30 −1), eval exits non-zero unless `--force-experimental`. Missing `turbovec` extra is an honest skip, not a silent FAISS swap.
+
+See [`.docs/research/eval/README.md`](.docs/research/eval/README.md) for the fixture schema, failure taxonomy (`dense_miss | bm25_miss | graph_miss | rerank_drop | packer_drop`), and the experimental TurboVec recall gate.
+
+### Experimental TurboVec backend (recall-gated)
+
+Default dense store remains **Chroma**. [TurboVec](https://github.com/RyanCodrai/turbovec) (`pip install turbovec`, extra `requirements-turbovec.txt`) is an optional 4-bit TurboQuant index (`IdMapIndex`). It is **not** the default and must not be silently replaced by FAISS.
+
+```bash
+# 1. Optional extra (Rust wheel). Unittest suite stays green without it.
+pip install -r requirements-turbovec.txt
+
+# 2. Rebuild into the TurboVec persist dir (do not reuse .code-harness/chromadb)
+python main.py index . --vector-backend turbovec
+
+# 3. A/B vs the Chroma index (needs both indexes present)
+python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml \
+  --compare-backends chromadb,turbovec
+```
+
+Config (never flip `type` in a copied blog snippet without the gate):
+
+```json
+{
+  "vector_store": {
+    "type": "turbovec",
+    "turbovec": { "bits": 4, "persist_directory": ".code-harness/turbovec" }
+  }
+}
+```
+
+CLI `--vector-backend` / `CODEHARNESS_VECTOR_BACKEND` override `vector_store.type` (`chroma`/`chromadb`, `turbovec`). Switching backends requires a **full re-index**. `doctor` warns while type is `turbovec`. Gate: fail if selected TurboVec Recall/nDCG is >5% relative below Chroma, or Recall@10 drops >2 points / Recall@30 >1 point. `--force-experimental` records the miss and continues. If the wheel is missing, eval skips the TurboVec column instead of inventing another ANN.
 
 ### `clear` — Clear all indexed data
 
@@ -284,7 +316,7 @@ The corrective loop is **off by default** (`retrieval.max_loops: 0`) so one-shot
 
 ### Retrieval Pipeline
 
-1. **Dense retrieval**: query embedded with sentence-transformers/Voyage/Jina/OpenAI, top-K from ChromaDB (HNSW index, ef_search=256)
+1. **Dense retrieval**: query embedded with sentence-transformers/Voyage/Jina/OpenAI, top-K from the configured vector backend (default **ChromaDB** HNSW, `ef_search=256`; opt-in experimental **TurboVec** / TurboQuant)
 2. **Sparse retrieval**: BM25 keyword search over all chunks — catches exact function/variable name matches
 3. **Graph expansion**: beam walk over the knowledge graph (exposes / tested_by / gloss / calls / inheritance). Default `beam_width=6`, `beam_depth=2`; `expand_mode: bfs` keeps the old hop walk.
 4. **HyDE** (optional): hypothetical code document generation for query expansion
@@ -355,9 +387,11 @@ Key settings:
     "cache": true
   },
   "vector_store": {
+    "type": "chromadb",
     "hnsw_ef_search": 256,
     "hnsw_ef_construction": 200,
-    "hnsw_m": 32
+    "hnsw_m": 32,
+    "turbovec": { "bits": 4, "persist_directory": ".code-harness/turbovec" }
   },
   "llm": {
     "provider": "openai",
@@ -466,9 +500,10 @@ python main.py query --cross-repo -q "how do these projects interact?"
 
 ```
 .code-harness/
-├── chromadb/              # ChromaDB persistent data (HNSW index + metadata)
+├── chromadb/              # Default ChromaDB persist (HNSW index + metadata)
 │   ├── chroma.sqlite3
 │   └── ...
+├── turbovec/              # Optional TurboVec persist (index.tvim + sidecar.json)
 ├── graph_{repo}.json      # Per-repo knowledge graph (NetworkX node-link format)
 ├── graph.json             # Fallback single-repo graph
 ├── bm25_{repo}.pkl        # Per-repo BM25 serialized index
@@ -503,7 +538,9 @@ code-harness/
 │   ├── parser_treesitter.py       Tree-sitter AST parser (21 languages)
 │   ├── chunker.py                 Smart code chunking (entity-type aware)
 │   ├── embedder.py                Embedding (local/Voyage/Jina/OpenAI + HyDE)
-│   ├── vector_store.py            ChromaDB vector storage (tuned HNSW)
+│   ├── vector_store.py            VectorStore protocol + Chroma default + stub
+│   ├── turbovec_store.py          Optional TurboVec (IdMapIndex) adapter
+│   ├── vector_eval.py             Recall@k A/B gate (chroma vs turbovec)
 │   ├── knowledge_graph.py         NetworkX code relationship graph (intra-repo)
 │   ├── kg_enrich.py               exposes / tested_by / gloss + Mermaid export
 │   ├── okf.py                     OKF (Google SPEC v0.2) WikiPage subset

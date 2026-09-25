@@ -99,6 +99,7 @@ def run_doctor(
 
     report.checks.append(_check_python())
     report.checks.append(_check_deps())
+    report.checks.append(_check_vector_backend(cfg))
     report.checks.append(_check_index(cfg, root))
     report.checks.append(_check_graph(cfg, root, name))
     report.checks.append(_check_embedding(cfg, env))
@@ -159,22 +160,76 @@ def _candidate_dirs(root: str, rel: str) -> List[str]:
     return out
 
 
+def _check_vector_backend(config: Config) -> CheckResult:
+    from .vector_eval import probe_backend
+    from .vector_store import normalize_backend_name
+
+    try:
+        kind = normalize_backend_name((config.vector_store or {}).get("type", "chromadb"))
+    except ValueError as exc:
+        return CheckResult("vector_backend", "fail", str(exc), "Set vector_store.type to chromadb (default).")
+    if kind == "chromadb":
+        return CheckResult("vector_backend", "pass", "chromadb (default)")
+    extra = (config.vector_store or {}).get("turbovec") or {}
+    if kind == "turbovec" and extra.get("use_stub"):
+        return CheckResult(
+            "vector_backend",
+            "warn",
+            "turbovec-stub (experimental exact-cosine stand-in; not TurboQuant)",
+            "Keep vector_store.type: chromadb until eval --compare-backends passes the recall gate.",
+        )
+    ok, reason = probe_backend(kind, config)
+    if not ok:
+        return CheckResult(
+            "vector_backend",
+            "fail",
+            reason,
+            "pip install -r requirements-turbovec.txt or set vector_store.type: chromadb",
+        )
+    return CheckResult(
+        "vector_backend",
+        "warn",
+        f"{kind} (experimental; recall-gated, not default)",
+        "python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --compare-backends chromadb,turbovec",
+    )
+
+
 def _check_index(config: Config, root: str) -> CheckResult:
-    rel = (config.vector_store or {}).get("persist_directory") or ".code-harness/chromadb"
+    from .vector_store import normalize_backend_name, resolved_persist_directory
+
+    try:
+        kind = normalize_backend_name((config.vector_store or {}).get("type", "chromadb"))
+    except ValueError:
+        kind = "chromadb"
+    rel = resolved_persist_directory(config)
     candidates = _candidate_dirs(root, rel)
     found = None
+    markers = {
+        "chromadb": ("chroma.sqlite3",),
+        "turbovec": ("index.tvim", "sidecar.json", "manifest.json", "store.json"),
+        "stub": ("store.json",),
+    }
+    extra = (config.vector_store or {}).get("turbovec") or {}
+    if kind == "turbovec" and extra.get("use_stub"):
+        want = markers["stub"]
+    else:
+        want = markers.get(kind, ("chroma.sqlite3",))
     for path in candidates:
-        sqlite = os.path.join(path, "chroma.sqlite3")
-        if os.path.isfile(sqlite) or (os.path.isdir(path) and any(os.scandir(path))):
+        if any(os.path.isfile(os.path.join(path, name)) for name in want):
+            found = path
+            break
+        if kind == "chromadb" and os.path.isdir(path) and any(os.scandir(path)):
             found = path
             break
     if not found:
         shown = candidates[0] if candidates else rel
+        label = "chroma persist" if kind == "chromadb" else f"{kind} persist"
         return CheckResult(
             "index",
             "fail",
-            f"no chroma persist at {shown}",
-            f"python main.py index {root}",
+            f"no {label} at {shown}",
+            f"python main.py index {root}"
+            + ("" if kind == "chromadb" else f" --vector-backend {kind}"),
         )
     return CheckResult("index", "pass", found)
 

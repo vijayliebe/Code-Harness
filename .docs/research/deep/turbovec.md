@@ -119,13 +119,13 @@ If union < 20, skip allowlist (too tight; semantic questions starve).
 
 ## 13. Implementation checklist (when unblocked)
 
-- [ ] PR 1 suite exists and is green on Chroma
-- [ ] Protocol extracted from `VectorStore`
-- [ ] Dual-write spike + recall table
-- [ ] Embedding model name persisted
-- [ ] Allowlist union/min-size rules
-- [ ] Default remains `chromadb`
-- [ ] Optional extra dependency only
+- [x] PR 1 suite exists and is green on Chroma
+- [x] Protocol extracted from `VectorStore`
+- [ ] Dual-write spike + recall table (A/B eval shipped; dual-write not)
+- [x] Embedding model name persisted
+- [x] Allowlist union/min-size rules (BM25 pool ≥20; graph seeds still open)
+- [x] Default remains `chromadb`
+- [x] Optional extra dependency only
 
 ## 14. Cross-links
 
