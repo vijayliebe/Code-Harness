@@ -120,11 +120,54 @@ class LLMInterface:
         self._client = CustomClient(base, self.api_key, self.model)
         return self._client
 
-    def query(self, system_prompt: str, context: str, user_query: str) -> str:
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"{context}\n\nUser Question: {user_query}"},
+    def prepare_outbound(self, system_prompt: str, context: str, user_query: str) -> List[Dict]:
+        """Redact system/context/user text before any provider call (PR5-ready)."""
+        from .audit import append_audit
+        from .redact import audit_enabled, redact_and_audit, redaction_enabled
+
+        enabled = redaction_enabled(self.config)
+        audit_path = (getattr(self.config, "redaction", None) or {}).get("audit_path")
+        system_r = redact_and_audit(
+            system_prompt or "",
+            action="redact.llm",
+            config=self.config,
+            enabled=enabled,
+            audit_path=audit_path,
+        )
+        context_r = redact_and_audit(
+            context or "",
+            action="redact.llm",
+            config=self.config,
+            enabled=enabled,
+            audit_path=audit_path,
+        )
+        query_r = redact_and_audit(
+            user_query or "",
+            action="redact.llm",
+            config=self.config,
+            enabled=enabled,
+            audit_path=audit_path,
+            query=user_query,
+        )
+        if audit_enabled(self.config):
+            combined = context_r
+            # One durable "what we sent" row even when no extra hits remain.
+            append_audit(
+                action="llm.query",
+                config=self.config,
+                path=audit_path,
+                redaction=combined,
+                query=user_query,
+                tokens=len((context_r.text or "")) // 4,
+                model=self.model,
+            )
+        return [
+            {"role": "system", "content": system_r.text},
+            {"role": "user", "content": f"{context_r.text}\n\nUser Question: {query_r.text}"},
         ]
+
+    def query(self, system_prompt: str, context: str, user_query: str) -> str:
+        messages = self.prepare_outbound(system_prompt, context, user_query)
 
         if self.provider == "openai":
             return self._query_openai(messages)
@@ -139,10 +182,7 @@ class LLMInterface:
 
     def stream_query(self, system_prompt: str, context: str,
                      user_query: str) -> str:
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"{context}\n\nUser Question: {user_query}"},
-        ]
+        messages = self.prepare_outbound(system_prompt, context, user_query)
 
         if self.provider in ("openai", "gemini"):
             return self._stream_openai(messages)

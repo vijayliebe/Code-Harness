@@ -67,6 +67,16 @@ DEFAULT_CONFIG = {
         "keep_recent": 1,
     },
 
+    "redaction": {
+        "enabled": True,
+        "audit": True,
+        "audit_path": ".code-harness/audit/audit.jsonl",
+        "session": True,
+        "wiki": True,
+        "memory": False,
+        "max_prompt_tokens": None,
+    },
+
     "retrieval": {
         "dense_weight": 0.3,
         "sparse_weight": 0.25,
@@ -136,6 +146,7 @@ class Config:
     context: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["context"]))
     ccr: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["ccr"]))
     session: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["session"]))
+    redaction: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["redaction"]))
     repo_path: str = "."
     verbose: bool = False
 
@@ -174,6 +185,7 @@ class Config:
             "context": self.context,
             "ccr": self.ccr,
             "session": self.session,
+            "redaction": self.redaction,
             "repo_path": self.repo_path,
             "verbose": self.verbose,
         }

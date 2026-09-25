@@ -25,7 +25,7 @@ Do **not** steal: browser session emulation, 40 MCP chat tools, crew/consensus m
 | Corrective retrieve loop | **done** (`harness/loop.py`, opt-in `--loop`) | query loop |
 | `POST /v1/retrieve` + MCP retrieve | **gap** | NEW serve / CLI |
 | SQLite `(query_hash, repo, config) → chunk_ids` | **gap** | NEW cache beside Chroma |
-| Secret strip on assemble | **gap** | context builder |
+| Secret strip on assemble | **done** (`harness/redact.py`, default-on pack/LLM) | context builder |
 | Browser session LLM routing | **reject** — ToS + not retrieval | — |
 
 ## Fusion call

@@ -21,6 +21,7 @@ class ContextReport:
     prompt_tokens_packed: int = 0
     prefix_hash: str = ""
     omitted_chunk_ids: List[str] = field(default_factory=list)
+    redaction_count: int = 0
 
 CONTEXT_FILE_NAMES = ["ARCHITECTURE.md", "AGENTS.md", "CLAUDE.md"]
 
@@ -141,9 +142,29 @@ class ContextBuilder:
                 preview = pack_chunk(result.chunk, first, last, omit)
                 if preview.omitted:
                     omitted_ids.append(result.chunk.id)
+        full_redacted = self._redact_outbound(full_context)
+        lite_redacted = self._redact_outbound(lite_context)
+        full_context = full_redacted.text
+        lite_context = lite_redacted.text
+        if self.pack_mode == "ccr_lite":
+            context = lite_context
+            packed = packed_lite
+            chosen = lite_redacted
+        else:
+            context = full_context
+            packed = packed_full
+            chosen = full_redacted
         tokens_full = self.estimate_tokens(full_context)
         tokens_packed = self.estimate_tokens(lite_context)
         tokens = tokens_packed if self.pack_mode == "ccr_lite" else tokens_full
+        if chosen.count:
+            self._audit_redaction(
+                action="redact.context",
+                result=chosen,
+                query=query,
+                chunk_ids=packed_ids,
+                tokens=tokens,
+            )
         return ContextReport(
             context=context,
             prompt_tokens=tokens,
@@ -155,6 +176,7 @@ class ContextBuilder:
             prompt_tokens_packed=tokens_packed,
             prefix_hash=_prefix_hash(project_docs, memory_brief),
             omitted_chunk_ids=omitted_ids,
+            redaction_count=chosen.count,
         )
 
     def expand_into_context(self, context: str, chunk_ids: List[str]) -> str:
@@ -168,7 +190,36 @@ class ContextBuilder:
                 parts.append(f"### retrieve_chunk {chunk_id}\n[not in cache]\n")
             else:
                 parts.append(f"### retrieve_chunk {chunk_id} (full)\n```\n{text}\n```\n")
-        return "\n".join(parts) + "\n"
+        combined = "\n".join(parts) + "\n"
+        redacted = self._redact_outbound(combined)
+        if redacted.count:
+            self._audit_redaction(
+                action="redact.expand",
+                result=redacted,
+                chunk_ids=list(chunk_ids),
+            )
+        return redacted.text
+
+    def _redact_outbound(self, text: str):
+        from .redact import redact_text, redaction_enabled
+
+        return redact_text(text or "", enabled=redaction_enabled(self.config))
+
+    def _audit_redaction(self, *, action, result, query=None, chunk_ids=None, tokens=None):
+        from .audit import append_audit
+        from .redact import audit_enabled
+
+        if not audit_enabled(self.config):
+            return
+        append_audit(
+            action=action,
+            config=self.config,
+            redaction=result,
+            query=query,
+            chunk_ids=chunk_ids,
+            tokens=tokens,
+            model=(self.config.llm or {}).get("model"),
+        )
 
     def _load_project_context(self) -> Dict[str, str]:
         repo_root = self.config.repo_path

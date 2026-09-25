@@ -117,7 +117,9 @@ def generate_from_repo(
     kg, _ = load_kg_or_raise(repo_path, config=config, repo_name=repo_name, graph_path=graph_path)
     name = repo_name or os.path.basename(os.path.abspath(repo_path or "."))
     dest = Path(out_dir) if out_dir else Path(default_wiki_dir(repo_path))
-    return generate_wiki(kg, repo_path=repo_path, out_dir=dest, repo_name=name, module=module)
+    return generate_wiki(
+        kg, repo_path=repo_path, out_dir=dest, repo_name=name, module=module, config=config,
+    )
 
 
 def generate_wiki(
@@ -126,6 +128,7 @@ def generate_wiki(
     out_dir: Path,
     repo_name: str = "",
     module: Optional[str] = None,
+    config: Optional[Config] = None,
 ) -> WikiGenerateResult:
     graph = kg.graph
     out_dir = Path(out_dir)
@@ -173,6 +176,16 @@ def generate_wiki(
     for page in pages:
         filename = _page_filename(page)
         text = dump_okf_markdown(page)
+        wiki_on = True
+        if config is not None:
+            wiki_on = (getattr(config, "redaction", None) or {}).get("wiki", True)
+        if wiki_on:
+            from .redact import redact_and_audit, redaction_enabled
+
+            if redaction_enabled(config):
+                text = redact_and_audit(
+                    text, action="redact.wiki", config=config,
+                ).text
         dest = out_dir / filename
         dest.write_text(text, encoding="utf-8")
         written.append(filename)

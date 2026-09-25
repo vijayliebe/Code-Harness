@@ -289,6 +289,9 @@ def cmd_interactive(args):
         output_usd_per_1m=config.llm.get("output_usd_per_1m"),
         budget_tokens=int(max_tokens * multiplier),
         keep_recent=int(session_cfg.get("keep_recent") or 1),
+        config=config,
+        redact=config.redaction.get("enabled", True) and config.redaction.get("session", True),
+        audit_path=config.redaction.get("audit_path"),
     )
 
     print("=" * 60)
@@ -544,7 +547,35 @@ def cmd_retrieve_chunk(args):
         print(f"[!] chunk not in cache: {args.chunk_id}")
         print(f"    looked in {os.path.abspath(spill_dir)}")
         sys.exit(1)
+    from harness.redact import redact_and_audit, redaction_enabled
+
+    explicit = False if getattr(args, "no_redact", False) else None
+    if redaction_enabled(explicit=explicit):
+        text = redact_and_audit(text, action="redact.retrieve").text
     print(text)
+
+
+def cmd_audit(args):
+    from harness.audit import default_audit_path, tail_audit
+
+    action = getattr(args, "audit_cmd", None) or "show"
+    if action not in ("show", "tail"):
+        parser = getattr(args, "audit_parser", None)
+        if parser is not None:
+            parser.print_help()
+        else:
+            print("usage: main.py audit {show,tail}")
+        sys.exit(2)
+
+    n = int(getattr(args, "last", None) or 20)
+    repo = getattr(args, "repo", None) or "."
+    path = getattr(args, "path", None) or default_audit_path(repo)
+    rows = tail_audit(n, path=path)
+    if not rows:
+        print(f"[!] No audit events in {path}")
+        return
+    for row in rows:
+        print(json.dumps(row, ensure_ascii=False))
 
 
 def cmd_wiki(args):
@@ -676,7 +707,10 @@ def cmd_memory(args):
             return
 
         if action == "brief":
-            brief = store.brief(query=getattr(args, "query", None) or "")
+            brief = store.brief(
+                query=getattr(args, "query", None) or "",
+                redact=bool(getattr(args, "redact", False)),
+            )
             if not brief.text:
                 print(f"[!] No active memory to brief in {memory_dir}")
                 return
@@ -689,7 +723,7 @@ def cmd_memory(args):
             if not dest:
                 print("[!] memory export requires a destination directory")
                 sys.exit(2)
-            count = store.export_okf(dest)
+            count = store.export_okf(dest, redact=bool(getattr(args, "redact", False)))
             print(f"[+] Exported {count} OKF concept(s) → {dest}")
             return
 
@@ -750,6 +784,10 @@ def _print_expand(context_builder, config, ref: str, session):
     if text is None:
         print(f"[!] chunk not in cache: {ref}")
         return
+    from harness.redact import redact_and_audit, redaction_enabled
+
+    if redaction_enabled(config):
+        text = redact_and_audit(text, action="redact.retrieve", config=config).text
     print(text)
 
 
@@ -777,6 +815,14 @@ def _print_wiki_page(config, page: str):
         print(show_page(out_dir, page))
     except FileNotFoundError as exc:
         print(f"[!] {exc}")
+
+
+def _add_redact_flag(parser):
+    parser.add_argument(
+        "--no-redact",
+        action="store_true",
+        help="Disable secret redaction (tests / explicit opt-out only)",
+    )
 
 
 def _add_profile_flag(parser):
@@ -1086,6 +1132,15 @@ def _load_config(args) -> Config:
     if getattr(args, "include_memory_brief", False):
         config.context["include_memory_brief"] = True
 
+    env_redact = os.environ.get("CODEHARNESS_REDACT", "").strip().lower()
+    if env_redact in ("0", "false", "off", "no"):
+        config.redaction["enabled"] = False
+    if getattr(args, "no_redact", False):
+        config.redaction["enabled"] = False
+    env_audit = os.environ.get("CODEHARNESS_AUDIT", "").strip().lower()
+    if env_audit in ("0", "false", "off", "no"):
+        config.redaction["audit"] = False
+
     _apply_loop_args(config, args)
 
     if not args.llm_provider:
@@ -1160,6 +1215,8 @@ Examples:
    %(prog)s memory brief . -q "why chroma?"
    %(prog)s memory export . ./okf-bundle
    %(prog)s memory import . ./okf-bundle
+   %(prog)s audit show --last 20
+   %(prog)s audit tail --path .code-harness/audit/audit.jsonl
    %(prog)s watch ./my-project                            # Watch and auto re-index
   %(prog)s eval . --suite .docs/research/eval/code-harness.fixture.yaml
   %(prog)s eval . --suite .docs/research/eval/code-harness.fixture.yaml --loop
@@ -1196,6 +1253,7 @@ Examples:
     _add_pack_flags(q)
     _add_loop_flags(q, include_verify=True)
     _add_profile_flag(q)
+    _add_redact_flag(q)
     q.set_defaults(func=cmd_query)
 
     int_p = subparsers.add_parser(
@@ -1214,6 +1272,7 @@ Examples:
     _add_pack_flags(int_p)
     _add_loop_flags(int_p, include_verify=True)
     _add_profile_flag(int_p)
+    _add_redact_flag(int_p)
     int_p.set_defaults(func=cmd_interactive)
 
     info = subparsers.add_parser("info", help="Show repository information")
@@ -1278,6 +1337,7 @@ Examples:
         default=".code-harness/ccr",
         help="CCR cache directory (default: .code-harness/ccr)",
     )
+    _add_redact_flag(rc)
     rc.set_defaults(func=cmd_retrieve_chunk)
 
     wiki = subparsers.add_parser(
@@ -1397,6 +1457,11 @@ Examples:
         default=None,
         help="Memory directory (default: <repo>/knowledge/memory)",
     )
+    mem_brief.add_argument(
+        "--redact",
+        action="store_true",
+        help="Strip secrets from the printed brief (default off)",
+    )
     mem_brief.set_defaults(func=cmd_memory)
 
     mem_export = mem_sub.add_parser("export", help="Write an OKF markdown bundle")
@@ -1406,6 +1471,11 @@ Examples:
         "--dir",
         default=None,
         help="Memory directory (default: <repo>/knowledge/memory)",
+    )
+    mem_export.add_argument(
+        "--redact",
+        action="store_true",
+        help="Strip secrets from exported OKF files (default off)",
     )
     mem_export.set_defaults(func=cmd_memory)
 
@@ -1418,6 +1488,43 @@ Examples:
         help="Memory directory (default: <repo>/knowledge/memory)",
     )
     mem_import.set_defaults(func=cmd_memory)
+
+    audit = subparsers.add_parser(
+        "audit",
+        help="Show append-only redaction/LLM audit JSONL (no raw secrets)",
+    )
+    audit.set_defaults(func=cmd_audit, audit_parser=audit, audit_cmd="show")
+    audit_sub = audit.add_subparsers(dest="audit_cmd")
+
+    audit_show = audit_sub.add_parser("show", help="Print the last N audit events")
+    audit_show.add_argument("repo", nargs="?", default=".", help="Repository path")
+    audit_show.add_argument(
+        "--last",
+        type=int,
+        default=20,
+        help="How many trailing events to print (default: 20)",
+    )
+    audit_show.add_argument(
+        "--path",
+        default=None,
+        help="Override audit JSONL path (default: <repo>/.code-harness/audit/audit.jsonl)",
+    )
+    audit_show.set_defaults(func=cmd_audit, audit_cmd="show")
+
+    audit_tail = audit_sub.add_parser("tail", help="Alias for audit show")
+    audit_tail.add_argument("repo", nargs="?", default=".", help="Repository path")
+    audit_tail.add_argument(
+        "--last",
+        type=int,
+        default=20,
+        help="How many trailing events to print (default: 20)",
+    )
+    audit_tail.add_argument(
+        "--path",
+        default=None,
+        help="Override audit JSONL path",
+    )
+    audit_tail.set_defaults(func=cmd_audit, audit_cmd="tail")
 
     args = parser.parse_args()
 

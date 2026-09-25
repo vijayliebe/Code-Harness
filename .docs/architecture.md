@@ -218,6 +218,8 @@ Pack modes (`context.pack_mode`, default **`full`**):
 
 Ranking (dense / BM25 / graph / CE / MMR) is unchanged. Expand via `python main.py retrieve-chunk <id>` or `query --expand-chunk <id>`.
 
+After assembly, `ContextBuilder` runs `harness/redact.py` (default on) so packed/LLM text never carries common secrets. Hits append fingerprints to `.code-harness/audit/audit.jsonl` (`python main.py audit show --last 20`). Disable only with `--no-redact` / `CODEHARNESS_REDACT=0`. `LLMInterface.prepare_outbound` is the same helper PR5 should call on retrieve/API bodies.
+
 MMR diversity: `MMR_score = relevance - lambda * max(similarity_to_selected)` prevents the same file from dominating the context window.
 
 Context output format:

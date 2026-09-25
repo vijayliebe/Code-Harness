@@ -19,4 +19,6 @@ Fusion PR #2 (typed memory) adds `memory add|list|brief|export|import` — OKF `
 
 Fusion PR #3 (interactive session) adds `chat` / `session` / `repl` aliases, JSONL under `.code-harness/sessions/`, heuristic `/compact` + `/cost`, `--profile sage`, and a `path:symbol` system line. Expand-on-explain is session/sage-scoped.
 
+Fusion PR #4 (secret redaction + audit) adds `harness/redact.py` + append-only `.code-harness/audit/audit.jsonl`. Packed/LLM text is redacted by default; `audit show --last N` prints fingerprint hashes, never raw secrets. Disable only via `--no-redact` / `CODEHARNESS_REDACT=0`.
+
 Read [../INDEX.md](../INDEX.md) → this pack → [../deep/INTEGRATION_PLAN.md](../deep/INTEGRATION_PLAN.md) for the original sequence.
