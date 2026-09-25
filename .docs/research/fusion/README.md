@@ -5,8 +5,8 @@ This directory is the **map** from researched sources to a hybrid code-RAG that 
 | File | Purpose |
 |------|---------|
 | [FUSION_THESIS.md](FUSION_THESIS.md) | What “best of its kind” means for *this* product + scorecard |
-| [STEAL_MATRIX.md](STEAL_MATRIX.md) | Every INDEX resource → stealable idea, module, status, priority |
-| [GAP_AUDIT.md](GAP_AUDIT.md) | Open gaps only, ranked; recommended next 5 PRs |
+| [STEAL_MATRIX.md](STEAL_MATRIX.md) | Every INDEX resource (25) → stealable idea, module, status, priority |
+| [GAP_AUDIT.md](GAP_AUDIT.md) | Open gaps only, ranked; **next 5 after polish** (TurboVec A/B, query-cache) then historical fusion 1–5 |
 | [notes/](notes/) | Mini-deepens for thin Medium / weak-primary cards |
 
 Spine already shipped on `cursor/kg-enrichment-3590` (and ancestors):
@@ -26,5 +26,7 @@ Fusion PR #3 (interactive session) adds `chat` / `session` / `repl` aliases, JSO
 Fusion PR #4 (secret redaction + audit) adds `harness/redact.py` + append-only `.code-harness/audit/audit.jsonl`. Packed/LLM text is redacted by default; `audit show --last N` prints fingerprint hashes, never raw secrets. Disable only via `--no-redact` / `CODEHARNESS_REDACT=0`.
 
 Fusion PR #5 (`doctor` + localhost MCP / `POST /v1/retrieve`) adds `harness/doctor.py` + `harness/serve.py`. `doctor` probes Python/deps/index/graph/embed/redact/audit/LLM-key (no network). `serve` / `mcp serve` / `api serve` bind **127.0.0.1** only unless `--allow-public` (dangerous, no auth). `mcp stdio` speaks the same tools over stdin/stdout (no bind). Response bodies go through `redact_and_audit`. Optional SQLite query-hash cache.
+
+First-pass additions (2026-09-25): [../deepseek-harness.md](../deepseek-harness.md) (#24) and [../claude-code-harness.md](../claude-code-harness.md) (#25). Steal **seams** (clearing, default-fail eval, event-sourced session, retrieve-as-pre-step, session FTS). Do **not** vendor Cordis or clone Claude Code / community Plan→Work→Review repos. Session budget and “session ≠ memory ≠ index” stay with Strands (#3) / Memanto (#5) — do not double-count.
 
 Read [../INDEX.md](../INDEX.md) → this pack → [../deep/INTEGRATION_PLAN.md](../deep/INTEGRATION_PLAN.md) for the original sequence.

@@ -1,6 +1,6 @@
 # Code-Harness External Research — INDEX
 
-Research date: **2026-09-24** (Europe/Dublin / IST).  
+Research date: **2026-09-24** (Europe/Dublin / IST); items **24–25** added **2026-09-25**.  
 Target project: [vijayliebe/Code-Harness](https://github.com/vijayliebe/Code-Harness) — Python hybrid code-RAG CLI (tree-sitter → chunk → ChromaDB + BM25 + KG → RRF / cross-encoder / MMR → LLM).
 
 **Status legend:** Resolved = primary URL identified with workable detail. Partial = best-effort match with ambiguity noted. Unresolved = no credible primary source.
@@ -30,11 +30,13 @@ Target project: [vijayliebe/Code-Harness](https://github.com/vijayliebe/Code-Har
 | 21 | WorkOS | [workos.md](workos.md) | Resolved | https://workos.com (Agent Auth) | Enterprise SSO + agent tokens — only if SaaS; skip for local CLI. | **Low** |
 | 22 | Firecrawl | [firecrawl.md](firecrawl.md) | Resolved | https://github.com/firecrawl/firecrawl | LLM-ready web scrape/crawl/MCP — ingest external docs beside code. | **Med** |
 | 23 | Google Code Wiki | [google-code-wiki.md](google-code-wiki.md) | Resolved | https://codewiki.google/ · Google Developers Blog | Living AI wiki + diagrams + grounded chat — inspiration for `wiki generate`. | **High** |
+| 24 | DeepSeek Harness | [deepseek-harness.md](deepseek-harness.md) | Resolved | https://github.com/deepseek-ai/deepseek-harness · https://deepseek-harness.github.io/deepseek-harness/ | Thin agent-loop + plugin seams: event-sourced Session, deriveMessages, compaction plugin, sessionQuery FTS. Steal seams, not Cordis. | **High** |
+| 25 | Claude Code harness | [claude-code-harness.md](claude-code-harness.md) | Resolved | Anthropic cookbook + cwc-long-running-agents + product session blog (see file) | Production context ladder + tool-result clearing + default-fail evaluator. Not community Plan→Work→Review repos. | **High** |
 
 \* Ambiguity documented in the item file (alternate candidates listed).
 
 ## Counts
-- **Resolved:** 21  
+- **Resolved:** 23  
 - **Partial:** 1 (`jitro`)  
 - **Unresolved:** 0  
 
@@ -48,7 +50,7 @@ Target project: [vijayliebe/Code-Harness](https://github.com/vijayliebe/Code-Har
 
 | File | What |
 |------|------|
-| [fusion/STEAL_MATRIX.md](fusion/STEAL_MATRIX.md) | All 23 INDEX rows: steal / module / `done`·`partial`·`gap`·`reject` / P0–P3 |
+| [fusion/STEAL_MATRIX.md](fusion/STEAL_MATRIX.md) | All 25 INDEX rows: steal / module / `done`·`partial`·`gap`·`reject` / P0–P3 |
 | [fusion/GAP_AUDIT.md](fusion/GAP_AUDIT.md) | Open gaps only; recommended next 5 PRs |
 | [fusion/FUSION_THESIS.md](fusion/FUSION_THESIS.md) | Differentiators + non-goals + eval/token/latency scorecard |
 | [fusion/notes/](fusion/notes/) | Mini-deepens for thin Medium / weak-primary cards |
@@ -81,6 +83,8 @@ Spine on the KG-enrichment tip: eval harness, CCR-lite packer, corrective loop, 
 | forgecode | [deep/forgecode.md](deep/forgecode.md) | **Partially fused** — pack env knob. Delta: sage profile, `/compact`, MCP-as-`:sync` |
 | code graph | [deep/code-graph.md](deep/code-graph.md) | **Partially fused** — exposes/tested_by/gloss + beam + Mermaid. Delta: path templates, `calls` quality |
 | turboVec | [deep/turbovec.md](deep/turbovec.md) | **Design-only** (blocked on recall gates) |
-| OKF (Google SPEC) | [deep/okf.md](deep/okf.md) | **Partially fused** — WikiPage emit + typed memory + full-vault `knowledge export|import` + opt-in packer prefix-load + chat-over-wiki. Delta: BM25-over-memory |
+| OKF (Google SPEC) | [deep/okf.md](deep/okf.md) | **Partially fused** — WikiPage emit + typed memory + full-vault `knowledge export|import` + opt-in packer prefix-load + chat-over-wiki + BM25-over-memory. Delta: LLM polish / why-fixtures |
 | Prompt→Loop→Graph | [deep/prompt-loop-graph-engineering.md](deep/prompt-loop-graph-engineering.md) | **Partially fused** — eval + loop. Delta: session state, `path:symbol` cites |
 | Google Code Wiki | [deep/google-code-wiki.md](deep/google-code-wiki.md) | **Partially fused** — `wiki generate` + Mermaid + `--dirty` / watch + opt-in wiki RRF + chat-over-wiki via CCR. Delta: LLM polish |
+| DeepSeek Harness | — (first-pass only) | **Design-only** — steal seams (event log, pre-step retrieve, session FTS). Do not vendor Cordis |
+| Claude Code harness | — (first-pass only) | **Design-only** — tool-result clearing + default-fail eval gate. Not a Claude Code clone |

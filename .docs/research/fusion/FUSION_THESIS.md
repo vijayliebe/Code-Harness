@@ -1,6 +1,6 @@
 # Fusion thesis — what “best of its kind” means here
 
-This pack is a **map**, not a medal. Code-Harness is not yet the best hybrid code-RAG of its kind. The shipped spine (eval → CCR-lite → corrective loop → KG enrichment) is the substrate. Fusion is how we steal remaining mechanisms without becoming Forge, Strands, or a Headroom proxy.
+This pack is a **map**, not a medal. Code-Harness is not yet the best hybrid code-RAG of its kind. The shipped spine (eval → CCR-lite → corrective loop → KG enrichment) is the substrate. Fusion is how we steal remaining mechanisms without becoming Forge, Strands, DeepSeek Cordis, product Claude Code, or a Headroom proxy.
 
 ## Product shape
 
@@ -16,10 +16,13 @@ This pack is a **map**, not a medal. Code-Harness is not yet the best hybrid cod
 | **Strands Harness** | Assembled agent factory, sessions, memory | Loop stop conditions + easy BM25 path | Steal session budget + memory *split*; do not vendor Bedrock defaults |
 | **Code-Graph-RAG / Memgraph** | Cypher + graph DB | NetworkX + exposes/tested_by/gloss + beam + Mermaid | Path templates + wiki, not a required graph server |
 | **Google Code Wiki** | Hosted living docs + grounded chat | Mermaid export, gloss, template `wiki generate` + `path:symbol` WikiPages, `--dirty` / watch hook, opt-in RRF `wiki_weight`, opt-in packer `knowledge/**` prefix, chat-over-wiki (`--wiki` / `chat.wiki_mode` + CCR expand) | LLM polish; architecture/explain eval fixtures |
+| **DeepSeek Harness** | Cordis plugin megasystem + thin loop | Loop stops + session JSONL + MCP retrieve | Steal seams only: event log + `deriveMessages`, retrieve-as-pre-step, session FTS. **Reject** Cordis |
+| **Claude Code (product)** | Streaming tools + 4-level compact + `/goal` | Heuristic `/compact`, CCR-lite, `--verify` hook, typed memory | Tool-result clearing + default-fail gate. **Reject** community Plan→Work→Review clones |
 
 ## Non-goals
 
-- Forking or wrapping Forge / Strands / Claurst / OpenHuman as the product.
+- Forking or wrapping Forge / Strands / Claurst / OpenHuman / DeepSeek `dsh` / product Claude Code as the product.
+- Community `claude-code-harness` Plan→Work→Review skill packs (independent-review idea is the default-fail gate, already scoped).
 - Hosted default index (Forge `:sync` cautionary tale).
 - NL→Cypher, Neo4j/Memgraph, eBPF traces, GraphCodeBERT — until eval hard-set demands them.
 - AirLLM layer-streamed 70B+ on the query path (latency antithesis).

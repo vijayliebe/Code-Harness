@@ -1,6 +1,6 @@
 # Integration plan — sequenced PRs
 
-**Status:** PRs 1–4 (eval → CCR-lite → query loop → KG enrichment) are **implemented** on the KG-enrichment line. This file stays the design record for that sequence. **Next work** is the fusion backlog: [../fusion/GAP_AUDIT.md](../fusion/GAP_AUDIT.md) (recommended next 5) · [../fusion/STEAL_MATRIX.md](../fusion/STEAL_MATRIX.md).
+**Status:** PRs 1–4 (eval → CCR-lite → query loop → KG enrichment) are **implemented** on the KG-enrichment line. This file stays the design record for that sequence. Fusion PRs 1–5 on that line also landed (wiki / memory / session / redact / doctor+MCP, plus BM25-over-memory). **Next work** after the polish wave (TurboVec A/B, query-cache): [../fusion/GAP_AUDIT.md](../fusion/GAP_AUDIT.md) (post-polish next 5 from DeepSeek #24 + Claude Code #25) · [../fusion/STEAL_MATRIX.md](../fusion/STEAL_MATRIX.md).
 
 This plan turns the HIGH-source deep dives into a short, ordered backlog. It **reorders** the first-pass 90-day table in [../SYNTHESIS.md](../SYNTHESIS.md): evaluation lands *before* packer/loop/KG so later PRs have anchors instead of Goodharting `top_k` and token folklore.
 

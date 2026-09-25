@@ -1,6 +1,6 @@
 # Steal matrix — every INDEX resource
 
-Inventory of [../INDEX.md](../INDEX.md) (23 items, including fuzzy-resolved names). Status is judged against **this branch tip**: eval harness, CCR-lite packer, corrective query loop, KG enrichment, wiki, typed memory+OKF + heuristic `memory extract` (opt-in auto), session `/compact`/`/cost`, secret redaction + audit JSONL, doctor + localhost MCP / `POST /v1/retrieve`, **experimental TurboVec backend (recall-gated)**.
+Inventory of [../INDEX.md](../INDEX.md) (25 items, including fuzzy-resolved names). Status is judged against **this branch tip**: eval harness, CCR-lite packer, corrective query loop, KG enrichment, wiki, typed memory+OKF + heuristic `memory extract` (opt-in auto), session `/compact`/`/cost`, secret redaction + audit JSONL, doctor + localhost MCP / `POST /v1/retrieve`, **experimental TurboVec backend (recall-gated)**, **opt-in BM25-over-memory RRF**. Items **#24 DeepSeek Harness** and **#25 Claude Code harness** are first-pass additions (2026-09-25); their steals are **design-only**.
 
 **This is not a claim that fusion is complete.** Rows marked `done` mean the *stealable mechanism* is in-tree; siblings on the same card may still be `gap`.
 
@@ -42,6 +42,8 @@ Mini-deepens for thin cards: [notes/](notes/).
 | 21 | WorkOS | reject | — | fusion-note |
 | 22 | Firecrawl | gap | P2 | fusion-note |
 | 23 | Google Code Wiki | partial | P0 | deep-dive |
+| 24 | DeepSeek Harness | gap | P0 | first-pass |
+| 25 | Claude Code harness | gap | P0 | first-pass |
 
 ---
 
@@ -201,7 +203,7 @@ Mini-deepens for thin cards: [notes/](notes/).
 - **Best stealable ideas:** (1) Markdown+YAML concepts, path identity, required `type`, preserve unknown keys. (2) `knowledge/` as prefix source. (3) `okf_version: "0.2"` + `x_codeharness` extensions.
 - **Why it matters:** Portability across Claude/Cursor/Memanto; git-diffable wiki/memory; tokens via brief pages vs chat logs.
 - **Map to module:** `harness/okf.py` (WikiPage + typed memory + vault); CLI `knowledge export|import` (alias `okf`) and `memory export|import`.
-- **Status:** `partial` — `wiki generate` writes SPEC v0.2 `WikiPage`; `memory export|import` round-trips `Decision`/`Error`/`Preference`/`Fact`; `knowledge export|import` ships the whole vault (wiki + memory + gloss + local `.code-harness/gloss`) with `okf-manifest.yaml` (`counts`, `okf_version`, `generated`) and unknown-key preservation (`x_memanto` / `x_other`). Shared parser, path identity, `okf_version: "0.2"`, `x_codeharness`. Packer prefix-load of `knowledge/**/*.md` is **opt-in** (`context.knowledge_prefix`, default **off**; `--include-knowledge-prefix` / `CODEHARNESS_KNOWLEDGE_PREFIX=1`) with a hard `context.knowledge_token_budget` (default **800**, `len//4`), keyword rank on title/path, path-dedupe against wiki RRF hits, and skip of memory pages when `--include-memory-brief` is on. Chat-over-wiki via CCR is **shipped** (`chat --wiki` / `query --wiki` / `/wiki` / `chat.wiki_mode`; `harness/wiki_chat.py`). **Delta:** BM25-over-memory channel, Attested Computation **out of scope**.
+- **Status:** `partial` — `wiki generate` writes SPEC v0.2 `WikiPage`; `memory export|import` round-trips `Decision`/`Error`/`Preference`/`Fact`; `knowledge export|import` ships the whole vault (wiki + memory + gloss + local `.code-harness/gloss`) with `okf-manifest.yaml` (`counts`, `okf_version`, `generated`) and unknown-key preservation (`x_memanto` / `x_other`). Shared parser, path identity, `okf_version: "0.2"`, `x_codeharness`. Packer prefix-load of `knowledge/**/*.md` is **opt-in** (`context.knowledge_prefix`, default **off**; `--include-knowledge-prefix` / `CODEHARNESS_KNOWLEDGE_PREFIX=1`) with a hard `context.knowledge_token_budget` (default **800**, `len//4`), keyword rank on title/path, path-dedupe against wiki RRF hits, and skip of memory pages when `--include-memory-brief` is on. Chat-over-wiki via CCR is **shipped** (`chat --wiki` / `query --wiki` / `/wiki` / `chat.wiki_mode`; `harness/wiki_chat.py`). Opt-in BM25-over-memory RRF is **shipped** (see #5). **Delta:** Attested Computation **out of scope**.
 - **Fusion priority:** P0 (same wave as memory; wiki emits `WikiPage`)
 - **Evidence:** deep-dive
 
@@ -275,6 +277,40 @@ Mini-deepens for thin cards: [notes/](notes/).
 - **Fusion priority:** P0
 - **Evidence:** deep-dive
 
+## 24. DeepSeek Harness (official `dsh`)
+
+- **Links:** https://github.com/deepseek-ai/deepseek-harness · https://deepseek-harness.github.io/deepseek-harness/ · first-pass [../deepseek-harness.md](../deepseek-harness.md)
+- **Best stealable ideas (ranked, accuracy / cost / reliability):**
+  1. **Retrieve-as-pre-step plugin seam** (accuracy + cost) — hybrid retrieve + CCR hangs on `agent/pre-step` (`reject | enter`); the driver stays “call model, run tools, loop.” MCP / `query` / `chat` share one hook instead of forking retrieve.
+  2. **Event-sourced session + `deriveMessages` + prefix-stable packing** (cost + reliability) — append-only events; model history is a cached projection; compaction is a surface replacement. Freeze system/wiki/memory prefix so KV/prefix cache hits; compaction summarizer replays that prefix byte-for-byte.
+  3. **Session-event FTS** (accuracy) — `sessionQuery` SQLite FTS over user/tool/retrieve events. **Not** BM25-over-memory (#5) and **not** Chroma. Literal query text, never executable FTS syntax.
+  4. **Compaction as plugin + tool-result prune first** (cost) — pressure at pre-step, overflow repair at request-error; pruner rewrites bulky `tool/result` before summary. Tool-pairing-balanced cuts.
+  5. **`llm-retry` listener + concurrency-safe retrieve tools** (reliability / perf) — bounded backoff without re-running retrieve; `isConcurrencySafe` fail-closed (only exact `true` parallels).
+- **Why it matters:** Largest *architectural* unlock after the polish wave: session replay, cheaper multi-turn, and one retrieve seam. Does not move Recall@k of the one-shot pipeline.
+- **Map to module:** NEW event log beside `harness/session.py`; `derive_messages()` projection; pre-step hook in `loop.py` / `serve.py`; optional SQLite FTS over `.code-harness/sessions/`; CCR/packer prefix freeze.
+- **Status:** `gap` — design-only. Session JSONL + heuristic `/compact` + CCR prefix hash + BM25-over-memory exist; none of the DeepSeek *seams* are in-tree.
+- **Fusion priority:** P0 for retrieve-as-pre-step + event-sourced session (post polish: TurboVec A/B, query-cache). P1 session-event FTS (depends on events). P2 `llm-retry`.
+- **Do not double-count Strands (#3):** session **budget** (never-drop-latest-pack) and **session ≠ memory ≠ code index** are already owned by #3 / #5. DeepSeek is *how* (event log, derive, FTS, plugin compaction), not a second budget policy. Prefix-cache discipline overlaps Headroom CacheAligner (#1) — implement once.
+- **Reject:** Cordis megasystem, profiles/HMR/Electron, experimental agent teams, vendoring `@deepseek-ai/*`.
+- **Evidence:** first-pass (official repo + docs, 2026-09-25)
+
+## 25. Claude Code harness (product patterns, not community skill packs)
+
+- **Links:** https://platform.claude.com/cookbook/tool-use-context-engineering-context-engineering-tools · https://github.com/anthropics/cwc-long-running-agents · https://claude.com/blog/using-claude-code-session-management-and-1m-context · first-pass [../claude-code-harness.md](../claude-code-harness.md)
+- **Best stealable ideas (ranked, accuracy / cost / reliability):**
+  1. **Tool-result clearing in session/interactive** (cost) — sub-transcript: keep `tool_use` / pack ids, replace aged retrieve dumps and `retrieve_chunk` expansions with a placeholder. Re-fetch via CCR. Cheapest rung; do this *before* `/compact` summary.
+  2. **Default-fail independent eval gate** (accuracy + reliability) — criteria start `false`; a fresh-context verifier (no generator CoT, no write tools) flips them. Anthropic’s structural “done”; our `--verify` is the hook, not a second grader.
+  3. **Four-level ladder** (cost) — snip/clear → collapse-to-ids → heuristic/LLM autocompact. Reserve summary headroom; circuit-break after repeated compact failures.
+  4. **Handoff files** (reliability) — durable progress lives in typed memory / OKF, not compacted chat. **Reuse #5**, do not add `PROGRESS.md` as a fourth store.
+  5. **Streaming tool executor + concurrency tiers** (perf) — later, if a tool loop lands. Same fail-closed `isConcurrencySafe` as #24.
+- **Why it matters:** Interactive tokens are dominated by *re-fetchable packs*, not missing `/compact`. Clearing is the steal we do not already have. Default-fail is the accuracy gate for “agent done” / citation coverage without self-grade.
+- **Map to module:** `harness/session.py` (clear old pack bodies); CCR spill / `retrieve_chunk`; `harness/loop.py` `--verify` + optional contract file; eval fixtures for explain/why.
+- **Status:** `gap` on clearing + default-fail contract. `partial` on compact + typed memory + `--verify` (wired, off). Streaming executor **reject for v1**.
+- **Fusion priority:** P0 tool-result clearing (first post-polish RAG-adjacent PR). P0 default-fail gate (pairs with #18 verify). P1 layered compact. Streaming tools P3 / reject until a tool loop exists.
+- **Do not double-count Strands (#3) / Memanto (#5):** budget + separate stores + typed memory already counted. Claude Code’s *new* rows are **clearing** and **default-fail**. Prefix-preserving microcompact overlaps #24 / #1 — one implementation.
+- **Reject:** community `claude-code-harness` Plan→Work→Review products (Chachamaru127 and forks); leaked `claude-code` source trees; Anthropic-only server compaction as a dependency; `/goal` / Ralph-loop unattended runner; builder-graded done.
+- **Evidence:** first-pass (Anthropic cookbook + cwc repo + product blog + public internals writeups, 2026-09-25)
+
 ---
 
 ## Already fused (do not rebuild)
@@ -292,10 +328,11 @@ Mini-deepens for thin cards: [notes/](notes/).
 
 Sources with the most **material delta** still on the table (not rejects):
 
-1. **Google Code Wiki + OKF** — `wiki generate` + WikiPage emit + `--dirty` / watch hook + opt-in RRF `wiki_weight` + full-vault `knowledge export|import` + opt-in packer prefix-load of `knowledge/**/*.md` + chat-over-wiki via CCR shipped; remaining: LLM polish.
-2. **Memanto** — typed store + supersession + brief + heuristic auto-extract + opt-in BM25-over-memory RRF shipped; remaining: eval “why” fixtures.
-3. **Strands + Forge + Claurst** — session `/compact` `/cost` sage + localhost HTTP + stdio MCP retrieve shipped; remaining: caveman, graph-explorer digest.
-4. **Agent-Reach + Proxima + OpenHuman** — doctor + query cache + MCP/`POST /v1/retrieve` + **stdio MCP** **shipped** (loopback HTTP / no-bind stdio). Remainder: Jina ingest, serve-cache on eval/interactive.
-5. **TurboVec** — protocol + opt-in backend + eval A/B gate shipped; still experimental, not default. Remainder: dual-write, TQ+ calibrate, default flip.
-6. **Headroom remainder** — expand-on-explain, stable cache key, type-aware pack.
-7. **Code-graph remainder** — path templates, `calls` quality (regex is the real accuracy bug).
+1. **Claude Code (#25) + DeepSeek (#24)** — tool-result clearing, default-fail eval gate, event-sourced session + prefix-stable packing, retrieve-as-pre-step, session-event FTS. Design-only; **next five after polish** (see [GAP_AUDIT.md](GAP_AUDIT.md)). Do not double-count Strands budget / separate stores.
+2. **Google Code Wiki + OKF** — `wiki generate` + WikiPage emit + `--dirty` / watch hook + opt-in RRF `wiki_weight` + full-vault `knowledge export|import` + opt-in packer prefix-load of `knowledge/**/*.md` + chat-over-wiki via CCR shipped; remaining: LLM polish.
+3. **Memanto** — typed store + supersession + brief + heuristic auto-extract + opt-in BM25-over-memory RRF shipped; remaining: eval “why” fixtures.
+4. **Strands + Forge + Claurst** — session `/compact` `/cost` sage + localhost HTTP + stdio MCP retrieve shipped; remaining: caveman, graph-explorer digest. Budget + store-split **done enough** — do not rebuild as a DeepSeek/Claude row.
+5. **Agent-Reach + Proxima + OpenHuman** — doctor + query cache + MCP/`POST /v1/retrieve` + **stdio MCP** **shipped** (loopback HTTP / no-bind stdio). Remainder: Jina ingest, serve-cache on eval/interactive (**current polish wave**).
+6. **TurboVec** — protocol + opt-in backend + eval A/B gate shipped; still experimental, not default. Remainder: dual-write, TQ+ calibrate, default flip (**current polish wave**).
+7. **Headroom remainder** — expand-on-explain, stable cache key, type-aware pack (prefix-stable packing lands once with #24).
+8. **Code-graph remainder** — path templates, `calls` quality (regex is the real accuracy bug).
