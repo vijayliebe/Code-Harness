@@ -1,20 +1,22 @@
-"""Localhost retrieve API + minimal MCP (Fusion PR #5).
+"""Localhost retrieve API + MCP (HTTP loopback and stdio).
 
-Default bind is 127.0.0.1. Binding 0.0.0.0 / all interfaces requires
-``--allow-public`` (dangerous: no auth). Response bodies go through
+Default HTTP bind is 127.0.0.1. Binding 0.0.0.0 / all interfaces requires
+``--allow-public`` (dangerous: no auth). ``serve_stdio`` speaks JSON-RPC on
+stdin/stdout and never binds a port. Response bodies go through
 ``redact_and_audit``. Not started on import.
 """
 
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import os
 import sqlite3
 import sys
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TextIO
 from urllib.parse import urlparse
 
 from .config import Config
@@ -428,6 +430,158 @@ def _tool_text(text: str, structured: Optional[Dict[str, Any]] = None) -> Dict[s
     if structured is not None:
         out["structuredContent"] = structured
     return out
+
+
+def _is_rpc_notification(message: Dict[str, Any]) -> bool:
+    """JSON-RPC 2.0 notification: request object with the id member omitted."""
+    return isinstance(message, dict) and "id" not in message
+
+
+def write_jsonrpc(stream, message: Dict[str, Any]) -> None:
+    """Write one MCP message using Content-Length framing (LSP-style)."""
+    body = json.dumps(message, ensure_ascii=False).encode("utf-8")
+    header = f"Content-Length: {len(body)}\r\n\r\n".encode("ascii")
+    buf = getattr(stream, "buffer", None)
+    if buf is not None and hasattr(buf, "write") and not isinstance(stream, io.StringIO):
+        buf.write(header + body)
+        buf.flush()
+        return
+    stream.write(header.decode("ascii") + body.decode("utf-8"))
+    if hasattr(stream, "flush"):
+        stream.flush()
+
+
+def _readline_text(stream) -> Optional[str]:
+    line = stream.readline()
+    if line == "" or line == b"":
+        return None
+    if isinstance(line, bytes):
+        return line.decode("utf-8")
+    return line
+
+
+def _read_exact(stream, nbytes: int) -> Optional[str]:
+    """Read ``nbytes`` UTF-8 bytes when a binary buffer exists, else ``nbytes`` chars."""
+    buf = getattr(stream, "buffer", None)
+    if buf is not None and hasattr(buf, "read") and not isinstance(stream, io.StringIO):
+        data = buf.read(nbytes)
+        if not data:
+            return None
+        if isinstance(data, bytes):
+            return data.decode("utf-8")
+        return data
+    data = stream.read(nbytes)
+    if data == "" or data == b"":
+        return None
+    if isinstance(data, bytes):
+        return data.decode("utf-8")
+    return data
+
+
+def read_jsonrpc(stream) -> Optional[Dict[str, Any]]:
+    """Read one JSON-RPC object. Accepts Content-Length framing or NDJSON."""
+    line = _readline_text(stream)
+    while line is not None and not line.strip():
+        line = _readline_text(stream)
+    if line is None:
+        return None
+    if line.lower().startswith("content-length:"):
+        headers = [line]
+        while True:
+            next_line = _readline_text(stream)
+            if next_line is None:
+                return None
+            if next_line in ("\n", "\r\n", ""):
+                break
+            if not next_line.strip():
+                break
+            headers.append(next_line)
+        nbytes = None
+        for header in headers:
+            if header.lower().startswith("content-length:"):
+                try:
+                    nbytes = int(header.split(":", 1)[1].strip())
+                except ValueError:
+                    nbytes = None
+        if nbytes is None or nbytes < 0:
+            return {
+                "jsonrpc": "2.0",
+                "id": None,
+                "error": {"code": -32700, "message": "invalid Content-Length"},
+            }
+        body = _read_exact(stream, nbytes)
+        if body is None:
+            return None
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError as exc:
+            return {
+                "jsonrpc": "2.0",
+                "id": None,
+                "error": {"code": -32700, "message": f"parse error: {exc}"},
+            }
+        return data if isinstance(data, dict) else {"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "invalid request"}}
+    try:
+        data = json.loads(line)
+    except json.JSONDecodeError as exc:
+        return {
+            "jsonrpc": "2.0",
+            "id": None,
+            "error": {"code": -32700, "message": f"parse error: {exc}"},
+        }
+    if not isinstance(data, dict):
+        return {
+            "jsonrpc": "2.0",
+            "id": None,
+            "error": {"code": -32600, "message": "invalid request"},
+        }
+    return data
+
+
+def serve_stdio(
+    service: RetrieveService,
+    stdin: Optional[TextIO] = None,
+    stdout: Optional[TextIO] = None,
+    stderr: Optional[TextIO] = None,
+) -> None:
+    """Run the MCP tool surface over stdin/stdout. Never binds a socket.
+
+    Reuses :func:`handle_mcp` (same tools as ``POST /mcp``). Status logs go to
+    stderr so stdout stays protocol-only. Accidental ``print()`` is redirected
+    to stderr for the duration of the session.
+    """
+    protocol_in = stdin if stdin is not None else sys.stdin
+    protocol_out = stdout if stdout is not None else sys.stdout
+    protocol_err = stderr if stderr is not None else sys.stderr
+    print("[*] MCP stdio ready (no network bind)", file=protocol_err)
+    repo = getattr(service, "repo_path", None)
+    if repo:
+        print(f"[*] repo: {repo}", file=protocol_err)
+
+    saved_stdout = sys.stdout
+    sys.stdout = protocol_err
+    try:
+        while True:
+            message = read_jsonrpc(protocol_in)
+            if message is None:
+                break
+            if message.get("error") and message.get("id") is None and "method" not in message:
+                write_jsonrpc(protocol_out, message)
+                continue
+            if _is_rpc_notification(message):
+                continue
+            try:
+                reply = handle_mcp(message, service)
+            except Exception as exc:
+                reply = {
+                    "jsonrpc": "2.0",
+                    "id": message.get("id"),
+                    "error": {"code": -32000, "message": str(exc)},
+                }
+            if reply is not None:
+                write_jsonrpc(protocol_out, reply)
+    finally:
+        sys.stdout = saved_stdout
 
 
 class _RetrieveHandler(BaseHTTPRequestHandler):
