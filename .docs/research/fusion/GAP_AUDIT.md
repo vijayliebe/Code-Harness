@@ -12,7 +12,7 @@ Order is RAG-quality first (Recall@k, citation-path, tokens), then ops/distribut
 |---|-----|------|------|------------|
 | **1** | **Wiki generate MVP** — template + KG + Mermaid, write `knowledge/wiki/` as OKF `WikiPage`, cite `path:symbol`. No LLM polish. *(generate + schema shipped; RRF `kind=wiki` boost and watch dirty-module regen still open)* | M | Code Wiki #23, OKF #16, Obsidian vault shape #6 | Mermaid (done). Shared `okf.py` with PR 2 |
 | **2** | **Typed memory + OKF import/export** — `decision`/`error`/`preference`/`fact`, supersede, `memory brief` ≤800 tokens in the semi-stable prefix. *(store + CLI + brief + OKF round-trip shipped; packer inject is opt-in / default-off; no LLM auto-extract)* | M | Memanto #5, OKF #16 | PR 1’s `okf.py` *or* land parser in this PR and have wiki call it |
-| **3** | **Interactive session + `/compact` + `/cost`** — JSONL session, budget never drops latest pack, heuristic compact, print packed/full tokens + loop attempts. Tiny: `--profile sage` flag pack + `path:symbol` system line + `expand_on=explain`. | M | Strands #3, Forge #13, Claurst #2, Loop #18, Headroom remainder #1 | None (CCR/loop exist) |
+| **3** | **Interactive session + `/compact` + `/cost`** — JSONL session, budget never drops latest pack, heuristic compact, print packed/full tokens + loop attempts. Tiny: `--profile sage` flag pack + `path:symbol` system line + `expand_on=explain`. *(session + slash cmds + sage + cite line shipped; LLM compact / eval session fixture still open)* | M | Strands #3, Forge #13, Claurst #2, Loop #18, Headroom remainder #1 | None (CCR/loop exist) |
 | **4** | **Secret redaction + audit JSONL** — strip key/token patterns before assemble; append query/chunk_ids/tokens/model. Optional max-token hard stop. | S | Governance #19, Proxima `analyze_file` strip | None. **Do this before binding a network port** |
 | **5** | **`doctor` + `mcp serve` / `POST /v1/retrieve`** — probe embed/LLM with ordered fallbacks; expose `retrieve`, `retrieve_chunk`, `graph_neighbors`. Optional SQLite query-hash cache. | L (or S doctor + M serve) | Agent-Reach #11, OpenHuman #8, Proxima #9, Forge #13 | PR 4 preferred. Query cache can split as S |
 
@@ -42,14 +42,15 @@ Order is RAG-quality first (Recall@k, citation-path, tokens), then ops/distribut
 - **Risk / complexity / local-first:** Medium. Junk-drawer risk — require `type`+`title`. No auto-extract from sessions in v1. No Memanto/Mem0 dependency.
 - **PR size / deps:** M. Shared OKF parser with G1. After loop (done) so brief has a place to sit.
 
-### G3. Session budget, compact, cost, sage, cite style (P1)
+### G3. Session budget, compact, cost, sage, cite style (P1) — done (remainder: LLM compact / session eval fixture)
 
 - **Steal:** Strands never-drop-latest-pack; Forge/Claurst conversation compact + knobs; Loop `path:symbol` instruction; Headroom `expand_on`.
 - **Sources:** #3, #13, #2, #18, #1
-- **Change:** Problem — `interactive` is a stateless one-shot loop; history grows; users cannot see spend; explain-queries answer from signatures. Outcome — session JSONL; `/compact` heuristic; `/cost`; `--profile sage`; auto `--expand-chunk` when query matches explain/why **or** omitted >50% and no tool loop.
-- **Metric move:** Tokens on a 10-turn synthetic session stay under `llm.max_tokens * 2` (document in eval README; may need a small session fixture). Easy p50 **unchanged** (compact is interactive-only). CCR citation-path stays within 5 points of `full` with one expand. Measure: existing eval `--pack-mode ccr_lite`; add one explain-query fixture if expand is on.
+- **Shipped:** `python main.py chat|session|repl|interactive` is a stateful REPL. JSONL under `.code-harness/sessions/`. Heuristic `/compact` keeps user lines + latest pack ids and never drops the latest pack. `/cost` prints packed/full/completion tokens + loop attempts (+ $ if `llm.*_usd_per_1m` set). `--profile sage` / `CODEHARNESS_PROFILE` / `/profile sage` is a flag pack (`ccr_lite`, `max_loops=1`, more graph expand, higher pack budget) and does not retune RRF. System prompt cites `` `path:symbol` ``. Session auto-expands omitted chunks on explain/why **or** omitted >50% with no tool loop. `/expand`, `/memory brief`, `/wiki` are cheap extras. One-shot `query` is unchanged unless `--profile` is passed.
+- **Change:** Problem — `interactive` was a stateless one-shot loop. Outcome — remaining: LLM compact (rejected for v1), a 10-turn eval fixture file, caveman prompt.
+- **Metric move:** Tokens on a 10-turn synthetic session stay under `llm.max_tokens * 2` (unit-tested; documented in eval README). Easy p50 **unchanged** (compact is interactive-only). CCR citation-path stays within 5 points of `full` with one expand. Measure: existing eval `--pack-mode ccr_lite`.
 - **Risk / complexity / local-first:** Low–medium. Heuristic compact only (no extra LLM). Profiles must **not** retune RRF weights.
-- **PR size / deps:** M. Independent of G1/G2.
+- **PR size / deps:** M. Independent of G1/G2. Shipped.
 
 ### G4. Redaction + audit (P1)
 
@@ -89,7 +90,7 @@ Order is RAG-quality first (Recall@k, citation-path, tokens), then ops/distribut
 
 ### G8. Headroom remainder (P1/P2)
 
-- **Steal:** expand-on-explain (P1, folded into G3); stable cache key `(path, range, hash)` (P1); ContentRouter/SmartCrusher (P2).
+- **Steal:** expand-on-explain (P1, **folded into G3 and shipped** for session/sage); stable cache key `(path, range, hash)` (P1); ContentRouter/SmartCrusher (P2).
 - **Sources:** #1
 - **Change:** Problem — `retrieve_chunk` 404 after `watch`; explain answers invent omitted lines; JSON/tool dumps (rare on this CLI) still huge.
 - **Metric move:** citation-path on explain fixtures **up** with one expand; Recall@k unchanged. Measure: eval + a unit test that re-index hash still resolves spill.

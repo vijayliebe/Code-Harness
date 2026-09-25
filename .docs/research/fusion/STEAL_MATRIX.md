@@ -51,7 +51,7 @@ Mini-deepens for thin cards: [notes/](notes/).
 - **Best stealable ideas:** (1) Reversible CCR — signatures + spans in the prompt, originals in a local cache, `retrieve_chunk`. (2) CacheAligner layout — stable prefix, volatile hits last. (3) ContentRouter later — type-aware compressors for JSON/logs vs code.
 - **Why it matters:** Largest token/cost lever that does **not** change ranking. Latency stays post-MMR (cheap). UX: expand-on-demand instead of stuffing 1500-char bodies.
 - **Map to module:** context builder/CCR (`harness/ccr.py`, `ContextBuilder`), CLI `retrieve-chunk` / `--expand-chunk`, eval token columns.
-- **Status:** `partial` — CCR-lite, spill cache, prefix hash, dual token metrics, and a retrieve-back line in the system prompt **shipped**. Default remains `full`. **Delta:** `expand_on` is config-empty (no auto-expand on explain/why); no ContentRouter / SmartCrusher / Kompress; no `headroom learn` → AGENTS.md; no proxy wrap. Chunk IDs still churn on re-index (hash key still open).
+- **Status:** `partial` — CCR-lite, spill cache, prefix hash, dual token metrics, retrieve-back line, and session/sage `expand_on=explain` **shipped**. Default remains `full` with empty `ccr.expand_on`. **Delta:** no ContentRouter / SmartCrusher / Kompress; no `headroom learn` → AGENTS.md; no proxy wrap. Chunk IDs still churn on re-index (hash key still open).
 - **Fusion priority:** P1 (expand-on-explain + stable cache key). P2 for type-aware compressors. P3 for proxy/`headroom-ai` extra.
 - **Evidence:** deep-dive
 
@@ -60,8 +60,8 @@ Mini-deepens for thin cards: [notes/](notes/).
 - **Links:** https://github.com/Kuberwastaken/claurst · [notes/claurest.md](notes/claurest.md)
 - **Best stealable ideas:** (1) Interactive `/compact` of *dialogue* (keep user lines + last pack IDs). (2) `/cost` — show packed vs full tokens and loop attempts in the REPL. (3) Optional terse system prompt (do not restate retrieved code).
 - **Why it matters:** Tokens/UX on multi-turn `interactive` (today unbounded). Ops: users optimize what they see. ACP is editor distribution — MCP retrieve is the local equivalent.
-- **Map to module:** CLI (`interactive`); NEW `session.py`; eval already has the numbers `/cost` would print.
-- **Status:** `partial` — eval/query traces exist; **no** `/compact`, `/cost`, caveman, ACP. **Reject** `/goal` `/share` ultracode (agent clone). GPL — ideas only.
+- **Map to module:** CLI (`chat`/`session`/`interactive`); `harness/session.py`; eval already has the numbers `/cost` would print.
+- **Status:** `partial` — `/compact` + `/cost` + session JSONL **shipped**. **Delta:** caveman prompt. **Reject** `/goal` `/share` ultracode (agent clone). GPL — ideas only.
 - **Fusion priority:** P1 for compact+cost. P3 for caveman.
 - **Evidence:** fusion-note (live README skim)
 
@@ -71,7 +71,7 @@ Mini-deepens for thin cards: [notes/](notes/).
 - **Best stealable ideas:** (1) Context-budget policy — never drop latest query + top pack; summarize/drop older packs. (2) Session ≠ long-term memory ≠ code index. (3) Explicit loop stops (grade / coverage / max_loops / easy path).
 - **Why it matters:** Tokens on interactive; accuracy by not mixing chat into Chroma; latency via BM25-only easy path (already in loop).
 - **Map to module:** query loop (`harness/loop.py` — **done** for stops/easy/HyDE-on-retry); NEW session store; later MCP.
-- **Status:** `partial` — loop policy shipped (`max_loops` default 0). **Delta:** no `.code-harness/sessions/`, no interactive budget algorithm, no subagent graph-explorer, no `create_harness` factory (correctly skipped).
+- **Status:** `partial` — loop policy shipped (`max_loops` default 0); session JSONL + never-drop-latest-pack budget **shipped**. **Delta:** no subagent graph-explorer, no `create_harness` factory (correctly skipped).
 - **Fusion priority:** P1 session+budget. P2 graph-explorer subagent after wiki. Do not `pip install strands-harness`.
 - **Evidence:** deep-dive
 
@@ -170,8 +170,8 @@ Mini-deepens for thin cards: [notes/](notes/).
 - **Links:** https://github.com/tailcallhq/forgecode · https://forgecode.dev · deep [../deep/forgecode.md](../deep/forgecode.md)
 - **Best stealable ideas:** (1) Read-only **sage** profile (flag pack, not a new runtime). (2) Conversation `:compact` ≠ retrieval packer. (3) Env knobs for top_k / pack / loops. (4) Local index as `:sync` replacement via MCP.
 - **Why it matters:** UX clarity; tokens; **privacy** vs hosted `api.forgecode.dev`. We win as the better local indexer.
-- **Map to module:** CLI profiles **gap**; env `CODEHARNESS_PACK_MODE` **done**; compact **gap**; MCP **gap**.
-- **Status:** `partial` — stay CLI-RAG; do not build Rust TUI / muse / sandbox worktrees. Hosted `:sync` **reject**.
+- **Map to module:** CLI `--profile sage` **done**; env `CODEHARNESS_PACK_MODE` **done**; `/compact` **done**; MCP **gap**.
+- **Status:** `partial` — sage flag pack + conversation compact shipped. Stay CLI-RAG; do not build Rust TUI / muse / sandbox worktrees. Hosted `:sync` **reject**.
 - **Fusion priority:** P1 sage+compact with session; P1 MCP with OpenHuman/Proxima.
 - **Evidence:** deep-dive
 
@@ -220,8 +220,8 @@ Mini-deepens for thin cards: [notes/](notes/).
 - **Links:** https://walkinglabs.github.io/learn-harness-engineering/en/lectures/lecture-14-graph-engineering/ · DesignGurus post · deep [../deep/prompt-loop-graph-engineering.md](../deep/prompt-loop-graph-engineering.md)
 - **Best stealable ideas:** (1) Retrieve as a graded loop with stop conditions. (2) Eval anchors before topology fashion. (3) Independent verify node (fresh context, no generator CoT). (4) Do **not** graphify indexing.
 - **Why it matters:** Accuracy (retry/deepen); tokens (easy path); ops (replayable traces).
-- **Map to module:** eval **done**; loop **done** (opt-in); `--verify` **wired, off**; citation instruction is generic (not `path:symbol`).
-- **Status:** `partial` — **Delta:** session shared-state JSONL; `path:symbol` system line; verify not in eval (eval is retrieval-only, correctly). No LangGraph.
+- **Map to module:** eval **done**; loop **done** (opt-in); `--verify` **wired, off**; `path:symbol` system line **done**; session JSONL **done**.
+- **Status:** `partial` — **Delta:** verify not in eval (eval is retrieval-only, correctly). No LangGraph.
 - **Fusion priority:** P1 citation instruction (tiny) + session (with #3/#13).
 - **Evidence:** deep-dive
 
@@ -241,7 +241,7 @@ Mini-deepens for thin cards: [notes/](notes/).
 - **Best stealable ideas:** (1) Golden eval first. (2) Versioned prompts + config snapshot. (3) Failure taxonomy. (4) Stage observability.
 - **Why it matters:** Accuracy discipline — without it, fusion Goodharts `top_k`.
 - **Map to module:** eval **done** (Recall@k, nDCG, citation-path, tokens, stage p50, taxonomy, config snapshot, `--loop` / `--pack-mode`).
-- **Status:** `partial` — **Delta:** suite is 8 fixtures on *this* repo only; no prompt version id; no LLM-as-judge (deferred); no online feedback; `expand_on` unused.
+- **Status:** `partial` — **Delta:** suite is 8 fixtures on *this* repo only; no prompt version id; no LLM-as-judge (deferred); no online feedback. Session/sage now honor `expand_on`; default config list stays empty.
 - **Fusion priority:** P1 grow hard-set + architecture/why questions (unblocks wiki/TurboVec judgment).
 - **Evidence:** first-pass
 
@@ -270,7 +270,7 @@ Mini-deepens for thin cards: [notes/](notes/).
 - **Links:** https://codewiki.google/ · https://developers.googleblog.com/en/introducing-code-wiki-accelerating-your-code-understanding/ · deep [../deep/google-code-wiki.md](../deep/google-code-wiki.md)
 - **Best stealable ideas:** (1) Incremental living wiki from the KG (template first, no LLM). (2) Every heading cites `path:symbol`. (3) Chat-over-wiki then CCR expand to source. (4) Diagrams from **edges**, not the model.
 - **Why it matters:** Accuracy (stable narrative + grounded links); tokens (summaries first); UX (`info --mermaid` already a precursor).
-- **Map to module:** KG Mermaid **done**; CLI `wiki generate` / `list` / `show` **done** (template + OKF WikiPage + `path:symbol`); system prompt cite style **partial** (paths/lines, not `path:symbol`); watch dirty-module regen **gap**.
+- **Map to module:** KG Mermaid **done**; CLI `wiki generate` / `list` / `show` **done** (template + OKF WikiPage + `path:symbol`); system prompt cite style **done** (`` `path:symbol` ``); watch dirty-module regen **gap**.
 - **Status:** `partial` — generator shipped. **Delta:** watch dirty-module regen; RRF `kind=wiki` boost (intentionally not in this PR); chat-over-wiki via CCR; LLM polish.
 - **Fusion priority:** P0
 - **Evidence:** deep-dive
@@ -292,7 +292,7 @@ Sources with the most **material delta** still on the table (not rejects):
 
 1. **Google Code Wiki + OKF** — `wiki generate` + WikiPage emit shipped; memory OKF import/export shipped; remaining: watch regen, RRF wiki boost, prefix-load of `knowledge/**/*.md`.
 2. **Memanto** — typed store + supersession + brief shipped; remaining: observe/auto-extract and eval “why” fixtures.
-3. **Strands + Forge + Claurst** — session budget, `/compact`, `/cost`, sage profile.
+3. **Strands + Forge + Claurst** — session `/compact` `/cost` sage shipped; remaining: MCP-as-`:sync`, caveman, graph-explorer digest.
 4. **Agent-Reach + Proxima + OpenHuman** — doctor, query cache, MCP/`POST /v1/retrieve`.
 5. **TurboVec** — designed, blocked on recall, zero code.
 6. **Headroom remainder** — expand-on-explain, stable cache key, type-aware pack.

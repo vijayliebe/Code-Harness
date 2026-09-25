@@ -224,10 +224,25 @@ def cmd_query(args):
 
 
 def cmd_interactive(args):
+    from harness.session import (
+        Session,
+        SessionTurn,
+        apply_profile,
+        handle_slash,
+        parse_slash,
+        resolve_profile_name,
+        should_auto_expand,
+    )
+
     config = _load_config(args)
     config.repo_path = args.repo or "."
     repo_name = _derive_repo_name(args)
     cross_repo = getattr(args, 'cross_repo', False)
+    try:
+        profile_name = resolve_profile_name(args)
+    except ValueError as exc:
+        print(f"[!] {exc}")
+        sys.exit(2)
 
     vs = VectorStore(config)
     count = vs.count()
@@ -262,9 +277,24 @@ def cmd_interactive(args):
     llm_available = args.llm
     llm = LLMInterface(config) if llm_available else None
 
+    session_cfg = getattr(config, "session", None) or {}
+    session_dir = session_cfg.get("dir") or os.path.join(".code-harness", "sessions")
+    max_tokens = int(config.llm.get("max_tokens") or 4096)
+    multiplier = float((config.context or {}).get("max_tokens_multiplier") or 2)
+    session = Session(
+        repo=repo_name,
+        profile=profile_name,
+        session_dir=session_dir,
+        input_usd_per_1m=config.llm.get("input_usd_per_1m"),
+        output_usd_per_1m=config.llm.get("output_usd_per_1m"),
+        budget_tokens=int(max_tokens * multiplier),
+        keep_recent=int(session_cfg.get("keep_recent") or 1),
+    )
+
     print("=" * 60)
-    print("  Code Harness - Interactive Mode")
-    print("  Commands: /help, /context, /retrieve <id>, /llm on|off, /clear, /quit")
+    print("  Code Harness - Interactive Session")
+    print(f"  profile={session.profile}  pack={context_builder.pack_mode}")
+    print("  /help /compact /cost /profile /exit")
     print("=" * 60)
     print()
 
@@ -280,59 +310,59 @@ def cmd_interactive(args):
         if not query:
             continue
 
-        if query.startswith("/"):
-            cmd = query.lower().split()
-            if cmd[0] == "/quit" or cmd[0] == "/exit":
+        slash = parse_slash(query)
+        if slash is not None:
+            result = handle_slash(session, slash)
+            if result.should_exit:
                 break
-            elif cmd[0] == "/help":
-                print("Commands:")
-                print("  /help             - Show this help")
-                print("  /llm on|off       - Enable/disable LLM responses")
-                print("  /context          - Show current context")
-                print("  /retrieve <id>    - Print a cached original chunk")
-                print("  /expand <id>      - Alias for /retrieve")
-                print("  /clear            - Clear screen")
-                print("  /quit             - Exit")
-                print("  Any other text    - Query the codebase")
-            elif cmd[0] == "/llm":
-                if len(cmd) > 1:
-                    llm_available = cmd[1] == "on"
-                    llm = LLMInterface(config) if llm_available else None
-                    print(f"[*] LLM {'enabled' if llm_available else 'disabled'}")
-            elif cmd[0] == "/context":
+            if result.kind == "profile" and result.profile:
+                try:
+                    apply_profile(config, result.profile)
+                    context_builder = ContextBuilder(config)
+                    print(result.message)
+                    print(f"[*] pack_mode={context_builder.pack_mode}")
+                except ValueError as exc:
+                    print(f"[!] {exc}")
+                continue
+            if result.llm is not None:
+                llm_available = result.llm
+                llm = LLMInterface(config) if llm_available else None
+                print(result.message)
+                continue
+            if result.clear_screen:
+                os.system("clear" if os.name == "posix" else "cls")
+                continue
+            if result.kind == "context":
                 if context_history:
                     print(context_history[-1][:2000])
                 else:
                     print("No context yet")
-            elif cmd[0] in ("/retrieve", "/expand"):
-                raw = query.split(None, 1)
-                if len(raw) < 2:
-                    print("[!] Usage: /retrieve <chunk_id>")
-                else:
-                    from harness.ccr import retrieve_chunk
-                    text = context_builder.cache.get(raw[1]) or retrieve_chunk(
-                        raw[1],
-                        spill_dir=(config.ccr or {}).get("spill_dir"),
-                    )
-                    if text is None:
-                        print(f"[!] chunk not in cache: {raw[1]}")
-                    else:
-                        print(text)
-            elif cmd[0] == "/clear":
-                os.system("clear" if os.name == "posix" else "cls")
+                continue
+            if result.expand_ref:
+                _print_expand(context_builder, config, result.expand_ref, session)
+                continue
+            if result.memory_brief:
+                _print_memory_brief(config)
+                continue
+            if result.wiki_page:
+                _print_wiki_page(config, result.wiki_page)
+                continue
+            if result.message:
+                print(result.message)
             continue
 
         from harness.loop import LoopConfig, QueryLoop, verify_answer
 
         loop = QueryLoop(retriever, context_builder, LoopConfig.from_mapping(config.retrieval))
         generate = None
-        if llm_available and llm:
+        can_generate = llm_available and llm is not None and _llm_ready(llm, config)
+        if can_generate:
             if args.stream:
                 generate = lambda system, context, user_q: llm.stream_query(system, context, user_q)
             else:
                 generate = lambda system, context, user_q: llm.query(system, context, user_q)
         verifier = None
-        if config.retrieval.get("verify") and llm:
+        if config.retrieval.get("verify") and can_generate:
             verifier = lambda q, a, packed: verify_answer(llm, q, a, packed)
         outcome = loop.run(
             query,
@@ -345,23 +375,55 @@ def cmd_interactive(args):
             _print_loop_debug(outcome)
         report = outcome.packed or context_builder.build_context_report(query, outcome.results)
         context = report.context
+        expand_ids = []
+        if should_auto_expand(
+            query=query,
+            expand_on=config.ccr.get("expand_on") or [],
+            omitted_ids=report.omitted_chunk_ids or [],
+            packed_ids=report.packed_chunk_ids or [],
+            max_loops=int(config.retrieval.get("max_loops") or 0),
+        ):
+            expand_ids = list(report.omitted_chunk_ids or [])[:3]
+            if expand_ids:
+                context = context_builder.expand_into_context(context, expand_ids)
+                print(f"[*] auto-expand {len(expand_ids)} omitted chunk(s) (explain/omit)")
         context_history.append(context)
 
-        if not llm_available or not llm:
-            print(context[:3000] + ("..." if len(context) > 3000 else ""))
-            continue
-
-        response = outcome.answer
-        if response is None:
-            system_prompt = context_builder.build_system_prompt()
-            if args.stream:
-                response = llm.stream_query(system_prompt, context, query)
-            else:
-                response = llm.query(system_prompt, context, query)
-        if not args.stream and response:
-            print(response)
-        if outcome.verify:
-            print(f"[*] Verify: supported={outcome.verify.get('supported')}")
+        session.record_turn(SessionTurn(role="user", text=query))
+        answer = outcome.answer
+        if not can_generate:
+            if llm_available and llm is not None and not _llm_ready(llm, config):
+                print("[!] LLM key/provider missing; printing packed context.")
+            preview = context[:3000] + ("..." if len(context) > 3000 else "")
+            print(preview)
+            answer = preview
+        else:
+            if answer is None:
+                system_prompt = context_builder.build_system_prompt()
+                history = session.history_for_prompt()
+                if history:
+                    context = context.rstrip() + "\n\n## Session history\n" + history + "\n"
+                if args.stream:
+                    answer = llm.stream_query(system_prompt, context, query)
+                else:
+                    answer = llm.query(system_prompt, context, query)
+            if not args.stream and answer:
+                print(answer)
+            if outcome.verify:
+                print(f"[*] Verify: supported={outcome.verify.get('supported')}")
+        completion = context_builder.estimate_tokens(answer or "")
+        session.record_turn(
+            SessionTurn(
+                role="assistant",
+                text=answer or "",
+                chunk_ids=list(report.packed_chunk_ids or []),
+                packed_tokens=int(report.prompt_tokens_packed or report.prompt_tokens or 0),
+                full_tokens=int(report.prompt_tokens_full or report.prompt_tokens or 0),
+                completion_tokens=completion,
+                loop_attempts=int(getattr(outcome, "attempts", 1) or 1),
+                pack_mode=report.pack_mode,
+            )
+        )
         print()
 
 
@@ -658,6 +720,74 @@ def _memory_body(args) -> str:
     return body
 
 
+def _llm_ready(llm, config) -> bool:
+    if llm is None:
+        return False
+    provider = (config.llm or {}).get("provider")
+    if provider in ("ollama", "custom"):
+        return True
+    return bool(getattr(llm, "api_key", None))
+
+
+def _print_expand(context_builder, config, ref: str, session):
+    from harness.ccr import retrieve_chunk
+
+    text = context_builder.cache.get(ref) or retrieve_chunk(
+        ref,
+        spill_dir=(config.ccr or {}).get("spill_dir"),
+    )
+    if text is None:
+        needle = ref.replace("\\", "/")
+        for cid in session.latest_pack_ids() + session.all_kept_chunk_ids():
+            if needle in cid.replace("\\", "/"):
+                text = context_builder.cache.get(cid) or retrieve_chunk(
+                    cid,
+                    spill_dir=(config.ccr or {}).get("spill_dir"),
+                )
+                if text is not None:
+                    print(f"[*] resolved {ref} → {cid}")
+                    break
+    if text is None:
+        print(f"[!] chunk not in cache: {ref}")
+        return
+    print(text)
+
+
+def _print_memory_brief(config):
+    from harness.memory import MemoryStore
+
+    store = MemoryStore.for_repo(
+        config.repo_path or ".",
+        memory_dir=(config.context or {}).get("memory_dir") or None,
+    )
+    brief = store.brief()
+    if not brief.text:
+        print("[!] No active memory to brief")
+        return
+    print(brief.text.rstrip())
+    print(f"\n[*] tokens={brief.token_count} entries={len(brief.entry_ids)}")
+
+
+def _print_wiki_page(config, page: str):
+    from harness.okf import default_wiki_dir
+    from harness.wiki import show_page
+
+    out_dir = default_wiki_dir(config.repo_path or ".")
+    try:
+        print(show_page(out_dir, page))
+    except FileNotFoundError as exc:
+        print(f"[!] {exc}")
+
+
+def _add_profile_flag(parser):
+    parser.add_argument(
+        "--profile",
+        choices=["default", "sage"],
+        default=None,
+        help="Named flag pack (sage: ccr_lite, more graph expand, higher pack budget)",
+    )
+
+
 def _add_pack_flags(parser):
     parser.add_argument(
         "--pack-mode",
@@ -934,6 +1064,15 @@ def _load_config(args) -> Config:
     if hasattr(args, 'verbose'):
         config.verbose = args.verbose
 
+    from harness.session import apply_profile, resolve_profile_name
+
+    try:
+        profile_name = resolve_profile_name(args)
+    except ValueError:
+        profile_name = "default"
+    if profile_name != "default" and not getattr(args, "skip_profile", False):
+        apply_profile(config, profile_name)
+
     env_mode = os.environ.get("CODEHARNESS_PACK_MODE")
     if env_mode in ("full", "ccr_lite"):
         config.context["pack_mode"] = env_mode
@@ -1007,7 +1146,9 @@ Examples:
   %(prog)s index ./my-project                            # Index a repo
   %(prog)s query ./my-project -q "how does auth work?"   # Query with AI
   %(prog)s query ./my-project --no-llm -q "find auth"    # Show context only
-  %(prog)s interactive ./my-project                      # Interactive mode
+  %(prog)s chat ./my-project                             # Interactive session
+  %(prog)s chat ./my-project --profile sage              # Sage pack + expand
+  %(prog)s interactive ./my-project                      # Alias for chat
    %(prog)s index ./my-project --embed-model all-MiniLM-L6-v2
    %(prog)s info ./my-project                             # Show repo stats
    %(prog)s info ./my-project --mermaid --focus class:harness/context_builder.py:ContextBuilder
@@ -1054,10 +1195,14 @@ Examples:
                    help="Show per-source retrieval breakdown (dense/sparse/graph/cross-encoder)")
     _add_pack_flags(q)
     _add_loop_flags(q, include_verify=True)
+    _add_profile_flag(q)
     q.set_defaults(func=cmd_query)
 
-    int_p = subparsers.add_parser("interactive", aliases=["i"],
-                                  help="Interactive query mode")
+    int_p = subparsers.add_parser(
+        "interactive",
+        aliases=["i", "chat", "session", "repl"],
+        help="Interactive query session (REPL with /compact and /cost)",
+    )
     int_p.add_argument("repo", nargs="?", default=".", help="Repository path")
     int_p.add_argument("--no-llm", action="store_false", dest="llm",
                        help="Disable LLM in interactive mode")
@@ -1068,6 +1213,7 @@ Examples:
                       help="Show per-source retrieval breakdown (dense/sparse/graph/cross-encoder)")
     _add_pack_flags(int_p)
     _add_loop_flags(int_p, include_verify=True)
+    _add_profile_flag(int_p)
     int_p.set_defaults(func=cmd_interactive)
 
     info = subparsers.add_parser("info", help="Show repository information")

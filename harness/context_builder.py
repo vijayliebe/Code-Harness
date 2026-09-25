@@ -65,7 +65,9 @@ def _prefix_hash(project_docs: Dict[str, str], extra: str = "") -> str:
 class ContextBuilder:
     def __init__(self, config: Config):
         self.config = config
-        self.max_context_tokens = config.llm.get("max_tokens", 4096) * 2
+        context_cfg = getattr(config, "context", None) or {}
+        multiplier = float(context_cfg.get("max_tokens_multiplier") or 2)
+        self.max_context_tokens = int(config.llm.get("max_tokens", 4096) * multiplier)
         self.cache = self._make_cache()
 
     @property
@@ -434,16 +436,20 @@ class ContextBuilder:
         return "\n".join(sections)
 
     def build_system_prompt(self) -> str:
-        return """You are an expert code analyst. Your task is to answer questions about a codebase using the provided context.
+        from .session import CITATION_INSTRUCTION as SESSION_CITE
+
+        cite = SESSION_CITE
+        return f"""You are an expert code analyst. Your task is to answer questions about a codebase using the provided context.
 
 Guidelines:
 1. Use the provided code context to give accurate, specific answers
-2. Reference file paths, line numbers, and function/class names
-3. If the context doesn't contain enough information, say so clearly
-4. Provide code examples when relevant
-5. Explain the purpose and relationships between components
-6. Be concise but thorough in your analysis
-7. If a snippet notes omitted lines, use retrieve_chunk <chunk_id> (CLI: --expand-chunk or retrieve-chunk) before inventing omitted bodies
+2. {cite}
+3. Reference file paths, line numbers, and function/class names
+4. If the context doesn't contain enough information, say so clearly
+5. Provide code examples when relevant
+6. Explain the purpose and relationships between components
+7. Be concise but thorough in your analysis
+8. If a snippet notes omitted lines, use retrieve_chunk <chunk_id> (CLI: --expand-chunk or retrieve-chunk) before inventing omitted bodies
 
 The context below contains relevant code snippets from the repository, including file paths and line numbers.
 Project-level documentation files (ARCHITECTURE.md, AGENTS.md, CLAUDE.md) may be included for high-level understanding."""
