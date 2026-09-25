@@ -11,7 +11,7 @@ Order is RAG-quality first (Recall@k, citation-path, tokens), then ops/distribut
 | # | PR | Size | Owns | Depends on |
 |---|-----|------|------|------------|
 | **1** | **Wiki generate MVP** — template + KG + Mermaid, write `knowledge/wiki/` as OKF `WikiPage`, cite `path:symbol`. No LLM polish. *(generate + schema shipped; RRF `kind=wiki` boost and watch dirty-module regen still open)* | M | Code Wiki #23, OKF #16, Obsidian vault shape #6 | Mermaid (done). Shared `okf.py` with PR 2 |
-| **2** | **Typed memory + OKF import/export** — `decision`/`error`/`preference`/`fact`, supersede, `memory brief` ≤800 tokens in the semi-stable prefix. | M | Memanto #5, OKF #16 | PR 1’s `okf.py` *or* land parser in this PR and have wiki call it |
+| **2** | **Typed memory + OKF import/export** — `decision`/`error`/`preference`/`fact`, supersede, `memory brief` ≤800 tokens in the semi-stable prefix. *(store + CLI + brief + OKF round-trip shipped; packer inject is opt-in / default-off; no LLM auto-extract)* | M | Memanto #5, OKF #16 | PR 1’s `okf.py` *or* land parser in this PR and have wiki call it |
 | **3** | **Interactive session + `/compact` + `/cost`** — JSONL session, budget never drops latest pack, heuristic compact, print packed/full tokens + loop attempts. Tiny: `--profile sage` flag pack + `path:symbol` system line + `expand_on=explain`. | M | Strands #3, Forge #13, Claurst #2, Loop #18, Headroom remainder #1 | None (CCR/loop exist) |
 | **4** | **Secret redaction + audit JSONL** — strip key/token patterns before assemble; append query/chunk_ids/tokens/model. Optional max-token hard stop. | S | Governance #19, Proxima `analyze_file` strip | None. **Do this before binding a network port** |
 | **5** | **`doctor` + `mcp serve` / `POST /v1/retrieve`** — probe embed/LLM with ordered fallbacks; expose `retrieve`, `retrieve_chunk`, `graph_neighbors`. Optional SQLite query-hash cache. | L (or S doctor + M serve) | Agent-Reach #11, OpenHuman #8, Proxima #9, Forge #13 | PR 4 preferred. Query cache can split as S |
@@ -36,7 +36,8 @@ Order is RAG-quality first (Recall@k, citation-path, tokens), then ops/distribut
 
 - **Steal:** Memanto observe/reconcile/brief **without** the SaaS agent; four types; supersession; OKF round-trip.
 - **Sources:** #5, #16
-- **Change:** Problem — decisions live in chat or fight code chunks in Chroma. Outcome — `.code-harness/memory/` + optional committed `knowledge/decisions/`; `memory brief` injected between project docs and packed hits; code chunks still win “what does the code do?”
+- **Shipped:** `python main.py memory add|list|brief|export|import` writes OKF `Decision`/`Error`/`Preference`/`Fact` files under `knowledge/memory/` (optional `.code-harness/memory/` overlay). Supersede tombstones the old file; `memory brief` packs active entries ≤800 tokens (`len//4`). Query/CCR inject is `--include-memory-brief` (default off). Shared `harness/okf.py` with wiki. See [notes/memory-okf.md](notes/memory-okf.md).
+- **Change:** Problem — decisions live in chat or fight code chunks in Chroma. Outcome — remaining: LLM observe/auto-extract, eval fixtures “why Chroma / why pack_mode full”, prefix-load of all `knowledge/**/*.md`.
 - **Metric move:** new fixtures “why Chroma default / why pack_mode full” hit decision files **without** Recall@k on `vector_store.py` dropping. Token mean on those queries **down** vs retrieving long architecture prose. Measure: suite + `prompt_tokens_mean` by_difficulty.
 - **Risk / complexity / local-first:** Medium. Junk-drawer risk — require `type`+`title`. No auto-extract from sessions in v1. No Memanto/Mem0 dependency.
 - **PR size / deps:** M. Shared OKF parser with G1. After loop (done) so brief has a place to sit.

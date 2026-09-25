@@ -125,6 +125,29 @@ python main.py wiki generate . --module harness --out knowledge/wiki
 
 OKF = [Open Knowledge Format (Google SPEC v0.2)](https://github.com/GoogleCloudPlatform/open-knowledge-format/blob/main/SPEC.md). We emit a code-repo subset (`type: WikiPage`, `okf_version: "0.2"`, `x_codeharness` citations). See `harness/okf.py` for the field mapping. Missing graph → clear error asking you to `index` first.
 
+### `memory` — Typed project memory + OKF import/export
+
+Local store of `decision` / `error` / `preference` / `fact` beside the code index (not written into Chroma). Files are OKF markdown under `knowledge/memory/` (override with `--dir`; `.code-harness/memory/` is also read if present). New entries with `--supersedes <id>` tombstone the old file (`status: superseded`). `memory brief` packs **active** entries only, hard-capped at 800 tokens (same `len//4` estimator as the packer).
+
+```bash
+python main.py memory add . --type decision --title "Default vector backend stays Chroma" \
+  --body "Keep Chroma until TurboVec recall gates pass." \
+  --link harness/vector_store.py:VectorStore
+python main.py memory list .
+python main.py memory list . --all --as-of 2026-06-01
+python main.py memory brief . -q "why chroma?"
+python main.py memory export . ./okf-bundle
+python main.py memory import . ./okf-bundle
+```
+
+Query/interactive can inject the brief **between** project docs and packed hits, default off:
+
+```bash
+python main.py query . --no-llm --include-memory-brief -q "why is Chroma the default?"
+```
+
+Sample `path:symbol` entries in this repo: `knowledge/memory/decision/2026-09-24-chroma-default.md` (`harness/vector_store.py:VectorStore`) and `knowledge/memory/error/2026-09-24-faiss-oom.md` (`harness/vector_store.py:VectorStore.add_chunks`). Mapping: [`harness/okf.py`](harness/okf.py) and [`.docs/research/fusion/notes/memory-okf.md`](.docs/research/fusion/notes/memory-okf.md).
+
 Graph expansion defaults to **beam** (`retrieval.expand_mode: beam`, `beam_width: 6`, `beam_depth: 2`). `expand_neighbors: 3` is the added-chunk cap (`max_added = expand_neighbors * 2`). Set `expand_mode: bfs` to restore the old hop walk. Gloss notes live in `knowledge/gloss/*.md` or `.code-harness/gloss/*.md` with frontmatter `entity: class:path:Name`.
 
 ### `watch` — Watch and auto re-index

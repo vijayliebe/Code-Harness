@@ -48,6 +48,9 @@ DEFAULT_CONFIG = {
     "context": {
         "pack_mode": "full",
         "prefix_files": ["ARCHITECTURE.md", "AGENTS.md", "CLAUDE.md"],
+        "include_memory_brief": False,
+        "memory_brief_tokens": 800,
+        "memory_dir": None,
     },
     "ccr": {
         "first_lines": 12,
