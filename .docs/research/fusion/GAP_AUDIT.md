@@ -10,7 +10,7 @@ Order is RAG-quality first (Recall@k, citation-path, tokens), then ops/distribut
 
 | # | PR | Size | Owns | Depends on |
 |---|-----|------|------|------------|
-| **1** | **Wiki generate MVP** — template + KG + Mermaid, write `knowledge/wiki/` as OKF `WikiPage`, cite `path:symbol`. No LLM polish. Boost `kind=wiki` in RRF. | M | Code Wiki #23, OKF #16, Obsidian vault shape #6 | Mermaid (done). Shared `okf.py` with PR 2 if both land close |
+| **1** | **Wiki generate MVP** — template + KG + Mermaid, write `knowledge/wiki/` as OKF `WikiPage`, cite `path:symbol`. No LLM polish. *(generate + schema shipped; RRF `kind=wiki` boost and watch dirty-module regen still open)* | M | Code Wiki #23, OKF #16, Obsidian vault shape #6 | Mermaid (done). Shared `okf.py` with PR 2 |
 | **2** | **Typed memory + OKF import/export** — `decision`/`error`/`preference`/`fact`, supersede, `memory brief` ≤800 tokens in the semi-stable prefix. | M | Memanto #5, OKF #16 | PR 1’s `okf.py` *or* land parser in this PR and have wiki call it |
 | **3** | **Interactive session + `/compact` + `/cost`** — JSONL session, budget never drops latest pack, heuristic compact, print packed/full tokens + loop attempts. Tiny: `--profile sage` flag pack + `path:symbol` system line + `expand_on=explain`. | M | Strands #3, Forge #13, Claurst #2, Loop #18, Headroom remainder #1 | None (CCR/loop exist) |
 | **4** | **Secret redaction + audit JSONL** — strip key/token patterns before assemble; append query/chunk_ids/tokens/model. Optional max-token hard stop. | S | Governance #19, Proxima `analyze_file` strip | None. **Do this before binding a network port** |
@@ -26,7 +26,8 @@ Order is RAG-quality first (Recall@k, citation-path, tokens), then ops/distribut
 
 - **Steal:** Code Wiki incremental pages + edge-exported diagrams + grounded `path:symbol`; OKF `WikiPage`; Obsidian-shaped `knowledge/` tree.
 - **Sources:** #23, #16, #6
-- **Change:** Problem — `ARCHITECTURE.md` drifts and answers re-stuff raw bodies. Outcome — `wiki generate` writes package-level pages under `knowledge/wiki/` (hash-stable, no overwrite of `.docs/`), embeds Mermaid from existing `to_mermaid`, indexes pages as high-priority documentation chunks, watch regen per dirty module.
+- **Shipped:** `python main.py wiki generate|list|show` writes hash-stable OKF `WikiPage` files under `knowledge/wiki/` with `path:symbol` cites and Mermaid from `to_mermaid`. `harness/okf.py` is the shared SPEC v0.2 subset (PR 2 can reuse it). Ranking / packer defaults unchanged.
+- **Change:** Problem — `ARCHITECTURE.md` drifts and answers re-stuff raw bodies. Outcome — remaining: index pages as high-priority documentation chunks (`kind=wiki` RRF boost), watch regen per dirty module, architecture/explain eval fixtures.
 - **Metric move:** citation-path and Recall@k on a new “explain architecture / how does context assembly fit” fixture **up**; `prompt_tokens_*` **down** when packer prefers wiki then `retrieve_chunk`. Measure: add 2–3 fixtures to `.docs/research/eval/code-harness.fixture.yaml`; run `eval` with and without wiki chunks in the index.
 - **Risk / complexity / local-first:** Medium. Template-only avoids LLM cost/hallucinated diagrams. Must not dump per-chunk pages.
 - **PR size / deps:** M. Needs shipped Mermaid. OKF frontmatter can be stubbed then shared with G2.

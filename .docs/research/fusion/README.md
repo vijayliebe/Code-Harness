@@ -13,4 +13,6 @@ Spine already shipped on `cursor/kg-enrichment-3590` (and ancestors):
 
 `eval metrics → CCR-lite packer → corrective query loop → KG enrichment (exposes/tested_by/gloss + beam + Mermaid)`
 
+Fusion PR #1 (wiki generate MVP) adds `wiki generate|list|show` — OKF `WikiPage` markdown under `knowledge/wiki/`, `path:symbol` cites, Mermaid from the KG. Typed memory / RRF wiki boost / watch regen are still open.
+
 Read [../INDEX.md](../INDEX.md) → this pack → [../deep/INTEGRATION_PLAN.md](../deep/INTEGRATION_PLAN.md) for the original sequence.
