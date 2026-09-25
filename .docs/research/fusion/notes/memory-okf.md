@@ -49,11 +49,12 @@ Shared SPEC fields (`type`, `title`, `description`, `generated`, `verified`, `ti
 python main.py memory add . --type decision --title "..." --body "..." --link path:symbol
 python main.py memory list . [--type decision] [--as-of 2026-06-01] [--all]
 python main.py memory brief . -q "why chroma?"
+python main.py memory extract . [--session path.jsonl] [--dry-run] [--llm]
 python main.py memory export . ./okf-bundle
 python main.py memory import . ./okf-bundle
 ```
 
-No Memanto/Mem0 dependency. No auto-extract from chats (`observe_stub` only).
+No Memanto/Mem0 dependency. Heuristic observe/auto-extract (`harness/memory_extract.py`) is offline by default. `memory.auto_extract` is **false** — writes only when `memory extract` / `/memory extract` is invoked, or when that flag is on (after `/compact` or session exit). `--llm` / `memory.llm_refine` no-ops without a key.
 
 ## Sample `path:symbol` entries (this repo)
 

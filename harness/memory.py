@@ -6,7 +6,8 @@ optionally ``.code-harness/memory/``. Not written into Chroma.
 
 Reconcile is supersession + tombstone, not silent overwrite. ``memory brief``
 packs active entries with a hard cap of 800 tokens (``len // 4``).
-LLM auto-extract from chats is out of scope — :func:`observe_stub` only.
+Heuristic observe/auto-extract lives in :mod:`harness.memory_extract`
+(offline by default; optional ``--llm`` refine no-ops without a key).
 """
 
 from __future__ import annotations
@@ -135,6 +136,8 @@ class MemoryStore:
         timestamp: Optional[str] = None,
         entry_id: Optional[str] = None,
         extras: Optional[Dict[str, Any]] = None,
+        generated: bool = False,
+        verified: Any = "human",
     ) -> MemoryEntry:
         normalized = normalize_memory_kind(kind)
         if not normalized:
@@ -169,6 +172,8 @@ class MemoryStore:
             status=STATUS_ACTIVE,
             extras=dict(extras or {}),
             rel_path=_rel_path_for(normalized, title, ts, entry_id),
+            generated=bool(generated),
+            verified=verified if verified is not None else "human",
         )
         self._write(entry)
         if old is not None:
@@ -402,9 +407,18 @@ class MemoryStore:
         return list(by_id.values())
 
 
-def observe_stub(*_args, **_kwargs) -> None:
-    """Placeholder — LLM memory synthesis is fusion PR #3+ (out of scope)."""
-    return None
+def observe(*args, **kwargs):
+    """Heuristic extract from session/query turns (see :mod:`harness.memory_extract`)."""
+    from .memory_extract import run_extract
+
+    return run_extract(*args, **kwargs)
+
+
+def observe_stub(*args, **kwargs):
+    """Backward-compatible alias for :func:`observe` (no-op when called empty)."""
+    if not args and not kwargs:
+        return None
+    return observe(*args, **kwargs)
 
 
 def make_memory_id(title: str, timestamp: str) -> str:
@@ -570,5 +584,6 @@ __all__ = [
     "MemoryError",
     "MemoryStore",
     "estimate_tokens",
+    "observe",
     "observe_stub",
 ]

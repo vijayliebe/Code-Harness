@@ -91,7 +91,7 @@ Mini-deepens for thin cards: [notes/](notes/).
 - **Best stealable ideas:** (1) Typed memories (`decision` / `error` / `preference` / `fact`) **beside** the code index. (2) Conflict **supersession** + `as-of`, not silent overwrite. (3) `memory brief` on interactive start (≤800 tokens).
 - **Why it matters:** Accuracy on “why did we…?” without polluting chunk embeddings. Tokens: brief ≪ re-retrieving narrative docs. Ops: git-reviewable facts.
 - **Map to module:** NEW `harness/memory.py` + CLI `memory`; context builder prefix (semi-stable, after ARCHITECTURE, before packed hits).
-- **Status:** `partial` — `harness/memory.py` + CLI `memory add|list|brief|export|import` shipped: four types, supersede/tombstone, `memory brief` ≤800 tokens, OKF markdown under `knowledge/memory/`. Query-path inject is default-off (`--include-memory-brief`). **Delta:** no observe/auto-extract from sessions; no BM25-over-memory index; no eval “why did we…?” fixtures yet. Do not vendor Memanto. OKF is the interchange (Google SPEC; Memanto is implementer).
+- **Status:** `partial` — `harness/memory.py` + CLI `memory add|list|brief|export|import|extract` shipped: four types, supersede/tombstone, `memory brief` ≤800 tokens, OKF markdown under `knowledge/memory/`. Heuristic observe/auto-extract from session JSONL (and optional query traces) writes `decision`/`error`/`preference`/`fact` with `path:symbol` cites; dry-run prints only; `memory.auto_extract` default **false**. Optional `--llm` refine no-ops without a key. Query-path inject is default-off (`--include-memory-brief`). **Delta:** no BM25-over-memory index; no eval “why did we…?” fixtures yet; no full-vault OKF export. Do not vendor Memanto. OKF is the interchange (Google SPEC; Memanto is implementer).
 - **Fusion priority:** P0
 - **Evidence:** deep-dive
 
@@ -293,7 +293,7 @@ Mini-deepens for thin cards: [notes/](notes/).
 Sources with the most **material delta** still on the table (not rejects):
 
 1. **Google Code Wiki + OKF** — `wiki generate` + WikiPage emit + `--dirty` / watch hook + opt-in RRF `wiki_weight` shipped; remaining: chat-over-wiki via CCR, prefix-load of `knowledge/**/*.md`, LLM polish.
-2. **Memanto** — typed store + supersession + brief shipped; remaining: observe/auto-extract and eval “why” fixtures.
+2. **Memanto** — typed store + supersession + brief + heuristic observe/auto-extract shipped (auto path default-off); remaining: BM25-over-memory and eval “why” fixtures.
 3. **Strands + Forge + Claurst** — session `/compact` `/cost` sage + localhost MCP retrieve shipped; remaining: caveman, graph-explorer digest.
 4. **Agent-Reach + Proxima + OpenHuman** — doctor + query cache + MCP/`POST /v1/retrieve` **shipped** (loopback). Remainder: Jina ingest, stdio MCP, serve-cache on eval/interactive.
 5. **TurboVec** — protocol + opt-in backend + eval A/B gate shipped; still experimental, not default. Remainder: dual-write, TQ+ calibrate, default flip.

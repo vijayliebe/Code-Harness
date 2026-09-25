@@ -67,7 +67,7 @@ python main.py session ./my-project --profile sage
 python main.py interactive --cross-repo ./my-project   # same command
 ```
 
-Turns are stored as JSONL under `.code-harness/sessions/` (ephemeral dialogue — not typed memory and not the code index). `/compact` is extractive conversation compression (keep user lines + the latest pack ids); it is not the CCR packer. `/cost` prints packed vs full prompt tokens, completion tokens, loop attempts, and approx $ when `llm.input_usd_per_1m` / `llm.output_usd_per_1m` are set. Without an LLM key the session still retrieves, packs, and prints context.
+Turns are stored as JSONL under `.code-harness/sessions/` (ephemeral dialogue — not typed memory and not the code index). `/compact` is extractive conversation compression (keep user lines + the latest pack ids); it is not the CCR packer. `/cost` prints packed vs full prompt tokens, completion tokens, loop attempts, and approx $ when `llm.input_usd_per_1m` / `llm.output_usd_per_1m` are set. Without an LLM key the session still retrieves, packs, and prints context. `/memory extract` (or `memory extract`) heuristically proposes typed memories from those turns; it does **not** write unless you invoke the command (or set `memory.auto_extract: true`, default **off**).
 
 `--profile sage` (or `CODEHARNESS_PROFILE=sage`, or `/profile sage`) is a flag pack: `pack_mode=ccr_lite`, `max_loops=1`, larger graph expand, higher pack budget. It does **not** retune RRF weights. One-shot `query` stays unchanged unless you pass `--profile`.
 
@@ -80,6 +80,7 @@ System framing always includes a `path:symbol` citation instruction. Explain/why
 /profile default|sage     Switch the flag pack
 /expand <id|path:symbol>  Print a CCR-cached original (`/retrieve` is an alias)
 /memory brief             Dump the typed memory brief
+/memory extract           Heuristic extract → typed memory (`--dry-run` to preview)
 /wiki <page>              Show a generated wiki page
 /llm on|off               Enable/disable AI responses
 /context                  Show the last retrieved context
@@ -149,6 +150,8 @@ Indexed wiki pages (`kind=wiki` or `knowledge/wiki/<page>`) can join hybrid RRF 
 
 Local store of `decision` / `error` / `preference` / `fact` beside the code index (not written into Chroma). Files are OKF markdown under `knowledge/memory/` (override with `--dir`; `.code-harness/memory/` is also read if present). New entries with `--supersedes <id>` tombstone the old file (`status: superseded`). `memory brief` packs **active** entries only, hard-capped at 800 tokens (same `len//4` estimator as the packer).
 
+`memory extract` reads the last session JSONL (or `--session path`, including one-shot `event: query` traces) and heuristically proposes `decision` / `error` / `preference` / `fact` entries with `path:symbol` links from retrieve cites. `--dry-run` prints candidates and writes nothing. Matching title or `path:symbol` + kind supersedes the active row; identical title+body is skipped. Auto-extract after `/compact` or session exit is **off** (`memory.auto_extract: false`). `--llm` / `memory.llm_refine` may polish candidates and no-ops without a key.
+
 ```bash
 python main.py memory add . --type decision --title "Default vector backend stays Chroma" \
   --body "Keep Chroma until TurboVec recall gates pass." \
@@ -156,6 +159,8 @@ python main.py memory add . --type decision --title "Default vector backend stay
 python main.py memory list .
 python main.py memory list . --all --as-of 2026-06-01
 python main.py memory brief . -q "why chroma?"
+python main.py memory extract . --dry-run
+python main.py memory extract . --session .code-harness/sessions/20260925-120000.jsonl
 python main.py memory export . ./okf-bundle
 python main.py memory import . ./okf-bundle
 ```
@@ -381,6 +386,10 @@ Key settings:
   "session": {
     "dir": ".code-harness/sessions",
     "keep_recent": 1
+  },
+  "memory": {
+    "auto_extract": false,
+    "llm_refine": false
   },
   "redaction": {
     "enabled": true,
