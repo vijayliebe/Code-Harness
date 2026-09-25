@@ -56,7 +56,7 @@ python main.py knowledge export . --out ./okf-bundle
 python main.py knowledge import ./okf-bundle --repo .
 ```
 
-`knowledge export|import` (alias `okf`) is the whole-vault interchange: `knowledge/wiki/**`, `knowledge/memory/**`, gloss under `knowledge/gloss` or `.code-harness/gloss`, plus `okf-manifest.yaml` (`counts`, `okf_version`, `generated`). Same parser as memory — unknown keys survive. Empty vaults fail soft (manifest only). `load_knowledge_docs` prefix-loads `knowledge/**/*.md` for retrieve/packer later (not injected by default).
+`knowledge export|import` (alias `okf`) is the whole-vault interchange: `knowledge/wiki/**`, `knowledge/memory/**`, gloss under `knowledge/gloss` or `.code-harness/gloss`, plus `okf-manifest.yaml` (`counts`, `okf_version`, `generated`). Same parser as memory — unknown keys survive. Empty vaults fail soft (manifest only). `load_knowledge_docs` prefix-loads `knowledge/**/*.md` for the packer. Injection is opt-in (`context.knowledge_prefix` / `--include-knowledge-prefix`, default off, 800-token budget) and skips memory pages when `--include-memory-brief` is already on.
 
 Heuristic extract (default, offline) classifies session/chat turns into `decision|error|preference|fact` with `path:symbol` links and supersede/dedupe. `--llm` refines only when a client+key exist; otherwise it is a no-op. Config `memory.auto_extract` is **false** by default; when true, extract runs after `/compact` or session exit.
 

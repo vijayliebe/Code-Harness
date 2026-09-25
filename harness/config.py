@@ -51,6 +51,8 @@ DEFAULT_CONFIG = {
         "include_memory_brief": False,
         "memory_brief_tokens": 800,
         "memory_dir": None,
+        "knowledge_prefix": False,
+        "knowledge_token_budget": 800,
         "max_tokens_multiplier": 2,
     },
     "ccr": {

@@ -158,7 +158,7 @@ x_codeharness:
 - [x] README names Google SPEC as owner
 - [x] No Google Cloud client libraries
 - [x] `knowledge export|import` of the whole vault + manifest
-- [ ] Packer prefix-load of `knowledge/**/*.md` (`load_knowledge_docs` helper shipped)
+- [x] Packer prefix-load of `knowledge/**/*.md` (`context.knowledge_prefix`, default off, 800-token budget)
 
 ## 15. Cross-links
 

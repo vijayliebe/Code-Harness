@@ -199,6 +199,8 @@ class RetrieveService:
             self.config.context["pack_mode"] = pack_mode
         if req.get("include_memory_brief"):
             self.config.context["include_memory_brief"] = True
+        if req.get("include_knowledge_prefix"):
+            self.config.context["knowledge_prefix"] = True
 
         cache_key = self._cache_key(query, top_k) if self.cache is not None else None
         if cache_key:
