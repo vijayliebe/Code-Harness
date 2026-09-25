@@ -372,6 +372,9 @@ class TestEvalABCli(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             md_path = os.path.join(tmp, "RESULTS.md")
             json_path = os.path.join(tmp, "RESULTS.json")
+            # Compare TurboVec only so a missing extra skips (exit 0) without
+            # scoring the real checkout. Default chromadb+turbovec would eval
+            # Chroma and fail on a fresh tree that has no index.
             run = subprocess.run(
                 [
                     sys.executable,
@@ -379,6 +382,8 @@ class TestEvalABCli(unittest.TestCase):
                     "eval-ab",
                     ".",
                     "--skip-index",
+                    "--compare-backends",
+                    "turbovec",
                     "--markdown",
                     md_path,
                     "--json",
