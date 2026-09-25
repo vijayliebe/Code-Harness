@@ -23,12 +23,12 @@ Do **not** steal: browser session emulation, 40 MCP chat tools, crew/consensus m
 | Steal | Status | Module |
 |-------|--------|--------|
 | Corrective retrieve loop | **done** (`harness/loop.py`, opt-in `--loop`) | query loop |
-| `POST /v1/retrieve` + MCP retrieve | **gap** | NEW serve / CLI |
-| SQLite `(query_hash, repo, config) → chunk_ids` | **gap** | NEW cache beside Chroma |
+| `POST /v1/retrieve` + MCP retrieve | **done** (`serve` / `mcp serve`, 127.0.0.1) | `harness/serve.py` |
+| SQLite `(query_hash, repo, config) → chunk_ids` | **partial** — serve path only | `QueryCache` beside Chroma |
 | Secret strip on assemble | **done** (`harness/redact.py`, default-on pack/LLM) | context builder |
 | Browser session LLM routing | **reject** — ToS + not retrieval | — |
 
 ## Fusion call
 
-**P1** for retrieve API (with Forge/OpenHuman MCP) and a **local query cache** (latency on repeated eval/interactive questions).  
+**P1** for retrieve API + MCP **shipped** (`POST /v1/retrieve` on 127.0.0.1). Query cache **partial** (serve path).  
 Measure cache with eval p50 on a warm second pass of the same suite; Recall@k must be identical to cold (same ids).

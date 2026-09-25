@@ -19,6 +19,6 @@ GPL-3: ideas only.
 
 ## Fusion call
 
-**gap** for MCP retrieve tools and a documented local-only profile.  
+**partial** — MCP retrieve tools + documented loopback-only `mcp serve` shipped.  
 **partial** conceptually (CCR ≈ TokenJuice; gloss ≈ wiki notes).  
 Do not become a desktop agent. Position: OpenHuman/Claude/Forge call *us* for code RAG.

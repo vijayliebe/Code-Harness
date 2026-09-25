@@ -8,7 +8,7 @@ Code Harness is a RAG (Retrieval-Augmented Generation) system purpose-built for 
 ┌─────────────────────────────────────────────────────────┐
 │                     CLI (main.py)                        │
 │   index | query | interactive | info | clear             │
-│   watch | visualize | eval                               │
+│   watch | visualize | eval | doctor | serve / mcp        │
 └──────┬──────────────────┬──────────────────────────────┘
        │                  │
        ▼                  ▼
