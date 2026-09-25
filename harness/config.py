@@ -77,6 +77,13 @@ DEFAULT_CONFIG = {
         "max_prompt_tokens": None,
     },
 
+    "serve": {
+        "host": "127.0.0.1",
+        "port": 7432,
+        "cache": True,
+        "cache_path": ".code-harness/query_cache.sqlite",
+    },
+
     "retrieval": {
         "dense_weight": 0.3,
         "sparse_weight": 0.25,
@@ -147,6 +154,7 @@ class Config:
     ccr: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["ccr"]))
     session: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["session"]))
     redaction: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["redaction"]))
+    serve: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["serve"]))
     repo_path: str = "."
     verbose: bool = False
 
@@ -186,6 +194,7 @@ class Config:
             "ccr": self.ccr,
             "session": self.session,
             "redaction": self.redaction,
+            "serve": self.serve,
             "repo_path": self.repo_path,
             "verbose": self.verbose,
         }

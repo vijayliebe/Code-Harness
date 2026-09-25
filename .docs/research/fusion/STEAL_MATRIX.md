@@ -1,6 +1,6 @@
 # Steal matrix — every INDEX resource
 
-Inventory of [../INDEX.md](../INDEX.md) (23 items, including fuzzy-resolved names). Status is judged against **this branch tip**: eval harness, CCR-lite packer, corrective query loop, KG enrichment (exposes / tested_by / gloss + beam + Mermaid).
+Inventory of [../INDEX.md](../INDEX.md) (23 items, including fuzzy-resolved names). Status is judged against **this branch tip**: eval harness, CCR-lite packer, corrective query loop, KG enrichment, wiki, typed memory+OKF, session `/compact`/`/cost`, secret redaction + audit JSONL, **doctor + localhost MCP / `POST /v1/retrieve`**.
 
 **This is not a claim that fusion is complete.** Rows marked `done` mean the *stealable mechanism* is in-tree; siblings on the same card may still be `gap`.
 
@@ -26,10 +26,10 @@ Mini-deepens for thin cards: [notes/](notes/).
 | 5 | Memanto | partial | P0 | deep-dive |
 | 6 | Obsidian | partial | P1 | fusion-note |
 | 7 | Jitro | reject | — | weak-primary |
-| 8 | OpenHuman | gap | P1 | fusion-note |
+| 8 | OpenHuman | partial | P1 | fusion-note |
 | 9 | Proxima | partial | P1 | fusion-note |
 | 10 | 500 AI Agents | partial | P2 | first-pass |
-| 11 | Agent-Reach | gap | P1 | fusion-note |
+| 11 | Agent-Reach | partial | P1 | fusion-note |
 | 12 | Medium interview repos | reject | — | first-pass |
 | 13 | ForgeCode | partial | P1 | deep-dive |
 | 14 | Code graph | partial | P1 | deep-dive |
@@ -121,8 +121,8 @@ Mini-deepens for thin cards: [notes/](notes/).
 - **Best stealable ideas:** (1) MCP tools `retrieve` / `retrieve_chunk` / `memory.search`. (2) Privacy-mode story (local embed + local LLM). TokenJuice ≈ CCR (already). Memory Tree ≈ OKF+gloss (build ours, don’t take GPL core).
 - **Why it matters:** Distribution (other agents bring the loop). Local-first UX. Tokens already covered by packer.
 - **Map to module:** NEW MCP/CLI serve; doctor; memory/wiki (shared with #5/#16/#23).
-- **Status:** `gap` for MCP + documented local-only profile. Desktop/OAuth/A2A **reject**.
-- **Fusion priority:** P1 (MCP with Forge/Proxima).
+- **Status:** `partial` — localhost MCP tools `retrieve` / `retrieve_chunk` / `doctor` / `wiki_show` / `memory_brief` / `graph_neighbors` shipped (`python main.py mcp serve`, `POST /mcp`). Documented loopback-only profile. Desktop/OAuth/A2A **reject**.
+- **Fusion priority:** P1 (MCP with Forge/Proxima). **Delta:** no stdio MCP transport; HTTP JSON-RPC on 127.0.0.1 is the v1 surface.
 - **Evidence:** fusion-note
 
 ## 9. Proxima
@@ -130,8 +130,8 @@ Mini-deepens for thin cards: [notes/](notes/).
 - **Links:** https://github.com/Zen4-bit/Proxima · [notes/proxima.md](notes/proxima.md)
 - **Best stealable ideas:** (1) Local OpenAI-shaped HTTP — **our** `POST /v1/retrieve`, not their chat-gateway `/v1`. (2) Query-hash → chunk_id SQLite cache. (3) Self-heal retrieve (shipped). (4) Strip secrets on assemble.
 - **Why it matters:** Latency on repeated questions; product drop-in for agents; ops/safety. Browser session routing is ToS/Non-Commercial — **reject**.
-- **Map to module:** query loop **done**; NEW cache + serve; context builder redaction.
-- **Status:** `partial`
+- **Map to module:** query loop **done**; `harness/serve.py` `POST /v1/retrieve` + optional SQLite query-hash cache; context builder redaction **done**.
+- **Status:** `partial` — local OpenAI-shaped **retrieve** + query cache **shipped** (localhost only). **Delta:** cache is serve-path only (not eval/interactive). Browser session routing **reject**.
 - **Fusion priority:** P1
 - **Evidence:** fusion-note (README v5 skim — they are an LLM gateway, not a retriever)
 
@@ -150,9 +150,9 @@ Mini-deepens for thin cards: [notes/](notes/).
 - **Links:** https://github.com/Panniantong/Agent-Reach · [notes/agent-reach.md](notes/agent-reach.md)
 - **Best stealable ideas:** (1) Ordered backend list + **real probe** + `doctor` prescription. (2) Jina Reader as no-key web ingest. (3) Fallback, not wrapper.
 - **Why it matters:** Ops/reliability when Voyage/OpenAI keys die; local-first default embed. Accuracy later via `index-url`.
-- **Map to module:** NEW `doctor` CLI; embedder/LLM fallback; ingest (P2 with Firecrawl).
-- **Status:** `gap` — providers exist but fail independently; no channel registry. LinkedIn/cookie platforms **reject**.
-- **Fusion priority:** P1 doctor; P2 Jina ingest.
+- **Map to module:** `harness/doctor.py` + CLI `doctor`; embedder/LLM fallback; ingest (P2 with Firecrawl).
+- **Status:** `partial` — `python main.py doctor` probes Python/deps/index/graph/embed config/redact/audit/LLM-key (no network) and prints a fix hint. Silent cloud-key fallback still refused (missing Voyage key **fails** doctor). LinkedIn/cookie platforms **reject**. **Delta:** no live embed ping; no ordered runtime fallback channel registry; Jina `index-url` still P2.
+- **Fusion priority:** P1 doctor **shipped**; P2 Jina ingest.
 - **Evidence:** fusion-note
 
 ## 12. Medium: 4 interview-prep repos
@@ -170,9 +170,9 @@ Mini-deepens for thin cards: [notes/](notes/).
 - **Links:** https://github.com/tailcallhq/forgecode · https://forgecode.dev · deep [../deep/forgecode.md](../deep/forgecode.md)
 - **Best stealable ideas:** (1) Read-only **sage** profile (flag pack, not a new runtime). (2) Conversation `:compact` ≠ retrieval packer. (3) Env knobs for top_k / pack / loops. (4) Local index as `:sync` replacement via MCP.
 - **Why it matters:** UX clarity; tokens; **privacy** vs hosted `api.forgecode.dev`. We win as the better local indexer.
-- **Map to module:** CLI `--profile sage` **done**; env `CODEHARNESS_PACK_MODE` **done**; `/compact` **done**; MCP **gap**.
-- **Status:** `partial` — sage flag pack + conversation compact shipped. Stay CLI-RAG; do not build Rust TUI / muse / sandbox worktrees. Hosted `:sync` **reject**.
-- **Fusion priority:** P1 sage+compact with session; P1 MCP with OpenHuman/Proxima.
+- **Map to module:** CLI `--profile sage` **done**; env `CODEHARNESS_PACK_MODE` **done**; `/compact` **done**; MCP **done** (`mcp serve` / `POST /mcp` retrieve tools).
+- **Status:** `partial` — sage flag pack + conversation compact + localhost MCP retrieve shipped. Stay CLI-RAG; do not build Rust TUI / muse / sandbox worktrees. Hosted `:sync` **reject**.
+- **Fusion priority:** P1 sage+compact with session **shipped**; P1 MCP with OpenHuman/Proxima **shipped**. Remainder: caveman prompt.
 - **Evidence:** deep-dive
 
 ## 14. Code graph (Code-Graph-RAG + papers)
@@ -232,7 +232,7 @@ Mini-deepens for thin cards: [notes/](notes/).
 - **Why it matters:** Ops/safety; tokens (don’t send keys); local-first (no OPA in v1). Write-path approval only if agent writes land.
 - **Map to module:** `harness/redact.py`, `harness/audit.py`, context builder, LLM prepare, session JSONL, CLI `audit show`.
 - **Status:** `partial` — **Delta:** optional max-token / max-$ hard stop still open. Redaction + audit JSONL shipped (default-on for outbound LLM; fingerprints only).
-- **Fusion priority:** P1 remainder is the token cap (tiny); do not bind a retrieve port before this helper.
+- **Fusion priority:** P1 remainder is the token cap (tiny). Retrieve port now binds only after this helper (PR5 uses `redact_and_audit` on HTTP/MCP bodies).
 - **Evidence:** first-pass (enough; no SaaS to skim)
 
 ## 20. LLM in production
@@ -285,6 +285,8 @@ Mini-deepens for thin cards: [notes/](notes/).
 | CCR-lite + cache + retrieve-back | `harness/ccr.py`, `ContextBuilder` |
 | Grade / rewrite / HyDE-on-retry / deepen / easy BM25 / `--verify` hook | `harness/loop.py` |
 | exposes / tested_by / gloss / beam / Mermaid | `harness/kg_enrich.py`, `KnowledgeGraph` |
+| Secret redaction + audit JSONL | `harness/redact.py`, `harness/audit.py` |
+| `doctor` + localhost MCP / `POST /v1/retrieve` | `harness/doctor.py`, `harness/serve.py` |
 
 ## Biggest underextracted sources
 
@@ -292,8 +294,8 @@ Sources with the most **material delta** still on the table (not rejects):
 
 1. **Google Code Wiki + OKF** — `wiki generate` + WikiPage emit shipped; memory OKF import/export shipped; remaining: watch regen, RRF wiki boost, prefix-load of `knowledge/**/*.md`.
 2. **Memanto** — typed store + supersession + brief shipped; remaining: observe/auto-extract and eval “why” fixtures.
-3. **Strands + Forge + Claurst** — session `/compact` `/cost` sage shipped; remaining: MCP-as-`:sync`, caveman, graph-explorer digest.
-4. **Agent-Reach + Proxima + OpenHuman** — doctor, query cache, MCP/`POST /v1/retrieve`.
+3. **Strands + Forge + Claurst** — session `/compact` `/cost` sage + localhost MCP retrieve shipped; remaining: caveman, graph-explorer digest.
+4. **Agent-Reach + Proxima + OpenHuman** — doctor + query cache + MCP/`POST /v1/retrieve` **shipped** (loopback). Remainder: Jina ingest, stdio MCP, serve-cache on eval/interactive.
 5. **TurboVec** — designed, blocked on recall, zero code.
 6. **Headroom remainder** — expand-on-explain, stable cache key, type-aware pack.
 7. **Code-graph remainder** — path templates, `calls` quality (regex is the real accuracy bug).

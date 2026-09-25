@@ -32,6 +32,6 @@ Web ingest (`index-url`) is a **second** PR: Jina markdown → `source=web` chun
 
 ## Fusion call
 
-**P1** for `doctor` + ordered embed/LLM fallback (ops + local-first).  
+**P1** for `doctor` **shipped** (`python main.py doctor`: local probes, no network ping; missing Voyage key **fails** the embedding check with an export hint). Ordered runtime fallback still open.  
 **P2** for Jina `index-url` (accuracy on “how do we use X?”).  
 Measure doctor with a unit test that a missing Voyage key does not crash `query --no-llm`. Measure ingest later with a fixture whose gold path is a vendored markdown page.

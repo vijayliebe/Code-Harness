@@ -817,6 +817,120 @@ def _print_wiki_page(config, page: str):
         print(f"[!] {exc}")
 
 
+def cmd_doctor(args):
+    from harness.doctor import run_doctor
+
+    config = _load_config(args)
+    config.repo_path = os.path.abspath(getattr(args, "repo", None) or ".")
+    repo_name = _derive_repo_name(args)
+    report = run_doctor(config, repo_path=config.repo_path, repo_name=repo_name)
+    print(report.format())
+    if report.exit_code:
+        sys.exit(report.exit_code)
+
+
+def cmd_serve(args):
+    from harness.serve import (
+        DEFAULT_HOST,
+        DEFAULT_PORT,
+        BindError,
+        QueryCache,
+        build_retrieve_service,
+        make_server,
+        resolve_bind_host,
+        serve_forever,
+    )
+
+    config = _load_config(args)
+    config.repo_path = os.path.abspath(getattr(args, "repo", None) or ".")
+    repo_name = _derive_repo_name(args)
+    serve_cfg = getattr(config, "serve", None) or {}
+    host = getattr(args, "host", None) or serve_cfg.get("host") or DEFAULT_HOST
+    port = getattr(args, "port", None)
+    if port is None:
+        port = serve_cfg.get("port") or DEFAULT_PORT
+    allow_public = bool(getattr(args, "allow_public", False))
+    try:
+        bind = resolve_bind_host(host, allow_public=allow_public)
+    except BindError as exc:
+        print(f"[!] {exc}")
+        sys.exit(2)
+
+    use_cache = serve_cfg.get("cache") is not False
+    if getattr(args, "no_cache", False):
+        use_cache = False
+    cache = None
+    if use_cache:
+        cache_path = getattr(args, "cache_path", None) or serve_cfg.get("cache_path")
+        if not cache_path:
+            cache_path = os.path.join(config.repo_path, ".code-harness", "query_cache.sqlite")
+        elif not os.path.isabs(cache_path):
+            cache_path = os.path.join(config.repo_path, cache_path)
+        cache = QueryCache(cache_path)
+        print(f"[*] query cache: {cache_path}")
+
+    print(f"[*] Loading retrieve service for {config.repo_path} (repo: {repo_name})")
+    try:
+        service = build_retrieve_service(config, repo_name, cache=cache)
+    except Exception as exc:
+        print(f"[!] Failed to load index: {exc}")
+        print(f"    hint: python main.py index {config.repo_path}")
+        sys.exit(1)
+
+    try:
+        server = make_server(host=bind, port=int(port), service=service, allow_public=allow_public)
+    except BindError as exc:
+        print(f"[!] {exc}")
+        sys.exit(2)
+    except OSError as exc:
+        print(f"[!] bind failed: {exc}")
+        sys.exit(1)
+
+    actual_host, actual_port = server.server_address[:2]
+    print(f"[*] health:       http://{actual_host}:{actual_port}/health")
+    print(f"[*] retrieve:     POST http://{actual_host}:{actual_port}/v1/retrieve")
+    print(f"[*] MCP tools:    POST http://{actual_host}:{actual_port}/mcp")
+    print("[!] loopback only by default; --allow-public binds all interfaces (no auth, dangerous)")
+    serve_forever(server)
+
+
+def _add_serve_flags(parser, include_repo=True):
+    if include_repo:
+        parser.add_argument("repo", nargs="?", default=".", help="Repository path")
+    parser.add_argument(
+        "--host",
+        default=None,
+        help="Bind address (default: 127.0.0.1 / localhost)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=None,
+        help="Bind port (default: 7432)",
+    )
+    parser.add_argument(
+        "--allow-public",
+        action="store_true",
+        dest="allow_public",
+        help="DANGEROUS: allow 0.0.0.0 / all interfaces. No auth. Default is loopback only.",
+    )
+    parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Disable the optional query-hash retrieve cache",
+    )
+    parser.add_argument(
+        "--cache-path",
+        default=None,
+        help="SQLite query cache path (default: <repo>/.code-harness/query_cache.sqlite)",
+    )
+    _add_pack_flags(parser)
+    _add_loop_flags(parser)
+    _add_profile_flag(parser)
+    _add_redact_flag(parser)
+    parser.set_defaults(func=cmd_serve)
+
+
 def _add_redact_flag(parser):
     parser.add_argument(
         "--no-redact",
@@ -1217,6 +1331,10 @@ Examples:
    %(prog)s memory import . ./okf-bundle
    %(prog)s audit show --last 20
    %(prog)s audit tail --path .code-harness/audit/audit.jsonl
+   %(prog)s doctor ./my-project                           # Local health check
+   %(prog)s serve ./my-project                            # POST /v1/retrieve on 127.0.0.1
+   %(prog)s mcp serve ./my-project                        # MCP tools + retrieve (localhost)
+   %(prog)s api serve ./my-project                        # Alias for serve
    %(prog)s watch ./my-project                            # Watch and auto re-index
   %(prog)s eval . --suite .docs/research/eval/code-harness.fixture.yaml
   %(prog)s eval . --suite .docs/research/eval/code-harness.fixture.yaml --loop
@@ -1525,6 +1643,59 @@ Examples:
         help="Override audit JSONL path",
     )
     audit_tail.set_defaults(func=cmd_audit, audit_cmd="tail")
+
+    doc = subparsers.add_parser(
+        "doctor",
+        help="Local health check (Python, deps, index, graph, embed, redact, audit)",
+        description=(
+            "Probe local health: Python/deps, index + graph on disk, embedding "
+            "config, secret redaction, audit path writable, optional LLM key "
+            "(no network). Prints pass/fail plus a fix hint."
+        ),
+    )
+    doc.add_argument("repo", nargs="?", default=".", help="Repository path")
+    doc.set_defaults(func=cmd_doctor)
+
+    _SERVE_DESC = (
+        "Localhost retrieve API + MCP tools. POST /v1/retrieve and GET /health "
+        "bind 127.0.0.1 only. --allow-public is dangerous (no auth)."
+    )
+    srv = subparsers.add_parser(
+        "serve",
+        help="Serve POST /v1/retrieve + MCP on 127.0.0.1",
+        description=_SERVE_DESC,
+    )
+    _add_serve_flags(srv)
+
+    mcp = subparsers.add_parser(
+        "mcp",
+        help="MCP tool server (localhost retrieve on 127.0.0.1)",
+        description=_SERVE_DESC,
+    )
+    mcp.set_defaults(func=cmd_serve, repo=".")
+    _add_serve_flags(mcp, include_repo=False)
+    mcp_sub = mcp.add_subparsers(dest="mcp_cmd")
+    mcp_serve = mcp_sub.add_parser(
+        "serve",
+        help="Serve MCP + POST /v1/retrieve on 127.0.0.1",
+        description=_SERVE_DESC,
+    )
+    _add_serve_flags(mcp_serve)
+
+    api = subparsers.add_parser(
+        "api",
+        help="HTTP retrieve API (localhost POST /v1/retrieve)",
+        description=_SERVE_DESC,
+    )
+    api.set_defaults(func=cmd_serve, repo=".")
+    _add_serve_flags(api, include_repo=False)
+    api_sub = api.add_subparsers(dest="api_cmd")
+    api_serve = api_sub.add_parser(
+        "serve",
+        help="Serve POST /v1/retrieve on 127.0.0.1",
+        description=_SERVE_DESC,
+    )
+    _add_serve_flags(api_serve)
 
     args = parser.parse_args()
 

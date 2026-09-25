@@ -17,6 +17,10 @@ python main.py query /path/to/your/repo -q "how does authentication work?"
 # Interactive session (aliases: chat, session, repl)
 python main.py chat /path/to/your/repo
 python main.py chat /path/to/your/repo --profile sage
+
+# Local health check + localhost retrieve / MCP
+python main.py doctor /path/to/your/repo
+python main.py serve /path/to/your/repo
 ```
 
 ## Commands
@@ -158,6 +162,46 @@ python main.py query . --no-llm --include-memory-brief -q "why is Chroma the def
 python main.py memory brief . --redact
 python main.py memory export . ./okf-bundle --redact
 ```
+
+### `doctor` — Local health check
+
+No network. Prints pass / warn / fail plus a fix hint. Exit `0` when required checks pass (missing cloud LLM key is a warn). Exit `1` when index, graph, embedding config, core deps, or the audit path fail.
+
+```bash
+python main.py doctor .
+python main.py doctor ./my-project
+```
+
+Checks: Python 3.9+, importable deps, Chroma persist + `graph_{repo}.json`, embedding provider/model (API key presence only — no ping), redaction enabled, audit JSONL writable, optional LLM key.
+
+### `serve` / `mcp serve` / `api serve` — Localhost retrieve + MCP
+
+Binds **127.0.0.1 only** by default (no auth). Refuses `0.0.0.0` / `::` / non-loopback hosts unless you pass `--allow-public` (dangerous: no authentication). Response bodies are redacted via `harness.redact.redact_and_audit`. Optional SQLite query-hash cache under `.code-harness/query_cache.sqlite`.
+
+```bash
+python main.py serve .
+python main.py mcp serve . --port 7432
+python main.py api serve . --pack-mode ccr_lite
+# DANGEROUS — all interfaces, no auth:
+python main.py serve . --host 0.0.0.0 --allow-public
+```
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /health` | Liveness + bind + redact flag |
+| `POST /v1/retrieve` | `{"query": "...", "top_k": 20, "pack_mode": "full"}` → ranked ids/paths + packed context |
+| `POST /mcp` | JSON-RPC 2.0 `initialize` / `tools/list` / `tools/call` |
+
+MCP tools: `retrieve`, `retrieve_chunk`, `doctor`, `wiki_show`, `memory_brief`, `graph_neighbors`. Same pipeline flags as `query` (`--pack-mode`, `--loop`, `--profile sage`, `--include-memory-brief`, `--no-redact`).
+
+```bash
+curl -s http://127.0.0.1:7432/health
+curl -s http://127.0.0.1:7432/v1/retrieve \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"how does the chunker work?","top_k":10}'
+```
+
+Does **not** start on import. Index stays on disk; this is not Forge hosted `:sync` and not a cloud deploy.
 
 ### `audit` — Secret redaction log
 
@@ -305,6 +349,11 @@ Key settings:
     "audit": true,
     "audit_path": ".code-harness/audit/audit.jsonl"
   },
+  "serve": {
+    "host": "127.0.0.1",
+    "port": 7432,
+    "cache": true
+  },
   "vector_store": {
     "hnsw_ef_search": 256,
     "hnsw_ef_construction": 200,
@@ -426,6 +475,8 @@ python main.py query --cross-repo -q "how do these projects interact?"
 ├── repo_graph.json        # Inter-repo relationship graph
 ├── eval/                  # Retrieval eval reports ({suite}-{timestamp}.json)
 ├── ccr/                   # Optional CCR-lite originals ({sanitized_chunk_id}.txt)
+├── audit/                 # Append-only redaction/LLM audit JSONL
+├── query_cache.sqlite     # Optional serve query-hash cache
 ├── wiki/                  # Optional generated wiki (`--out .code-harness/wiki`)
 
 knowledge/
@@ -464,8 +515,10 @@ code-harness/
 │   ├── eval.py                    Golden-suite loader, eval runner, JSON reports
 │   ├── metrics.py                 Recall@k, nDCG@k, citation hit, failure taxonomy
 │   ├── llm.py                     LLM integration layer (OpenAI/Anthropic/Gemini/Ollama)
+│   ├── doctor.py                  Local health checks (no network)
+│   ├── serve.py                   Localhost POST /v1/retrieve + MCP JSON-RPC
 │   └── utils.py                   Shared utilities (retry, import/export extraction)
-├── tests/                         Offline unit tests (eval, CCR, loop, KG, wiki)
+├── tests/                         Offline unit tests (eval, CCR, loop, KG, wiki, doctor/serve)
 ├── knowledge/
 │   ├── gloss/                     Human gloss notes (entity frontmatter)
 │   └── wiki/                      Generated OKF WikiPages (`wiki generate`)
