@@ -262,6 +262,22 @@ def default_wiki_dir(repo_path: str) -> str:
     return os.path.join(repo_path or ".", "knowledge", "wiki")
 
 
+def is_wiki_path(file_path: str) -> bool:
+    """True for vault pages under ``knowledge/wiki/`` (any repo-relative form)."""
+    path = (file_path or "").replace("\\", "/").lstrip("./")
+    if path.startswith("knowledge/wiki/"):
+        return True
+    return "/knowledge/wiki/" in f"/{path}"
+
+
+def wiki_cite(page: str) -> str:
+    """Citation form for a generated page: ``knowledge/wiki/<page>``."""
+    name = (page or "").replace("\\", "/").lstrip("./")
+    if name.startswith("knowledge/wiki/"):
+        return name
+    return f"knowledge/wiki/{os.path.basename(name) or 'page.md'}"
+
+
 def default_memory_dir(repo_path: str) -> str:
     return os.path.join(repo_path or ".", "knowledge", "memory")
 

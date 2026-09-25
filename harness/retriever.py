@@ -14,6 +14,20 @@ from .config import Config
 from .embedder import Embedder
 from .vector_store import VectorStore
 from .knowledge_graph import KnowledgeGraph
+from .okf import is_wiki_path
+
+
+def is_wiki_chunk(chunk) -> bool:
+    """True for wiki vault chunks (``kind=wiki`` or ``knowledge/wiki/...``)."""
+    if chunk is None:
+        return False
+    meta = getattr(chunk, "metadata", None) or {}
+    if str(meta.get("kind") or "").lower() == "wiki":
+        return True
+    source = str(meta.get("source") or "").strip().lower()
+    if source in {"wiki", "knowledge/wiki"}:
+        return True
+    return is_wiki_path(getattr(chunk, "file_path", None) or "")
 
 _cross_encoder_cache = {}
 
@@ -31,6 +45,7 @@ class Retriever:
         self.dense_weight = ret_cfg.get("dense_weight", 0.3)
         self.sparse_weight = ret_cfg.get("sparse_weight", 0.25)
         self.graph_weight = ret_cfg.get("graph_weight", 0.2)
+        self.wiki_weight = float(ret_cfg.get("wiki_weight", 0.0) or 0.0)
         self.top_k = ret_cfg.get("top_k", 30)
         self.rerank_top_k = ret_cfg.get("rerank_top_k", 15)
         self.expand_neighbors = ret_cfg.get("expand_neighbors", 3)
@@ -124,6 +139,7 @@ class Retriever:
                 latencies_ms["bm25"] = (time.perf_counter() - started) * 1000.0
                 latencies_ms["dense"] = 0.0
                 latencies_ms["graph"] = 0.0
+                latencies_ms["wiki"] = 0.0
                 latencies_ms["ce"] = 0.0
                 top = sparse_results[:k]
                 if debug:
@@ -186,10 +202,20 @@ class Retriever:
             if prev_hyde is not None:
                 self.embedder.hyde_enabled = prev_hyde
 
-        fused = self._reciprocal_rank_fusion(
-            [dense_results, sparse_results],
-            weights=[self.dense_weight, self.sparse_weight],
-        )
+        wiki_results: List[RetrievalResult] = []
+        if self.wiki_weight > 0:
+            started = time.perf_counter()
+            wiki_results = self._wiki_search(query, top_k=k * 2)
+            latencies_ms["wiki"] = (time.perf_counter() - started) * 1000.0
+        else:
+            latencies_ms["wiki"] = 0.0
+
+        fuse_lists = [dense_results, sparse_results]
+        fuse_weights = [self.dense_weight, self.sparse_weight]
+        if wiki_results:
+            fuse_lists.append(wiki_results)
+            fuse_weights.append(self.wiki_weight)
+        fused = self._reciprocal_rank_fusion(fuse_lists, weights=fuse_weights)
         for r in fused:
             if (r.chunk.metadata or {}).get("kind") == "gloss":
                 r.score = r.score + 0.12
@@ -225,6 +251,7 @@ class Retriever:
                 "dense": dense_results,
                 "sparse": sparse_results,
                 "graph": graph_results,
+                "wiki": wiki_results,
                 "fused": fused_pre_ce,
                 "reranked": reranked[:k] if self.ce_enabled else [],
                 "latencies_ms": latencies_ms,
@@ -279,6 +306,25 @@ class Retriever:
                     source="sparse",
                 ))
 
+        results.sort(key=lambda r: r.score, reverse=True)
+        return results[:top_k]
+
+    def _wiki_search(self, query: str, top_k: int = 20) -> List[RetrievalResult]:
+        if self.wiki_weight <= 0 or not self._all_chunks:
+            return []
+        query_tokens = set(self._tokenize(query))
+        if not query_tokens:
+            return []
+        results = []
+        for chunk in self._all_chunks:
+            if not is_wiki_chunk(chunk):
+                continue
+            tokens = set(self._tokenize(chunk.content))
+            overlap = len(query_tokens & tokens)
+            if overlap <= 0:
+                continue
+            score = min(0.9, 0.25 + (overlap / max(len(query_tokens), 1)) * 0.65)
+            results.append(RetrievalResult(chunk=chunk, score=score, source="wiki"))
         results.sort(key=lambda r: r.score, reverse=True)
         return results[:top_k]
 

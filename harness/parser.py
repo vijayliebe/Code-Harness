@@ -9,6 +9,7 @@ from rich.progress import track
 
 from .models import CodeEntity, EntityType
 from .config import Config
+from .okf import is_wiki_path
 
 
 LANGUAGE_PATTERNS: Dict[str, Dict] = {
@@ -492,10 +493,14 @@ class CodeParser:
                 title = file_entity.name
             start = offset + 1
             end = offset + len(lines)
+            meta = {}
+            if is_wiki_path(rel_path):
+                meta["kind"] = "wiki"
             entities.append(CodeEntity(
                 id=f"doc:{rel_path}:{title}",
                 name=title, type=EntityType.DOCUMENTATION, file_path=rel_path,
                 start_line=start, end_line=end, source_code=section,
+                metadata=meta,
             ))
             offset += len(lines)
 
