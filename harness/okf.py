@@ -48,6 +48,18 @@ the OKF ``type`` field is PascalCase to match ``WikiPage``. Unknown keys
 export → import. Path identity remains the file path; ``id`` is an extension
 so ``supersedes`` can point at a stable name.
 
+Full-vault interchange (same parser; no second schema)
+------------------------------------------------------
+``knowledge export`` copies every ``knowledge/**/*.md`` page plus local
+overlays (``.code-harness/gloss``, optional ``.code-harness/memory`` /
+``.code-harness/wiki``) into a bundle with ``okf-manifest.yaml``
+(``okf_version``, ``generated``, per-kind counts). ``knowledge import``
+writes those paths back. WikiPage / Decision / Error / Preference / Fact
+mappings are reused for classification; gloss notes keep their ``entity:``
+frontmatter. Unknown keys survive because files are copied, not rewritten.
+``load_knowledge_docs`` is the prefix-load helper for retrieve/packer
+(not wired into the packer yet).
+
 Citations in the body use Code Wiki style ``path:symbol``
 (e.g. ``harness/chunker.py:CodeChunker``), never chunk UUIDs.
 """
@@ -57,7 +69,9 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
 
@@ -333,3 +347,309 @@ def walk_okf_markdown(root: str) -> List[tuple]:
 def estimate_tokens(text: str) -> int:
     """Same estimator as ``ContextBuilder`` (``len // 4``)."""
     return len(text or "") // 4
+
+
+MANIFEST_NAME = "okf-manifest.yaml"
+VAULT_KIND_WIKI = "wiki"
+VAULT_KIND_MEMORY = "memory"
+VAULT_KIND_GLOSS = "gloss"
+VAULT_KIND_OTHER = "other"
+VAULT_KINDS = (VAULT_KIND_WIKI, VAULT_KIND_MEMORY, VAULT_KIND_GLOSS, VAULT_KIND_OTHER)
+_MANIFEST_NAMES = frozenset({MANIFEST_NAME, "manifest.yaml", "manifest.yml", "manifest.json"})
+_SKIP_WALK_DIRS = frozenset({".git", "__pycache__"})
+
+
+class VaultError(ValueError):
+    """Invalid vault bundle (missing path, not a directory)."""
+
+
+@dataclass
+class KnowledgeDoc:
+    """One vault markdown file for export, import, or prefix-load."""
+
+    rel_path: str
+    text: str
+    page: WikiPage
+    kind: str
+
+
+@dataclass
+class VaultManifest:
+    okf_version: str = OKF_VERSION
+    generated: bool = True
+    generated_at: str = ""
+    counts: Dict[str, int] = field(default_factory=dict)
+    files: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "okf_version": _Quoted(_as_version(self.okf_version)),
+            "generated": bool(self.generated),
+            "generated_at": self.generated_at,
+            "counts": dict(self.counts),
+            "files": list(self.files),
+        }
+
+
+def default_gloss_dir(repo_path: str) -> str:
+    return os.path.join(repo_path or ".", "knowledge", "gloss")
+
+
+def default_local_gloss_dir(repo_path: str) -> str:
+    return os.path.join(repo_path or ".", ".code-harness", "gloss")
+
+
+def default_okf_bundle_dir(repo_path: str) -> str:
+    return os.path.join(repo_path or ".", ".code-harness", "okf-bundle")
+
+
+def _norm_relpath(rel_path: str) -> str:
+    """Normalize a repo-relative path without stripping hidden-dir dots."""
+    rel = (rel_path or "").replace("\\", "/")
+    while rel.startswith("./"):
+        rel = rel[2:]
+    return rel.lstrip("/")
+
+
+def classify_vault_kind(rel_path: str, page: Optional[WikiPage] = None) -> str:
+    """Classify a vault file by path first, then OKF type."""
+    norm = _norm_relpath(rel_path)
+    if "/wiki/" in f"/{norm}" or norm.startswith("wiki/") or norm == "wiki":
+        return VAULT_KIND_WIKI
+    if "/memory/" in f"/{norm}" or norm.startswith("memory/") or norm == "memory":
+        return VAULT_KIND_MEMORY
+    if "/gloss/" in f"/{norm}" or norm.startswith("gloss/") or norm == "gloss":
+        return VAULT_KIND_GLOSS
+    if page is not None:
+        if is_memory_page(page):
+            return VAULT_KIND_MEMORY
+        if (page.type or "") == WIKI_PAGE_TYPE:
+            return VAULT_KIND_WIKI
+    return VAULT_KIND_OTHER
+
+
+def _vault_source_roots(repo_path: str) -> List[Tuple[str, str]]:
+    """Return ``(abs_root, repo_rel_prefix)`` pairs that exist on disk."""
+    root = os.path.abspath(repo_path or ".")
+    candidates = [
+        (os.path.join(root, "knowledge"), "knowledge"),
+        (os.path.join(root, ".code-harness", "gloss"), ".code-harness/gloss"),
+        (os.path.join(root, ".code-harness", "memory"), ".code-harness/memory"),
+        (os.path.join(root, ".code-harness", "wiki"), ".code-harness/wiki"),
+    ]
+    return [(abs_root, prefix) for abs_root, prefix in candidates if os.path.isdir(abs_root)]
+
+
+def _is_manifest_name(name: str) -> bool:
+    return os.path.basename(name or "").lower() in _MANIFEST_NAMES
+
+
+def iter_vault_markdown(repo_path: str) -> List[Tuple[str, str, str]]:
+    """Yield ``(rel_path, abs_path, text)`` for vault markdown. Fail-soft."""
+    seen: set = set()
+    results: List[Tuple[str, str, str]] = []
+    for abs_root, prefix in _vault_source_roots(repo_path):
+        for dirpath, dirnames, filenames in os.walk(abs_root):
+            dirnames[:] = sorted(d for d in dirnames if d not in _SKIP_WALK_DIRS)
+            for name in sorted(filenames):
+                if not name.endswith(".md") or _is_manifest_name(name):
+                    continue
+                abs_path = os.path.abspath(os.path.join(dirpath, name))
+                if abs_path in seen:
+                    continue
+                seen.add(abs_path)
+                try:
+                    rel_inside = os.path.relpath(abs_path, abs_root).replace("\\", "/")
+                except ValueError:
+                    rel_inside = name
+                rel_path = prefix if rel_inside in {".", ""} else f"{prefix}/{rel_inside}"
+                try:
+                    with open(abs_path, encoding="utf-8", errors="replace") as fh:
+                        text = fh.read()
+                except OSError:
+                    continue
+                results.append((rel_path.replace("\\", "/"), abs_path, text))
+    results.sort(key=lambda item: item[0])
+    return results
+
+
+def load_knowledge_docs(repo_path: str) -> List[KnowledgeDoc]:
+    """Prefix-load ``knowledge/**/*.md`` plus local gloss/memory/wiki overlays.
+
+    Fail-soft. Intended for retrieve/packer later; not injected by default.
+    """
+    docs: List[KnowledgeDoc] = []
+    for rel_path, _abs_path, text in iter_vault_markdown(repo_path):
+        page = parse_okf_markdown(text)
+        docs.append(
+            KnowledgeDoc(
+                rel_path=rel_path,
+                text=text,
+                page=page,
+                kind=classify_vault_kind(rel_path, page),
+            )
+        )
+    return docs
+
+
+def _now_utc() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _empty_counts() -> Dict[str, int]:
+    counts = {kind: 0 for kind in VAULT_KINDS}
+    counts["total"] = 0
+    return counts
+
+
+def _manifest_from_docs(
+    docs: List[KnowledgeDoc], generated_at: Optional[str] = None
+) -> VaultManifest:
+    counts = _empty_counts()
+    files: List[str] = []
+    for doc in docs:
+        kind = doc.kind if doc.kind in counts else VAULT_KIND_OTHER
+        counts[kind] = counts.get(kind, 0) + 1
+        counts["total"] += 1
+        files.append(doc.rel_path.replace("\\", "/"))
+    return VaultManifest(
+        okf_version=OKF_VERSION,
+        generated=True,
+        generated_at=generated_at or _now_utc(),
+        counts=counts,
+        files=files,
+    )
+
+
+def dump_vault_manifest(manifest: VaultManifest) -> str:
+    return yaml.dump(
+        manifest.to_dict(),
+        Dumper=_Dumper,
+        sort_keys=False,
+        allow_unicode=True,
+        default_flow_style=False,
+    )
+
+
+def parse_vault_manifest(text: str) -> VaultManifest:
+    loaded = yaml.safe_load(text or "") or {}
+    if not isinstance(loaded, dict):
+        loaded = {}
+    raw_counts = loaded.get("counts") or {}
+    counts = _empty_counts()
+    if isinstance(raw_counts, dict):
+        for key, value in raw_counts.items():
+            try:
+                counts[str(key)] = int(value)
+            except (TypeError, ValueError):
+                continue
+    files = loaded.get("files") or []
+    if isinstance(files, str):
+        files = [files]
+    return VaultManifest(
+        okf_version=_as_version(loaded.get("okf_version")),
+        generated=bool(loaded.get("generated", True)),
+        generated_at=str(loaded.get("generated_at") or ""),
+        counts=counts,
+        files=[str(item).replace("\\", "/") for item in files],
+    )
+
+
+def _manifest_path(bundle: str) -> str:
+    root = bundle or ""
+    for name in (MANIFEST_NAME, "manifest.yaml", "manifest.yml", "manifest.json"):
+        candidate = os.path.join(root, name)
+        if os.path.isfile(candidate):
+            return candidate
+    return os.path.join(root, MANIFEST_NAME)
+
+
+def read_vault_manifest(bundle: str) -> VaultManifest:
+    path = _manifest_path(bundle)
+    if not os.path.isfile(path):
+        return VaultManifest(counts=_empty_counts())
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            return parse_vault_manifest(fh.read())
+    except OSError:
+        return VaultManifest(counts=_empty_counts())
+
+
+def export_vault(repo_path: str, dest: str, redact: bool = False) -> VaultManifest:
+    """Copy the knowledge vault into *dest* plus an OKF manifest. Fail-soft."""
+    docs = load_knowledge_docs(repo_path)
+    dest_root = Path(dest)
+    dest_root.mkdir(parents=True, exist_ok=True)
+    written: List[KnowledgeDoc] = []
+    for doc in docs:
+        rel = _norm_relpath(doc.rel_path)
+        if not rel:
+            continue
+        target = dest_root / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        blob = doc.text
+        if redact and blob:
+            from .redact import redact_and_audit
+
+            blob = redact_and_audit(blob, action="redact.knowledge").text
+        target.write_text(blob, encoding="utf-8")
+        written.append(
+            KnowledgeDoc(rel_path=rel, text=blob, page=doc.page, kind=doc.kind)
+        )
+    manifest = _manifest_from_docs(written)
+    (dest_root / MANIFEST_NAME).write_text(dump_vault_manifest(manifest), encoding="utf-8")
+    return manifest
+
+
+def _import_dest_rel(rel: str) -> str:
+    rel = _norm_relpath(rel)
+    if not rel or _is_manifest_name(rel):
+        return ""
+    if rel.startswith("knowledge/") or rel.startswith(".code-harness/"):
+        return rel
+    first = rel.split("/", 1)[0]
+    if first in (VAULT_KIND_WIKI, VAULT_KIND_MEMORY, VAULT_KIND_GLOSS):
+        return f"knowledge/{rel}"
+    if first in MEMORY_KINDS:
+        return f"knowledge/memory/{rel}"
+    return rel
+
+
+def import_vault(bundle: str, dest_repo: str) -> VaultManifest:
+    """Copy an OKF vault bundle onto *dest_repo*. Fail-soft for empty bundles."""
+    if not bundle or not os.path.isdir(bundle):
+        raise VaultError(f"OKF bundle not found: {bundle}")
+    dest = os.path.abspath(dest_repo or ".")
+    os.makedirs(dest, exist_ok=True)
+    written: List[KnowledgeDoc] = []
+    for dirpath, dirnames, filenames in os.walk(bundle):
+        dirnames[:] = sorted(d for d in dirnames if d not in _SKIP_WALK_DIRS)
+        for name in sorted(filenames):
+            if not name.endswith(".md") or _is_manifest_name(name):
+                continue
+            abs_path = os.path.join(dirpath, name)
+            try:
+                rel = os.path.relpath(abs_path, bundle).replace("\\", "/")
+            except ValueError:
+                rel = name
+            dest_rel = _import_dest_rel(rel)
+            if not dest_rel:
+                continue
+            try:
+                with open(abs_path, encoding="utf-8", errors="replace") as fh:
+                    text = fh.read()
+            except OSError:
+                continue
+            target = Path(dest) / dest_rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(text, encoding="utf-8")
+            page = parse_okf_markdown(text)
+            written.append(
+                KnowledgeDoc(
+                    rel_path=dest_rel,
+                    text=text,
+                    page=page,
+                    kind=classify_vault_kind(dest_rel, page),
+                )
+            )
+    return _manifest_from_docs(written)

@@ -168,6 +168,18 @@ python main.py memory brief . --redact
 python main.py memory export . ./okf-bundle --redact
 ```
 
+### `knowledge` — Full-vault OKF export/import
+
+One command copies the whole knowledge vault (generated wiki pages, typed memory, and gloss notes under `knowledge/gloss` or `.code-harness/gloss`) into an OKF-compatible bundle with `okf-manifest.yaml` (`okf_version`, `generated`, per-kind counts). Import writes the same relative paths back. Unknown frontmatter keys (`x_memanto`, `x_other`, gloss `entity:`) survive because files are copied, not rewritten. Empty vaults fail soft (manifest only, exit 0). Alias: `okf`.
+
+```bash
+python main.py knowledge export . --out ./okf-bundle
+python main.py knowledge import ./okf-bundle --repo ./other-repo
+python main.py okf export . --out ./okf-bundle --redact
+```
+
+`harness.okf.load_knowledge_docs` prefix-loads `knowledge/**/*.md` for retrieve/packer later; it is not injected into context assembly by default.
+
 ### `doctor` — Local health check
 
 No network. Prints pass / warn / fail plus a fix hint. Exit `0` when required checks pass (missing cloud LLM key is a warn). Exit `1` when index, graph, embedding config, core deps, or the audit path fail.
@@ -519,9 +531,12 @@ python main.py query --cross-repo -q "how do these projects interact?"
 ├── audit/                 # Append-only redaction/LLM audit JSONL
 ├── query_cache.sqlite     # Optional serve query-hash cache
 ├── wiki/                  # Optional generated wiki (`--out .code-harness/wiki`)
+├── okf-bundle/            # Default `knowledge export` destination
 
 knowledge/
-└── wiki/                  # Default OKF WikiPage markdown from `wiki generate`
+├── wiki/                  # Default OKF WikiPage markdown from `wiki generate`
+├── memory/                # Typed OKF Decision/Error/Preference/Fact
+└── gloss/                 # Human gloss notes (entity frontmatter)
 ```
 
 ## Research
@@ -549,7 +564,7 @@ code-harness/
 │   ├── vector_eval.py             Recall@k A/B gate (chroma vs turbovec)
 │   ├── knowledge_graph.py         NetworkX code relationship graph (intra-repo)
 │   ├── kg_enrich.py               exposes / tested_by / gloss + Mermaid export
-│   ├── okf.py                     OKF (Google SPEC v0.2) WikiPage subset
+│   ├── okf.py                     OKF (Google SPEC v0.2) WikiPage + vault export
 │   ├── wiki.py                    Deterministic wiki generate from the KG
 │   ├── repo_graph.py              Inter-repo relationship graph
 │   ├── retriever.py               Hybrid retrieval (dense + sparse + graph + cross-encoder)
@@ -561,9 +576,10 @@ code-harness/
 │   ├── doctor.py                  Local health checks (no network)
 │   ├── serve.py                   Localhost POST /v1/retrieve + MCP JSON-RPC
 │   └── utils.py                   Shared utilities (retry, import/export extraction)
-├── tests/                         Offline unit tests (eval, CCR, loop, KG, wiki, doctor/serve)
+├── tests/                         Offline unit tests (eval, CCR, loop, KG, wiki, memory, vault OKF)
 ├── knowledge/
 │   ├── gloss/                     Human gloss notes (entity frontmatter)
+│   ├── memory/                    Typed OKF Decision/Error/Preference/Fact
 │   └── wiki/                      Generated OKF WikiPages (`wiki generate`)
 ├── visualizer/
 │   └── visualize.py               Embedding space visualization (PCA/t-SNE)

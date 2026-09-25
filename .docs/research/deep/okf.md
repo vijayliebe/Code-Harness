@@ -86,7 +86,7 @@ Each file: YAML frontmatter + prose + links to source `path:symbol` (Code Wiki s
 | `harness/okf.py` (new) | parse/serialize frontmatter, walk bundle, preserve extras |
 | `harness/memory.py` | persist as OKF concept files |
 | wiki generator | emit `WikiPage` + `Symbol` concepts + mermaid fenced blocks |
-| `main.py` | `knowledge export|import` |
+| `main.py` | `knowledge export|import` (alias `okf`) — shipped |
 
 ## 7. Acceptance
 
@@ -151,12 +151,14 @@ x_codeharness:
 
 ## 14. Implementation checklist
 
-- [ ] `okf_version: "0.2"` on produced files
-- [ ] Required `type`; unknown types tolerated on read
-- [ ] Unknown key round-trip test (include a fake `x_other`)
-- [ ] Import Memanto sample without crash (if we vendor one fixture)
-- [ ] README names Google SPEC as owner
-- [ ] No Google Cloud client libraries
+- [x] `okf_version: "0.2"` on produced files
+- [x] Required `type`; unknown types tolerated on read
+- [x] Unknown key round-trip test (include a fake `x_other`)
+- [x] Import Memanto sample without crash (if we vendor one fixture)
+- [x] README names Google SPEC as owner
+- [x] No Google Cloud client libraries
+- [x] `knowledge export|import` of the whole vault + manifest
+- [ ] Packer prefix-load of `knowledge/**/*.md` (`load_knowledge_docs` helper shipped)
 
 ## 15. Cross-links
 
