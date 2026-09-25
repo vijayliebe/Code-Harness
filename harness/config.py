@@ -108,6 +108,10 @@ DEFAULT_CONFIG = {
         "path": ".code-harness/query_cache.sqlite",
     },
 
+    "prestep": {
+        "retrieve": True,
+    },
+
     "retrieval": {
         "dense_weight": 0.3,
         "sparse_weight": 0.25,
@@ -189,6 +193,7 @@ class Config:
     redaction: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["redaction"]))
     serve: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["serve"]))
     query_cache: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["query_cache"]))
+    prestep: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["prestep"]))
     repo_path: str = "."
     verbose: bool = False
 
@@ -238,6 +243,7 @@ class Config:
             "redaction": self.redaction,
             "serve": self.serve,
             "query_cache": self.query_cache,
+            "prestep": self.prestep,
             "repo_path": self.repo_path,
             "verbose": self.verbose,
         }

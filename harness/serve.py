@@ -180,14 +180,27 @@ class RetrieveService:
             raise RuntimeError("retrieve service has no retriever")
 
         from .context_builder import ContextBuilder
-        from .loop import LoopConfig, QueryLoop
+        from .prestep import PreStepContext, run_retrieve_pack
 
         builder = self.context_builder or ContextBuilder(self.config)
         k = int(top_k or (self.config.retrieval or {}).get("top_k") or 20)
-        loop = QueryLoop(self.retriever, builder, LoopConfig.from_mapping(self.config.retrieval))
-        outcome = loop.run(query, top_k=k)
-        results = list(outcome.results or [])
-        report = outcome.packed or builder.build_context_report(query, results)
+        # Always pack through the shared helper so HTTP stays on the same
+        # retrieve+pack path as query/chat. Serve keeps its own payload cache
+        # (do not pass ctx.cache) so the JSON contract is unchanged.
+        packed = run_retrieve_pack(
+            PreStepContext(
+                query=query,
+                top_k=k,
+                config=self.config,
+                retriever=self.retriever,
+                context_builder=builder,
+                repo_name=self.repo_name,
+                repo_path=self.repo_path,
+            )
+        )
+        outcome = packed.outcome
+        results = list(packed.results or [])
+        report = packed.packed or builder.build_context_report(query, results)
         expand_ids = req.get("expand_chunks") or []
         context = report.context
         if expand_ids:
