@@ -317,11 +317,12 @@ python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml
 python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --dry-run
 python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --loop
 python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --compare-backends chromadb,turbovec
+python main.py eval-ab .
 ```
 
 Reports Recall@k, nDCG@k, citation-path hit rate, stage latency (dense / BM25 / graph / CE / MMR), estimated prompt tokens after context assembly (`prompt_tokens_full` vs `prompt_tokens_packed`), and easy/hard splits. Writes `.code-harness/eval/{suite}-{timestamp}.json`. Use `--pack-mode ccr_lite` to score citation paths against packed headers (Recall@k is unchanged). `--loop` / `--max-loops N` is opt-in; default remains one-shot.
 
-`--compare-backends chromadb,turbovec` prints a side-by-side Recall@k / nDCG@k table. If `turbovec` is the selected backend and it misses the gate (more than 5% relative drop, or the deep-dive point limits: Recall@10 −2 pts / Recall@30 −1), eval exits non-zero unless `--force-experimental`. Missing `turbovec` extra is an honest skip, not a silent FAISS swap.
+`--compare-backends chromadb,turbovec` prints a side-by-side Recall@k / nDCG@k table and writes `.code-harness/eval/{suite}-ab-{timestamp}.json` (override with `--compare-output` / `--compare-markdown`). `eval-ab` indexes both persist dirs and writes [`.docs/research/eval/RESULTS.md`](.docs/research/eval/RESULTS.md). If `turbovec` is the selected backend and it misses the gate (more than 5% relative drop, or the deep-dive point limits: Recall@10 −2 pts / Recall@30 −1), eval exits non-zero unless `--force-experimental`. Missing `turbovec` extra is an honest skip, not a silent FAISS swap.
 
 See [`.docs/research/eval/README.md`](.docs/research/eval/README.md) for the fixture schema, failure taxonomy (`dense_miss | bm25_miss | graph_miss | rerank_drop | packer_drop`), and the experimental TurboVec recall gate.
 
@@ -337,8 +338,12 @@ pip install -r requirements-turbovec.txt
 python main.py index . --vector-backend turbovec
 
 # 3. A/B vs the Chroma index (needs both indexes present)
+python main.py eval-ab .
+# or explicitly:
 python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml \
-  --compare-backends chromadb,turbovec
+  --compare-backends chromadb,turbovec \
+  --compare-markdown .docs/research/eval/RESULTS.md \
+  --compare-output .docs/research/eval/RESULTS.json
 ```
 
 Config (never flip `type` in a copied blog snippet without the gate):

@@ -1,0 +1,193 @@
+{
+  "kind": "vector-backend-ab",
+  "suite": "code-harness",
+  "suite_path": ".docs/research/eval/code-harness.fixture.yaml",
+  "generated": "2026-09-25T20:22:58Z",
+  "notes": "Live native TurboQuant (turbovec 1.0.0, 4-bit), not the exact-cosine stub. embedding=all-MiniLM-L6-v2. n=8 fixtures.",
+  "compare": {
+    "k": 10,
+    "baseline": "chromadb",
+    "candidate": "turbovec",
+    "baseline_metrics": {
+      "recall_at_k": 0.25,
+      "ndcg_at_k": 0.2246,
+      "citation_path_hit_rate": 0.5,
+      "dense_p50": 24.854,
+      "n": 8
+    },
+    "candidate_metrics": {
+      "recall_at_k": 0.3125,
+      "ndcg_at_k": 0.2468,
+      "citation_path_hit_rate": 0.5,
+      "dense_p50": 8.755,
+      "n": 8
+    },
+    "relative_tolerance": 0.05,
+    "gate_failures": [],
+    "passed": true,
+    "forced": false,
+    "skipped": false,
+    "skip_reason": ""
+  },
+  "reports": {
+    "chromadb": {
+      "suite": "code-harness",
+      "k": 10,
+      "metrics": {
+        "k": 10,
+        "n": 8,
+        "recall_at_k": 0.25,
+        "ndcg_at_k": 0.2246,
+        "citation_path_hit_rate": 0.5,
+        "citation_path_full_hit_rate": 0.5,
+        "prompt_tokens_mean": 1439.8,
+        "prompt_tokens_full_mean": 1439.8,
+        "prompt_tokens_packed_mean": 1096.6,
+        "prompt_token_drop": 0.2383,
+        "latencies_ms": {
+          "bm25": {
+            "mean": 4.907,
+            "p50": 4.544
+          },
+          "ce": {
+            "mean": 1048.829,
+            "p50": 768.083
+          },
+          "dense": {
+            "mean": 24.933,
+            "p50": 24.854
+          },
+          "graph": {
+            "mean": 1.384,
+            "p50": 1.31
+          },
+          "memory": {
+            "mean": 0.0,
+            "p50": 0.0
+          },
+          "mmr": {
+            "mean": 0.11,
+            "p50": 0.089
+          },
+          "wiki": {
+            "mean": 0.0,
+            "p50": 0.0
+          }
+        },
+        "failure_counts": {
+          "bm25_miss": 5,
+          "graph_miss": 6,
+          "rerank_drop": 7,
+          "dense_miss": 1
+        },
+        "loop_attempts_mean": 1.0,
+        "by_difficulty": {
+          "easy": {
+            "n": 3,
+            "recall_at_k": 0.5,
+            "ndcg_at_k": 0.511,
+            "citation_path_hit_rate": 1.0,
+            "prompt_tokens_mean": 2525.0,
+            "loop_attempts_mean": 1.0
+          },
+          "medium": {
+            "n": 2,
+            "recall_at_k": 0.0,
+            "ndcg_at_k": 0.0,
+            "citation_path_hit_rate": 0.0,
+            "prompt_tokens_mean": 578.5,
+            "loop_attempts_mean": 1.0
+          },
+          "hard": {
+            "n": 3,
+            "recall_at_k": 0.1667,
+            "ndcg_at_k": 0.088,
+            "citation_path_hit_rate": 0.3333,
+            "prompt_tokens_mean": 928.7,
+            "loop_attempts_mean": 1.0
+          }
+        }
+      }
+    },
+    "turbovec": {
+      "suite": "code-harness",
+      "k": 10,
+      "metrics": {
+        "k": 10,
+        "n": 8,
+        "recall_at_k": 0.3125,
+        "ndcg_at_k": 0.2468,
+        "citation_path_hit_rate": 0.5,
+        "citation_path_full_hit_rate": 0.5,
+        "prompt_tokens_mean": 2019.5,
+        "prompt_tokens_full_mean": 2019.5,
+        "prompt_tokens_packed_mean": 1272.1,
+        "prompt_token_drop": 0.3701,
+        "latencies_ms": {
+          "bm25": {
+            "mean": 4.526,
+            "p50": 4.799
+          },
+          "ce": {
+            "mean": 798.127,
+            "p50": 808.583
+          },
+          "dense": {
+            "mean": 8.682,
+            "p50": 8.755
+          },
+          "graph": {
+            "mean": 2.274,
+            "p50": 2.438
+          },
+          "memory": {
+            "mean": 0.0,
+            "p50": 0.0
+          },
+          "mmr": {
+            "mean": 0.134,
+            "p50": 0.097
+          },
+          "wiki": {
+            "mean": 0.0,
+            "p50": 0.0
+          }
+        },
+        "failure_counts": {
+          "dense_miss": 3,
+          "graph_miss": 7,
+          "rerank_drop": 5,
+          "bm25_miss": 2
+        },
+        "loop_attempts_mean": 1.0,
+        "by_difficulty": {
+          "easy": {
+            "n": 3,
+            "recall_at_k": 0.3333,
+            "ndcg_at_k": 0.4088,
+            "citation_path_hit_rate": 0.6667,
+            "prompt_tokens_mean": 3426.3,
+            "loop_attempts_mean": 1.0
+          },
+          "medium": {
+            "n": 2,
+            "recall_at_k": 0.0,
+            "ndcg_at_k": 0.0,
+            "citation_path_hit_rate": 0.0,
+            "prompt_tokens_mean": 882.0,
+            "loop_attempts_mean": 1.0
+          },
+          "hard": {
+            "n": 3,
+            "recall_at_k": 0.5,
+            "ndcg_at_k": 0.2493,
+            "citation_path_hit_rate": 0.6667,
+            "prompt_tokens_mean": 1371.0,
+            "loop_attempts_mean": 1.0
+          }
+        }
+      }
+    }
+  },
+  "skips": {}
+}

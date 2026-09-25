@@ -1312,9 +1312,11 @@ def _run_eval_backend(config, fixtures, meta, suite_path, repo_name, k, loop_con
     print(f"[*] Vector backend: {describe_backend(config)}")
     try:
         vs = VectorStore(config)
+        count = vs.count()
     except BackendUnavailable as exc:
         return None, str(exc)
-    count = vs.count()
+    except ImportError as exc:
+        return None, str(exc)
     print(f"[*] Vector store ({vs.backend_name}): {count} chunks (total)")
     if count == 0:
         return None, (
@@ -1461,10 +1463,92 @@ def cmd_eval(args):
             skip_reason=skip_reason,
         )
         print_backend_comparison(result)
+        from harness.vector_eval import default_compare_json_path, write_compare_artifacts
+
+        json_out = getattr(args, "compare_output", None) or default_compare_json_path(meta["suite"])
+        md_out = getattr(args, "compare_markdown", None)
+        written = write_compare_artifacts(
+            result,
+            json_path=json_out,
+            markdown_path=md_out,
+            suite=meta.get("suite") or "suite",
+            suite_path=suite_path,
+            reports=reports,
+            skips=skips,
+        )
+        if written.get("json"):
+            print(f"[+] Wrote backend A/B JSON: {written['json']}")
+        if written.get("markdown"):
+            print(f"[+] Wrote backend A/B markdown: {written['markdown']}")
         code = gate_exit_code(result, selected)
         if code:
             print("[!] Experimental backend missed the recall gate. Stay on chromadb or pass --force-experimental.")
             sys.exit(code)
+
+
+def cmd_eval_ab(args):
+    """Index fixture corpus into both stores (when available) and persist the A/B table."""
+    from harness.eval_ab import (
+        COMMITTED_RESULTS_JSON,
+        COMMITTED_RESULTS_MD,
+        DEFAULT_SUITE,
+        run_fixture_ab,
+    )
+    from harness.vector_eval import parse_backend_list, probe_backend, selected_backend_name
+
+    config = _load_config(args)
+    config.repo_path = args.repo or "."
+    selected = selected_backend_name(config)
+    compare_names = parse_backend_list(getattr(args, "compare_backends", None)) or [
+        "chromadb",
+        "turbovec",
+    ]
+    md_path = getattr(args, "markdown", None) or COMMITTED_RESULTS_MD
+    json_path = getattr(args, "json", None) or COMMITTED_RESULTS_JSON
+
+    def index_backend(name):
+        index_args = argparse.Namespace(**vars(args))
+        index_args.vector_backend = name
+        index_args.repo = args.repo
+        if not hasattr(index_args, "save_config"):
+            index_args.save_config = None
+        cmd_index(index_args)
+
+    def eval_compare(names):
+        eval_args = argparse.Namespace(**vars(args))
+        eval_args.suite = getattr(args, "suite", None) or DEFAULT_SUITE
+        eval_args.compare_backends = ",".join(names)
+        eval_args.compare_output = json_path
+        eval_args.compare_markdown = md_path
+        eval_args.dry_run = False
+        if not hasattr(eval_args, "output"):
+            eval_args.output = None
+        if not hasattr(eval_args, "force_experimental"):
+            eval_args.force_experimental = False
+        if not hasattr(eval_args, "gate_tolerance"):
+            eval_args.gate_tolerance = None
+        if not hasattr(eval_args, "pack_mode"):
+            eval_args.pack_mode = None
+        cmd_eval(eval_args)
+        return 0
+
+    code = run_fixture_ab(
+        repo=args.repo or ".",
+        suite=getattr(args, "suite", None) or DEFAULT_SUITE,
+        selected=selected,
+        compare_names=compare_names,
+        markdown_path=md_path,
+        json_path=json_path,
+        skip_index=bool(getattr(args, "skip_index", False)),
+        optional=True,
+        probe=lambda name, cfg=None: probe_backend(name, cfg or config),
+        index_backend=index_backend,
+        eval_compare=eval_compare,
+        config=config,
+        k=int(getattr(args, "k", None) or 10),
+    )
+    if code:
+        sys.exit(code)
 
 
 def cmd_visualize(args):
@@ -1741,6 +1825,7 @@ Examples:
    %(prog)s watch ./my-project                            # Watch and auto re-index
   %(prog)s eval . --suite .docs/research/eval/code-harness.fixture.yaml
   %(prog)s eval . --suite .docs/research/eval/code-harness.fixture.yaml --loop
+  %(prog)s eval-ab .                                            # Chroma vs TurboVec fixture A/B
   %(prog)s query . --no-llm --pack-mode ccr_lite -q "how does the chunker work?"
   %(prog)s query . --no-llm --loop -q "Who calls Retriever index_chunks?"
   %(prog)s retrieve-chunk class:harness/chunker.py:CodeChunker:abcd1234
@@ -1855,6 +1940,16 @@ Examples:
         help="Comma list to A/B (e.g. chromadb,turbovec). Prints Recall@k / nDCG@k side-by-side.",
     )
     ev.add_argument(
+        "--compare-output",
+        default=None,
+        help="JSON A/B table path (default: .code-harness/eval/{suite}-ab-{timestamp}.json)",
+    )
+    ev.add_argument(
+        "--compare-markdown",
+        default=None,
+        help="Markdown A/B table path (e.g. .docs/research/eval/RESULTS.md)",
+    )
+    ev.add_argument(
         "--force-experimental",
         action="store_true",
         help="Do not fail when the experimental backend misses the recall gate",
@@ -1873,6 +1968,73 @@ Examples:
     )
     _add_loop_flags(ev, include_verify=False)
     ev.set_defaults(func=cmd_eval)
+
+    from harness.eval_ab import (
+        COMMITTED_RESULTS_JSON,
+        COMMITTED_RESULTS_MD,
+        DEFAULT_SUITE,
+    )
+
+    ev_ab = subparsers.add_parser(
+        "eval-ab",
+        help="Index the fixture corpus into Chroma and TurboVec, then persist the A/B table",
+    )
+    ev_ab.add_argument("repo", nargs="?", default=".", help="Repository path")
+    ev_ab.add_argument(
+        "--suite",
+        default=DEFAULT_SUITE,
+        help=f"Golden suite path (default: {DEFAULT_SUITE})",
+    )
+    ev_ab.add_argument("--k", type=int, default=None, help="Recall/nDCG cutoff")
+    ev_ab.add_argument(
+        "--vector-backend",
+        default=None,
+        help="Selected backend (default chromadb). Missing turbovec here fails.",
+    )
+    ev_ab.add_argument(
+        "--compare-backends",
+        default="chromadb,turbovec",
+        help="Comma list to index and compare (default: chromadb,turbovec)",
+    )
+    ev_ab.add_argument(
+        "--markdown",
+        default=COMMITTED_RESULTS_MD,
+        help=f"Markdown A/B table (default: {COMMITTED_RESULTS_MD})",
+    )
+    ev_ab.add_argument(
+        "--json",
+        default=COMMITTED_RESULTS_JSON,
+        help=f"JSON A/B table (default: {COMMITTED_RESULTS_JSON})",
+    )
+    ev_ab.add_argument(
+        "--output",
+        "-o",
+        help="Primary eval JSON for the selected backend",
+    )
+    ev_ab.add_argument(
+        "--skip-index",
+        action="store_true",
+        help="Compare existing indexes only (do not rebuild)",
+    )
+    ev_ab.add_argument(
+        "--force-experimental",
+        action="store_true",
+        help="Do not fail when the experimental backend misses the recall gate",
+    )
+    ev_ab.add_argument(
+        "--gate-tolerance",
+        type=float,
+        default=None,
+        help="Relative Recall/nDCG drop allowed vs chromadb (default: 0.05)",
+    )
+    ev_ab.add_argument(
+        "--pack-mode",
+        choices=["full", "ccr_lite"],
+        default=None,
+        help="Context pack mode used for citation/token columns (default: full)",
+    )
+    _add_loop_flags(ev_ab, include_verify=False)
+    ev_ab.set_defaults(func=cmd_eval_ab)
 
     rc = subparsers.add_parser(
         "retrieve-chunk",

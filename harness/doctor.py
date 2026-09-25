@@ -190,7 +190,7 @@ def _check_vector_backend(config: Config) -> CheckResult:
         "vector_backend",
         "warn",
         f"{kind} (experimental; recall-gated, not default)",
-        "python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --compare-backends chromadb,turbovec",
+        "python main.py eval-ab .  # or: eval --compare-backends chromadb,turbovec",
     )
 
 

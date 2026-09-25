@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import json
+import os
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from .vector_store import BackendUnavailable, normalize_backend_name
+from .vector_store import normalize_backend_name
 
 DEFAULT_RELATIVE_TOLERANCE = 0.05
 # Fusion deep-dive gates (absolute point drop vs Chroma).
@@ -155,7 +158,13 @@ def probe_backend(name: str, config=None) -> tuple[bool, str]:
         except ImportError:
             return False, "turbovec is not installed; pip install -r requirements-turbovec.txt"
         return True, ""
-    if kind in ("chromadb", "stub"):
+    if kind == "chromadb":
+        try:
+            import chromadb  # noqa: F401
+        except ImportError:
+            return False, "chromadb is not installed; pip install chromadb"
+        return True, ""
+    if kind == "stub":
         return True, ""
     return False, f"unknown backend {name}"
 
@@ -215,3 +224,221 @@ def parse_backend_list(raw: Optional[str]) -> List[str]:
 
 def selected_backend_name(config) -> str:
     return normalize_backend_name((getattr(config, "vector_store", None) or {}).get("type", "chromadb"))
+
+
+def default_compare_json_path(suite_name: str, now: Optional[datetime] = None) -> str:
+    stamp = (now or datetime.now(timezone.utc)).strftime("%Y%m%dT%H%M%SZ")
+    safe = "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in suite_name).strip("-") or "suite"
+    return os.path.join(".code-harness", "eval", f"{safe}-ab-{stamp}.json")
+
+
+def _fmt_metric(value: Any, *, kind: str = "score") -> str:
+    if value is None:
+        return "n/a"
+    if kind == "ms":
+        return f"{float(value):.1f}ms"
+    if kind == "int":
+        return str(int(value))
+    return f"{float(value):.4f}"
+
+
+def gate_status_label(result: BackendCompareResult) -> str:
+    if result.skipped:
+        return "SKIP"
+    if result.forced and result.gate_failures:
+        return "FORCED"
+    if result.gate_failures:
+        return "FAIL"
+    return "PASS"
+
+
+def render_compare_markdown(
+    result: BackendCompareResult,
+    *,
+    suite: str = "code-harness",
+    suite_path: str = ".docs/research/eval/code-harness.fixture.yaml",
+    generated: Optional[str] = None,
+    notes: str = "",
+    skips: Optional[Dict[str, str]] = None,
+) -> str:
+    """Persistable fixture A/B table (Recall@k / nDCG@k / latency)."""
+    generated = generated or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    k = result.k
+    status = gate_status_label(result)
+    skips = skips or {}
+    skip_reason = result.skip_reason or skips.get(result.candidate_name, "")
+    note_lines = []
+    if notes:
+        note_lines.append(notes)
+    if skip_reason:
+        note_lines.append(skip_reason)
+    notes_cell = "<br>".join(note_lines) if note_lines else "—"
+
+    def row(name: str, metrics: Dict[str, Any], skipped: bool = False) -> str:
+        if skipped:
+            return f"| {name} | SKIP | SKIP | SKIP | SKIP | — |"
+        return (
+            f"| {name} "
+            f"| {_fmt_metric(metrics.get('recall_at_k'))} "
+            f"| {_fmt_metric(metrics.get('ndcg_at_k'))} "
+            f"| {_fmt_metric(metrics.get('citation_path_hit_rate'))} "
+            f"| {_fmt_metric(metrics.get('dense_p50'), kind='ms')} "
+            f"| {_fmt_metric(metrics.get('n'), kind='int')} |"
+        )
+
+    gate_lines = [
+        f"- relative tolerance: {result.relative_tolerance:.0%}",
+        "- Recall@10 absolute: −2 pts; Recall@30 absolute: −1 pt",
+        f"- status: **{status}**",
+    ]
+    if result.gate_failures:
+        for item in result.gate_failures:
+            gate_lines.append(f"- {item}")
+    if skip_reason:
+        gate_lines.append(f"- skip: {skip_reason}")
+
+    return f"""# TurboVec vs Chroma fixture A/B
+
+Committed retrieval A/B on the project fixture suite. TurboVec stays
+experimental; this table is the honesty record, not a default flip.
+
+| Field | Value |
+|-------|-------|
+| Suite | `{suite}` |
+| Suite path | `{suite_path}` |
+| k | {k} |
+| Generated | {generated} |
+| Gate | {status} |
+| Notes | {notes_cell} |
+
+## Metrics
+
+| backend | Recall@{k} | nDCG@{k} | citation-path | dense p50 | n |
+|---------|------------|----------|---------------|-----------|---|
+{row(result.baseline_name, result.baseline_metrics)}
+{row(result.candidate_name, result.candidate_metrics, skipped=result.skipped)}
+
+## Gate
+
+{chr(10).join(gate_lines)}
+
+## How to run (local)
+
+```bash
+# Core retrieve stack (Chroma + local embedder)
+pip install -r requirements.txt
+
+# Optional TurboVec extra (Rust wheel). Unittest stays green without it.
+pip install -r requirements-turbovec.txt
+
+# Routine recipe: index both persist dirs, compare, write this file
+python main.py eval-ab .
+
+# Equivalent explicit commands
+python main.py index .
+python main.py index . --vector-backend turbovec
+python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml \\
+  --compare-backends chromadb,turbovec \\
+  --compare-markdown .docs/research/eval/RESULTS.md \\
+  --compare-output .docs/research/eval/RESULTS.json
+```
+
+Make target: `make eval-ab`. Script: `python scripts/eval_chroma_vs_turbovec.py`.
+
+Run this on a machine that can install `turbovec` plus the local embedder
+(for example the developer workstation that owns this checkout). CI and
+default unittest skip the live TurboVec column when the extra is absent
+(exit 0). Selecting `--vector-backend turbovec` while the wheel is missing
+fails clearly (exit 1). A failed recall gate still exits 2 unless
+`--force-experimental`.
+
+## Policy
+
+Default dense store remains Chroma. Dual-write, TQ+ calibrate, and flipping
+the default are later work. Do not treat a skipped or placeholder row as
+TurboQuant recall.
+"""
+
+
+def compare_artifact_dict(
+    result: BackendCompareResult,
+    *,
+    suite: str = "code-harness",
+    suite_path: str = ".docs/research/eval/code-harness.fixture.yaml",
+    generated: Optional[str] = None,
+    reports: Optional[Dict[str, Any]] = None,
+    skips: Optional[Dict[str, str]] = None,
+    notes: str = "",
+) -> Dict[str, Any]:
+    generated = generated or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    slim_reports = {}
+    for name, report in (reports or {}).items():
+        slim_reports[name] = {
+            "suite": (report or {}).get("suite"),
+            "k": (report or {}).get("k"),
+            "metrics": (report or {}).get("metrics") or {},
+        }
+    return {
+        "kind": "vector-backend-ab",
+        "suite": suite,
+        "suite_path": suite_path,
+        "generated": generated,
+        "notes": notes,
+        "compare": result.as_dict(),
+        "reports": slim_reports,
+        "skips": dict(skips or {}),
+    }
+
+
+def write_compare_artifacts(
+    result: BackendCompareResult,
+    *,
+    json_path: Optional[str] = None,
+    markdown_path: Optional[str] = None,
+    suite: str = "code-harness",
+    suite_path: str = ".docs/research/eval/code-harness.fixture.yaml",
+    generated: Optional[str] = None,
+    reports: Optional[Dict[str, Any]] = None,
+    skips: Optional[Dict[str, str]] = None,
+    notes: str = "",
+) -> Dict[str, str]:
+    """Write JSON and/or markdown A/B artifacts. Missing dests are skipped."""
+    generated = generated or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    written: Dict[str, str] = {}
+    if json_path:
+        parent = os.path.dirname(json_path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        with open(json_path, "w") as fh:
+            json.dump(
+                compare_artifact_dict(
+                    result,
+                    suite=suite,
+                    suite_path=suite_path,
+                    generated=generated,
+                    reports=reports,
+                    skips=skips,
+                    notes=notes,
+                ),
+                fh,
+                indent=2,
+            )
+            fh.write("\n")
+        written["json"] = json_path
+    if markdown_path:
+        parent = os.path.dirname(markdown_path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        with open(markdown_path, "w") as fh:
+            fh.write(
+                render_compare_markdown(
+                    result,
+                    suite=suite,
+                    suite_path=suite_path,
+                    generated=generated,
+                    notes=notes,
+                    skips=skips,
+                )
+            )
+        written["markdown"] = markdown_path
+    return written
