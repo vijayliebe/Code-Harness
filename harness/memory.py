@@ -6,6 +6,7 @@ optionally ``.code-harness/memory/``. Not written into Chroma.
 
 Reconcile is supersession + tombstone, not silent overwrite. ``memory brief``
 packs active entries with a hard cap of 800 tokens (``len // 4``).
+``memory search`` is on-the-fly BM25 over those same active files.
 Heuristic auto-extract from session JSONL lives in :mod:`harness.memory_extract`
 (``memory extract``, opt-in ``memory.auto_extract``). :func:`observe_stub` remains
 as a no-network alias.
@@ -13,6 +14,7 @@ as a no-network alias.
 
 from __future__ import annotations
 
+import math
 import os
 import re
 from dataclasses import dataclass, field
@@ -30,6 +32,7 @@ from .okf import (
     dump_okf_markdown,
     estimate_tokens,
     is_memory_page,
+    memory_cite,
     normalize_memory_kind,
     okf_type_for_kind,
     parse_okf_markdown,
@@ -38,6 +41,7 @@ from .okf import (
 
 BRIEF_TOKEN_CAP = 800
 BRIEF_ITEM_CAP = 5
+MEMORY_SEARCH_WEIGHT = 0.15
 STATUS_ACTIVE = "active"
 STATUS_SUPERSEDED = "superseded"
 STATUS_FORGOTTEN = "forgotten"
@@ -112,6 +116,13 @@ class MemoryBrief:
     token_count: int
     entry_ids: List[str] = field(default_factory=list)
     skipped_ids: List[str] = field(default_factory=list)
+
+
+@dataclass
+class MemoryHit:
+    entry: MemoryEntry
+    score: float
+    cite: str = ""
 
 
 class MemoryStore:
@@ -240,6 +251,32 @@ class MemoryStore:
             out.append(entry)
         out.sort(key=lambda e: (_parse_ts(e.timestamp) or datetime.min, e.id), reverse=True)
         return out
+
+    def search(self, query: str, top_k: int = 20) -> List[MemoryHit]:
+        """On-the-fly BM25 over active (non-superseded) memory documents."""
+        active = self.list(include_inactive=False)
+        tokens = _tokenize(query)
+        if not active or not tokens:
+            return []
+        from rank_bm25 import BM25Okapi
+
+        corpus = [_memory_search_tokens(entry) for entry in active]
+        if not any(corpus):
+            return []
+        scores = BM25Okapi(corpus).get_scores(tokens)
+        query_terms = set(tokens)
+        hits: List[MemoryHit] = []
+        for entry, raw_score, doc_tokens in zip(active, scores, corpus):
+            overlap = len(query_terms & set(doc_tokens)) / max(len(query_terms), 1)
+            raw = float(raw_score)
+            if overlap <= 0 and raw <= 0:
+                continue
+            # Tiny vaults make raw BM25 negative; keep lexical overlap in front.
+            combined = 0.65 * overlap + 0.35 * (1.0 / (1.0 + math.exp(-raw / 5.0)))
+            hits.append(MemoryHit(entry=entry, score=combined, cite=memory_cite(entry)))
+        hits.sort(key=lambda hit: (-hit.score, hit.entry.id))
+        cap = max(1, int(top_k or 20))
+        return hits[:cap]
 
     def brief(
         self,
@@ -413,6 +450,61 @@ def observe_stub(*_args, **_kwargs) -> None:
     return None
 
 
+def apply_memory_search(config, enabled: bool = True):
+    """Turn on the BM25-over-memory RRF channel without retuning other weights."""
+    context = getattr(config, "context", None)
+    if context is None:
+        config.context = {}
+        context = config.context
+    retrieval = getattr(config, "retrieval", None)
+    if retrieval is None:
+        config.retrieval = {}
+        retrieval = config.retrieval
+    enabled = bool(enabled)
+    context["include_memory_search"] = enabled
+    if enabled and float(retrieval.get("memory_weight", 0.0) or 0.0) <= 0:
+        retrieval["memory_weight"] = MEMORY_SEARCH_WEIGHT
+    return config
+
+
+def memory_search_enabled(config) -> bool:
+    context = getattr(config, "context", None) or {}
+    if context.get("include_memory_search"):
+        return True
+    retrieval = getattr(config, "retrieval", None) or {}
+    return float(retrieval.get("memory_weight", 0.0) or 0.0) > 0
+
+
+def memory_entry_to_chunk(entry: MemoryEntry, repo_name: str = ""):
+    """OKF memory row → packer/retriever chunk with a vault cite path."""
+    from .models import Chunk, EntityType
+
+    cite = memory_cite(entry)
+    parts = [entry.title or "", "", entry.body or ""]
+    if entry.links:
+        parts.append("")
+        parts.append(" ".join(f"`{link}`" for link in entry.links))
+    content = "\n".join(parts).strip() + "\n"
+    return Chunk(
+        id=entry.id,
+        content=content,
+        entity_id=entry.id,
+        entity_name=entry.title,
+        entity_type=EntityType.DOCUMENTATION,
+        file_path=cite,
+        start_line=1,
+        end_line=max(1, content.count("\n")),
+        metadata={
+            "kind": "memory",
+            "memory_kind": entry.kind,
+            "status": entry.status,
+            "id": entry.id,
+            "okf_type": okf_type_for_kind(entry.kind),
+        },
+        repo_name=repo_name,
+    )
+
+
 def make_memory_id(title: str, timestamp: str) -> str:
     return f"mem/{_date_compact(timestamp)}-{_slug(title)}"
 
@@ -521,6 +613,21 @@ def _tokenize(text: str) -> List[str]:
     return _TOKEN_RE.findall((text or "").lower())
 
 
+def _memory_search_tokens(entry: MemoryEntry) -> List[str]:
+    return _tokenize(
+        " ".join(
+            [
+                entry.title or "",
+                entry.body or "",
+                entry.description or "",
+                " ".join(entry.tags or []),
+                " ".join(entry.links or []),
+                entry.id,
+            ]
+        )
+    )
+
+
 def _score(entry: MemoryEntry, query: str) -> float:
     prior = TYPE_PRIOR.get(entry.kind, 0.4)
     recency = _recency(entry.timestamp)
@@ -571,10 +678,15 @@ __all__ = [
     "BRIEF_ITEM_CAP",
     "BRIEF_TOKEN_CAP",
     "MEMORY_KINDS",
+    "MEMORY_SEARCH_WEIGHT",
     "MemoryBrief",
     "MemoryEntry",
     "MemoryError",
+    "MemoryHit",
     "MemoryStore",
+    "apply_memory_search",
     "estimate_tokens",
+    "memory_entry_to_chunk",
+    "memory_search_enabled",
     "observe_stub",
 ]

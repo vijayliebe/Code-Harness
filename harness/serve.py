@@ -39,6 +39,9 @@ MCP_TOOLS = (
                 "query": {"type": "string"},
                 "top_k": {"type": "integer"},
                 "pack_mode": {"type": "string", "enum": ["full", "ccr_lite"]},
+                "include_memory_brief": {"type": "boolean"},
+                "include_memory_search": {"type": "boolean"},
+                "include_knowledge_prefix": {"type": "boolean"},
             },
             "required": ["query"],
         },
@@ -199,6 +202,15 @@ class RetrieveService:
             self.config.context["pack_mode"] = pack_mode
         if req.get("include_memory_brief"):
             self.config.context["include_memory_brief"] = True
+        if req.get("include_memory_search"):
+            from .memory import apply_memory_search
+
+            apply_memory_search(self.config, True)
+            if self.retriever is not None:
+                self.retriever.config = self.config
+                self.retriever.memory_weight = float(
+                    (self.config.retrieval or {}).get("memory_weight", 0.0) or 0.0
+                )
         if req.get("include_knowledge_prefix"):
             self.config.context["knowledge_prefix"] = True
 

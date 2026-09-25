@@ -301,6 +301,31 @@ def default_local_memory_dir(repo_path: str) -> str:
     return os.path.join(repo_path or ".", ".code-harness", "memory")
 
 
+def is_memory_path(file_path: str) -> bool:
+    """True for vault pages under ``knowledge/memory/`` or the local overlay."""
+    path = _norm_relpath(file_path)
+    if path.startswith("knowledge/memory/") or path.startswith(".code-harness/memory/"):
+        return True
+    return "/knowledge/memory/" in f"/{path}" or "/.code-harness/memory/" in f"/{path}"
+
+
+def memory_cite(page: Any) -> str:
+    """Citation form for a typed memory: ``knowledge/memory/<kind>/<file>``."""
+    if page is not None and not isinstance(page, str):
+        rel = str(getattr(page, "rel_path", "") or "")
+        if rel:
+            return memory_cite(rel)
+        return str(getattr(page, "id", "") or "")
+    name = _norm_relpath(str(page or ""))
+    if not name:
+        return "knowledge/memory/memory.md"
+    if is_memory_path(name):
+        return name
+    if name.startswith("memory/"):
+        return f"knowledge/{name}"
+    return f"knowledge/memory/{name}"
+
+
 def normalize_memory_kind(value: Any) -> Optional[str]:
     text = str(value or "").strip().lower()
     if text in MEMORY_KINDS:

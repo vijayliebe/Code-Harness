@@ -329,7 +329,7 @@ class TestMemoryCli(unittest.TestCase):
             cwd=ROOT,
         )
         self.assertEqual(run.returncode, 0, run.stderr)
-        for name in ("add", "list", "brief", "export", "import", "extract"):
+        for name in ("add", "list", "brief", "search", "export", "import", "extract"):
             self.assertIn(name, run.stdout)
 
     def test_cli_add_list_brief_round_trip(self):

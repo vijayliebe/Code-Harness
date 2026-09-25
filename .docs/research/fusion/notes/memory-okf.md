@@ -43,12 +43,17 @@ Shared SPEC fields (`type`, `title`, `description`, `generated`, `verified`, `ti
 
 `memory brief` packs **active** (non-superseded, non-forgotten) entries. Ranking is deterministic: type prior + recency, plus token-overlap when `-q` is set. Hard cap **≤800 tokens** using the same `len(text) // 4` estimator as `ContextBuilder`. Also caps at 5 items. Query/CCR injection is **opt-in** (`--include-memory-brief` / `context.include_memory_brief`, default off).
 
+## BM25 search (opt-in RRF)
+
+`MemoryStore.search` runs on-the-fly BM25 (+ token overlap, so tiny vaults still rank) over **active** markdown only. Hybrid retrieve merges that list like `wiki_weight` when `retrieval.memory_weight > 0` (default **0.0**, eval-safe) or `--include-memory-search` / `CODEHARNESS_MEMORY_SEARCH=1` (applies weight `0.15` if the configured weight is still `0.0`). Cites stay `knowledge/memory/<kind>/<file>` plus the OKF `mem/…` id. Packer drops memory RRF hits already present in `--include-memory-brief` and path-dedupes vs the knowledge prefix. `memory search` is the debug CLI (optional `--redact`).
+
 ## CLI
 
 ```
 python main.py memory add . --type decision --title "..." --body "..." --link path:symbol
 python main.py memory list . [--type decision] [--as-of 2026-06-01] [--all]
 python main.py memory brief . -q "why chroma?"
+python main.py memory search . -q "chroma default"
 python main.py memory export . ./okf-bundle
 python main.py memory import . ./okf-bundle
 python main.py memory extract . [--session path.jsonl] [--dry-run] [--llm]

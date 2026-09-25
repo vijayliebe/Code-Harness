@@ -14,7 +14,7 @@ from .config import Config
 from .embedder import Embedder
 from .vector_store import VectorStore
 from .knowledge_graph import KnowledgeGraph
-from .okf import is_wiki_path
+from .okf import is_memory_path, is_wiki_path
 
 
 def is_wiki_chunk(chunk) -> bool:
@@ -28,6 +28,18 @@ def is_wiki_chunk(chunk) -> bool:
     if source in {"wiki", "knowledge/wiki"}:
         return True
     return is_wiki_path(getattr(chunk, "file_path", None) or "")
+
+
+def is_memory_chunk(chunk) -> bool:
+    """True for typed memory hits (``kind=memory`` or ``knowledge/memory/...``)."""
+    if chunk is None:
+        return False
+    meta = getattr(chunk, "metadata", None) or {}
+    if str(meta.get("kind") or "").lower() == "memory":
+        return True
+    if str(meta.get("memory_kind") or "").strip():
+        return True
+    return is_memory_path(getattr(chunk, "file_path", None) or "")
 
 _cross_encoder_cache = {}
 
@@ -46,6 +58,7 @@ class Retriever:
         self.sparse_weight = ret_cfg.get("sparse_weight", 0.25)
         self.graph_weight = ret_cfg.get("graph_weight", 0.2)
         self.wiki_weight = float(ret_cfg.get("wiki_weight", 0.0) or 0.0)
+        self.memory_weight = float(ret_cfg.get("memory_weight", 0.0) or 0.0)
         try:
             from .wiki_chat import WIKI_MODE_WEIGHT, wiki_mode_enabled
 
@@ -53,6 +66,14 @@ class Retriever:
                 self.wiki_weight = WIKI_MODE_WEIGHT
         except Exception:
             pass
+        ctx = getattr(config, "context", None) or {}
+        if ctx.get("include_memory_search") and self.memory_weight <= 0:
+            try:
+                from .memory import MEMORY_SEARCH_WEIGHT
+
+                self.memory_weight = float(MEMORY_SEARCH_WEIGHT)
+            except Exception:
+                self.memory_weight = 0.15
         self.top_k = ret_cfg.get("top_k", 30)
         self.rerank_top_k = ret_cfg.get("rerank_top_k", 15)
         self.expand_neighbors = ret_cfg.get("expand_neighbors", 3)
@@ -147,6 +168,7 @@ class Retriever:
                 latencies_ms["dense"] = 0.0
                 latencies_ms["graph"] = 0.0
                 latencies_ms["wiki"] = 0.0
+                latencies_ms["memory"] = 0.0
                 latencies_ms["ce"] = 0.0
                 top = sparse_results[:k]
                 if debug:
@@ -217,11 +239,22 @@ class Retriever:
         else:
             latencies_ms["wiki"] = 0.0
 
+        memory_results: List[RetrievalResult] = []
+        if self.memory_weight > 0:
+            started = time.perf_counter()
+            memory_results = self._memory_search(query, top_k=k * 2)
+            latencies_ms["memory"] = (time.perf_counter() - started) * 1000.0
+        else:
+            latencies_ms["memory"] = 0.0
+
         fuse_lists = [dense_results, sparse_results]
         fuse_weights = [self.dense_weight, self.sparse_weight]
         if wiki_results:
             fuse_lists.append(wiki_results)
             fuse_weights.append(self.wiki_weight)
+        if memory_results:
+            fuse_lists.append(memory_results)
+            fuse_weights.append(self.memory_weight)
         fused = self._reciprocal_rank_fusion(fuse_lists, weights=fuse_weights)
         for r in fused:
             if (r.chunk.metadata or {}).get("kind") == "gloss":
@@ -266,6 +299,7 @@ class Retriever:
                 "sparse": sparse_results,
                 "graph": graph_results,
                 "wiki": wiki_results,
+                "memory": memory_results,
                 "fused": fused_pre_ce,
                 "reranked": reranked[:k] if self.ce_enabled else [],
                 "latencies_ms": latencies_ms,
@@ -341,6 +375,34 @@ class Retriever:
             results.append(RetrievalResult(chunk=chunk, score=score, source="wiki"))
         results.sort(key=lambda r: r.score, reverse=True)
         return results[:top_k]
+
+    def _memory_search(self, query: str, top_k: int = 20) -> List[RetrievalResult]:
+        if self.memory_weight <= 0:
+            return []
+        try:
+            from .memory import MemoryStore, memory_entry_to_chunk
+        except Exception:
+            return []
+        ctx = getattr(self.config, "context", None) or {}
+        store = MemoryStore.for_repo(
+            getattr(self.config, "repo_path", None) or ".",
+            memory_dir=ctx.get("memory_dir") or None,
+        )
+        hits = store.search(query, top_k=top_k)
+        results = []
+        for hit in hits:
+            raw = float(hit.score or 0.0)
+            if raw <= 0:
+                continue
+            normalized = float(1.0 / (1.0 + math.exp(-raw / 5)))
+            results.append(
+                RetrievalResult(
+                    chunk=memory_entry_to_chunk(hit.entry, repo_name=self.repo_name),
+                    score=normalized,
+                    source="memory",
+                )
+            )
+        return results
 
     def _graph_search(self, query: str,
                       existing: List[RetrievalResult],
