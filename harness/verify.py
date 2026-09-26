@@ -307,6 +307,7 @@ class CompletionGate:
         role: str = VERIFIER_ROLE,
         evidence: Optional[Dict[str, Any]] = None,
         llm: Optional[Callable[[str, str, str], str]] = None,
+        decider=None,
     ) -> VerifyResult:
         if role != VERIFIER_ROLE:
             raise VerifyRoleError("only the independent verifier role may run the gate")
@@ -324,7 +325,7 @@ class CompletionGate:
 
         evidence = dict(evidence or {})
         for crit in self.criteria:
-            met, note = self._evaluate(crit, evidence=evidence, llm=llm)
+            met, note = self._evaluate(crit, evidence=evidence, llm=llm, decider=decider)
             crit.met = bool(met)
             crit.evidence = note
         self.verify_ran = True
@@ -362,6 +363,7 @@ class CompletionGate:
         *,
         evidence: Dict[str, Any],
         llm: Optional[Callable[[str, str, str], str]],
+        decider=None,
     ) -> tuple:
         kind = crit.kind if crit.kind in KNOWN_KINDS else "file"
         if kind == "file":
@@ -374,7 +376,7 @@ class CompletionGate:
             return self._check_coverage(crit.expect, evidence)
         if kind == "assertion":
             return self._check_assertion(crit, evidence)
-        return self._check_llm(crit, evidence, llm)
+        return self._check_llm(crit, evidence, llm, decider=decider)
 
     def _resolve(self, rel: str) -> str:
         path = (rel or "").strip()
@@ -459,7 +461,14 @@ class CompletionGate:
         crit: Criterion,
         evidence: Dict[str, Any],
         llm: Optional[Callable[[str, str, str], str]],
+        decider=None,
     ) -> tuple:
+        if decider is not None:
+            from .decision import decide_verify_criterion
+
+            decided = decide_verify_criterion(decider, crit, evidence)
+            if decided is not None:
+                return decided
         if llm is None:
             return False, "no independent llm verifier"
         context = json.dumps(evidence, ensure_ascii=False, default=str)[:4000]

@@ -513,17 +513,32 @@ def parse_verify_payload(text: str) -> Dict[str, Any]:
     return {"supported": supported, "missing_paths": [str(p) for p in missing]}
 
 
-def verify_answer(llm, query: str, answer: str, packed_context: str) -> Dict[str, Any]:
+def verify_answer(llm, query: str, answer: str, packed_context: str, decider=None) -> Dict[str, Any]:
+    if decider is not None:
+        from .decision import decide_citation_supported
+
+        decided = decide_citation_supported(decider, query, answer, packed_context)
+        if decided is not None:
+            return decided
+    if llm is None:
+        return {"supported": False, "missing_paths": [], "raw": "no verifier"}
     user = f"Query: {query}\nAnswer: {answer}"
     raw = llm.query(VERIFY_SYSTEM, packed_context, user)
     return parse_verify_payload(raw)
 
 
 class QueryLoop:
-    def __init__(self, retriever, context_builder, config: Optional[LoopConfig] = None):
+    def __init__(
+        self,
+        retriever,
+        context_builder,
+        config: Optional[LoopConfig] = None,
+        decider=None,
+    ):
         self.retriever = retriever
         self.context_builder = context_builder
         self.config = config or LoopConfig()
+        self.decider = decider
 
     def run(
         self,
@@ -606,6 +621,23 @@ class QueryLoop:
                 coverage_for_stop = min(coverage_for_stop, self.config.citation_threshold - 1e-6)
             if must_cite_paths and coverage < self.config.citation_threshold:
                 grade_for_stop = min(grade_for_stop, self.config.grade_threshold - 1e-6)
+            decided = None
+            if self.decider is not None:
+                from .decision import decide_loop_grade
+
+                decided = decide_loop_grade(
+                    self.decider,
+                    query=query,
+                    results=results,
+                    packed=packed,
+                    heuristic_grade=grade,
+                    coverage=coverage,
+                    attempt=attempt,
+                    mode=retrieve_mode,
+                )
+            if decided and decided.get("grade") is not None:
+                grade = float(decided["grade"])
+                grade_for_stop = grade
             stop, reason = should_stop(
                 grade_for_stop,
                 coverage_for_stop,
@@ -615,7 +647,28 @@ class QueryLoop:
                 self.config.citation_threshold,
             )
             used_query = effective
-            if stop:
+            extras_used = max(0, int(attempt) - 1)
+            budget_left = extras_used < max_extra
+            decided_action = (decided or {}).get("action") if decided else None
+            if decided_action == "proceed":
+                next_action = "stop"
+                stop_reason = "decision"
+                action = "stop"
+                stop = True
+            elif decided_action in ("rewrite", "deepen", "hyde") and budget_left:
+                stop = False
+                mapped = {
+                    "rewrite": "rewrite",
+                    "deepen": "deepen_graph",
+                    "hyde": "hyde",
+                }[decided_action]
+                if mapped == "hyde" and (used_hyde or not self.config.hyde_on_retry):
+                    mapped = "rewrite"
+                if mapped == "rewrite":
+                    effective, _ = rewrite_query(query, attempt, detected)
+                next_action = mapped
+                action = next_action
+            elif stop:
                 next_action = "stop"
                 stop_reason = reason
                 action = "stop"

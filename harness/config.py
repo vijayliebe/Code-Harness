@@ -45,6 +45,19 @@ DEFAULT_CONFIG = {
         "max_tokens": 4096,
     },
 
+    # Optional typed decision model (Jev / TypeSafe / Venice). Off by default.
+    # Not used for HyDE text generation — HyDE stays a free template string.
+    "decision": {
+        "enabled": False,
+        "provider": None,
+        "api_key": None,
+        "api_base": None,
+        "model": None,
+        "timeout_ms": 2000,
+        "min_confidence": 0.0,
+        "uses": ["loop_grade", "verify"],
+    },
+
     "context": {
         "pack_mode": "full",
         "prefix_files": ["ARCHITECTURE.md", "AGENTS.md", "CLAUDE.md"],
@@ -184,6 +197,10 @@ class Config:
     repo_graph: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["repo_graph"]))
     retrieval: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["retrieval"]))
     llm: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["llm"]))
+    decision: Dict = field(default_factory=lambda: {
+        **DEFAULT_CONFIG["decision"],
+        "uses": list(DEFAULT_CONFIG["decision"]["uses"]),
+    })
     indexing: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["indexing"]))
     context: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["context"]))
     ccr: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["ccr"]))
@@ -203,6 +220,12 @@ class Config:
         for section in DEFAULT_CONFIG:
             if section in d:
                 merged = {**getattr(config, section), **d[section]}
+                if section == "decision" and "uses" in d[section]:
+                    incoming_uses = d[section].get("uses")
+                    if incoming_uses is None:
+                        merged["uses"] = list(DEFAULT_CONFIG["decision"]["uses"])
+                    else:
+                        merged["uses"] = list(incoming_uses)
                 if section == "vector_store":
                     base_tv = getattr(config, section).get("turbovec") or {}
                     incoming_tv = d[section].get("turbovec") if isinstance(d[section], dict) else None
@@ -234,6 +257,7 @@ class Config:
             "repo_graph": self.repo_graph,
             "retrieval": self.retrieval,
             "llm": self.llm,
+            "decision": self.decision,
             "indexing": self.indexing,
             "context": self.context,
             "ccr": self.ccr,

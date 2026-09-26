@@ -231,14 +231,14 @@ python main.py query . --no-llm --include-knowledge-prefix -q "why is Chroma the
 
 ### `doctor` — Local health check
 
-No network. Prints pass / warn / fail plus a fix hint. Exit `0` when required checks pass (missing cloud LLM key is a warn). Exit `1` when index, graph, embedding config, core deps, or the audit path fail.
+No network. Prints pass / warn / fail plus a fix hint. Exit `0` when required checks pass (missing cloud LLM key is a warn; an enabled decision model with no key is also a warn). Exit `1` when index, graph, embedding config, core deps, or the audit path fail.
 
 ```bash
 python main.py doctor .
 python main.py doctor ./my-project
 ```
 
-Checks: Python 3.9+, importable deps, Chroma persist + `graph_{repo}.json`, embedding provider/model (API key presence only — no ping), redaction enabled, audit JSONL writable, optional LLM key.
+Checks: Python 3.9+, importable deps, Chroma persist + `graph_{repo}.json`, embedding provider/model (API key presence only — no ping), redaction enabled, audit JSONL writable, optional LLM key, optional decision-model key (warn only).
 
 ### `serve` / `mcp serve` / `api serve` — Localhost retrieve + MCP
 
@@ -518,6 +518,16 @@ Key settings:
   "llm": {
     "provider": "openai",
     "model": "gpt-4o"
+  },
+  "decision": {
+    "enabled": false,
+    "provider": null,
+    "api_key": null,
+    "api_base": null,
+    "model": null,
+    "timeout_ms": 2000,
+    "min_confidence": 0.0,
+    "uses": ["loop_grade", "verify"]
   }
 }
 ```
@@ -591,6 +601,36 @@ python main.py --llm-provider ollama --llm-model codellama query .
 python main.py --llm-provider custom --llm-model my-model \
   --llm-provider-api-base http://localhost:8080/v1 query .
 ```
+
+### Optional decision model (off by default)
+
+A decision model (TypeSafe Jev / Venice System One style) returns **typed** yes/no (`noul`), choice, or score answers with probabilities. It is **not** a chat LLM and it does **not** replace HyDE. HyDE in `harness/embedder.py` stays a free template string used only at embed time.
+
+Default is off. When `decision.enabled` is false (or unset), the query path is identical to today: heuristic loop grade / rewrite, and the existing LLM verify path.
+
+Enable only when configured:
+
+```json
+{
+  "decision": {
+    "enabled": true,
+    "provider": "jev",
+    "model": "jev-latest",
+    "timeout_ms": 2000,
+    "min_confidence": 0.0,
+    "uses": ["loop_grade", "verify"]
+  }
+}
+```
+
+Env overrides: `CODEHARNESS_DECISION_ENABLED=1`, `CODEHARNESS_DECISION_PROVIDER=jev`, `CODEHARNESS_DECISION_API_KEY` / `TYPESAFE_API_KEY` / `JEV_API_KEY` / `VENICE_API_KEY`, `CODEHARNESS_DECISION_API_BASE`.
+
+Wired only where a decision already exists:
+
+- Corrective loop grade / action (`rewrite` / `deepen` / `hyde` / `proceed`) when `--loop` / `max_loops` is on
+- Query citation `--verify` and session `kind: llm` completion criteria when `--verify` / `session.verify` is on
+
+On error, timeout, or a missing key with `enabled=true`, the client warns and falls back to the current heuristics (the query path never crashes). `python main.py doctor` warns if enabled with no key and does not fail required checks. Test provider: `"provider": "mock"` or `"heuristic"` (no network).
 
 ## Supported Languages
 
@@ -686,6 +726,7 @@ code-harness/
 │   ├── eval.py                    Golden-suite loader, eval runner, JSON reports
 │   ├── metrics.py                 Recall@k, nDCG@k, citation hit, failure taxonomy
 │   ├── llm.py                     LLM integration layer (OpenAI/Anthropic/Gemini/Ollama)
+│   ├── decision.py                Optional typed decision client (off by default; not HyDE)
 │   ├── doctor.py                  Local health checks (no network)
 │   ├── serve.py                   Localhost POST /v1/retrieve + MCP JSON-RPC
 │   └── utils.py                   Shared utilities (retry, import/export extraction)

@@ -983,8 +983,12 @@ class Session:
             kept_turns=self.turn_count(),
         )
 
-    def run_verify(self, evidence: Optional[Dict] = None, llm=None) -> VerifyResult:
-        result = self.gate.run_verify(evidence=evidence, llm=llm)
+    def run_verify(self, evidence: Optional[Dict] = None, llm=None, decider=None) -> VerifyResult:
+        if decider is None and self._config is not None:
+            from .decision import build_decision_client
+
+            decider = build_decision_client(self._config)
+        result = self.gate.run_verify(evidence=evidence, llm=llm, decider=decider)
         if self.event_session and self._log is not None:
             from .events import make_event
 

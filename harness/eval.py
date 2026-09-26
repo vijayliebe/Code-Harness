@@ -200,7 +200,14 @@ def run_eval(
 
     cases: List[Dict[str, Any]] = []
     ce_enabled = bool(getattr(retriever, "ce_enabled", False))
-    loop = QueryLoop(retriever, context_builder, loop_config or LoopConfig(max_loops=0))
+    from .decision import build_decision_client
+
+    loop = QueryLoop(
+        retriever,
+        context_builder,
+        loop_config or LoopConfig(max_loops=0),
+        decider=build_decision_client(config),
+    )
     eval_config = config
     if verify is None:
         verify = bool((getattr(eval_config, "session", None) or {}).get("verify"))

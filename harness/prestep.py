@@ -144,7 +144,14 @@ def run_retrieve_pack(ctx: PreStepContext) -> PreStepContext:
 
         builder = ContextBuilder(cfg)
         ctx.context_builder = builder
-    loop = QueryLoop(ctx.retriever, builder, LoopConfig.from_mapping(getattr(cfg, "retrieval", None)))
+    from .decision import build_decision_client
+
+    loop = QueryLoop(
+        ctx.retriever,
+        builder,
+        LoopConfig.from_mapping(getattr(cfg, "retrieval", None)),
+        decider=build_decision_client(cfg),
+    )
     top_k = int(ctx.top_k or (getattr(cfg, "retrieval", None) or {}).get("top_k") or 20)
     run_kwargs: Dict[str, Any] = {}
     if ctx.must_cite_paths:
