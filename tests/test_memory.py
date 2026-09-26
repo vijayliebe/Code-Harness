@@ -202,16 +202,17 @@ class TestMemoryOkfRoundTrip(unittest.TestCase):
                 supersedes=old.id,
                 timestamp="2026-09-24T00:00:00Z",
             )
-            path = Path(src_repo) / "knowledge" / "memory" / "decision"
-            md_files = list(path.glob("*.md"))
-            self.assertTrue(md_files)
-            raw = md_files[-1].read_text(encoding="utf-8")
+            # Inject into the new entry's file. glob() order is not stable
+            # (CI failed when [-1] was the superseded FAISS note).
+            target = Path(src_repo) / "knowledge" / "memory" / new.rel_path
+            self.assertTrue(target.is_file(), target)
+            raw = target.read_text(encoding="utf-8")
             # Inject a foreign extension the way a Memanto bundle would.
             injected = raw.replace(
                 "okf_version: \"0.2\"\n",
                 "okf_version: \"0.2\"\nx_other: keep-me\nx_memanto:\n  type: decision\n",
             )
-            md_files[-1].write_text(injected, encoding="utf-8")
+            target.write_text(injected, encoding="utf-8")
 
             count = store.export_okf(str(bundle))
             self.assertGreaterEqual(count, 2)
