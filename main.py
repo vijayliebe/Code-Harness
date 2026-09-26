@@ -1557,8 +1557,38 @@ def _run_eval_backend(config, fixtures, meta, suite_path, repo_name, k, loop_con
     return report, None
 
 
+def _clone_eval_config(config: Config) -> Config:
+    return Config.from_dict({
+        "embedding": dict(config.embedding),
+        "chunking": dict(config.chunking),
+        "vector_store": dict(config.vector_store),
+        "knowledge_graph": dict(config.knowledge_graph),
+        "repo_graph": dict(config.repo_graph),
+        "retrieval": dict(config.retrieval),
+        "llm": dict(config.llm),
+        "indexing": dict(config.indexing),
+        "context": dict(config.context),
+        "ccr": dict(config.ccr),
+        "session": dict(config.session),
+        "redaction": dict(config.redaction),
+        "serve": dict(config.serve),
+        "query_cache": dict(getattr(config, "query_cache", None) or {}),
+        "decision": dict(getattr(config, "decision", None) or {}),
+        "repo_path": config.repo_path,
+        "verbose": config.verbose,
+    })
+
+
 def cmd_eval(args):
     from harness.eval import load_suite, print_summary, write_report
+    from harness.embedder import (
+        DEFAULT_EMBED_MODEL,
+        JINA_CODE_EMBED_MODEL,
+        apply_embedding_model,
+        normalize_embed_model,
+        parse_embedder_list,
+        probe_embedder,
+    )
     from harness.vector_eval import (
         compare_backend_reports,
         gate_exit_code,
@@ -1597,6 +1627,7 @@ def cmd_eval(args):
     k = args.k or meta.get("k") or config.retrieval.get("top_k", 10)
     k = int(k)
     cache = _build_query_cache(args, config, print)
+    compare_embedders = parse_embedder_list(getattr(args, "compare_embedders", None))
     selected = selected_backend_name(config)
     compare_names = parse_backend_list(getattr(args, "compare_backends", None))
     if selected == "turbovec" and "chromadb" not in compare_names:
@@ -1607,31 +1638,79 @@ def cmd_eval(args):
     print(f"[*] Scoring {len(fixtures)} queries at k={k} (retrieval only, no LLM)\n")
     reports = {}
     skips = {}
+    if compare_embedders:
+        selected_embed = normalize_embed_model(config.embedding.get("model"))
+        for name in compare_embedders:
+            ok, reason = probe_embedder(name, config)
+            if not ok:
+                print(f"[!] Skipping {name}: {reason}")
+                skips[name] = reason
+                continue
+            cfg_one = _clone_eval_config(config)
+            apply_embedding_model(cfg_one, name)
+            apply_vector_backend(cfg_one, selected)
+            print(
+                f"[*] Embedder {name} dim={cfg_one.embedding.get('dimensions')} "
+                f"persist={cfg_one.vector_store.get('persist_directory')}"
+            )
+            report, err = _run_eval_backend(
+                cfg_one, fixtures, meta, suite_path, repo_name, k, loop_config, cache=cache
+            )
+            if err:
+                print(f"[!] Skipping {name}: {err}")
+                skips[name] = err
+                continue
+            reports[name] = report
+            print_summary(report)
+        primary = reports.get(selected_embed)
+        if primary is None and selected_embed not in reports:
+            if selected_embed in skips:
+                print(f"[!] Selected embedder {selected_embed} unavailable: {skips[selected_embed]}")
+                sys.exit(1)
+            print("[!] No indexed data. Run 'python main.py index <repo>' first, then re-run eval.")
+            sys.exit(1)
+        if primary is not None:
+            out_path = write_report(primary, args.output)
+            print(f"[+] Wrote eval report: {out_path}")
+        if len(compare_embedders) > 1:
+            result = compare_backend_reports(
+                reports.get(DEFAULT_EMBED_MODEL),
+                reports.get(JINA_CODE_EMBED_MODEL),
+                baseline_name=DEFAULT_EMBED_MODEL,
+                candidate_name=JINA_CODE_EMBED_MODEL,
+                k=k,
+                relative_tolerance=getattr(args, "gate_tolerance", None) or 0.05,
+                force_experimental=bool(getattr(args, "force_experimental", False)),
+                skip_reason=skips.get(JINA_CODE_EMBED_MODEL, ""),
+            )
+            print_backend_comparison(result)
+            from harness.vector_eval import default_compare_json_path, write_compare_artifacts
+
+            json_out = getattr(args, "compare_output", None) or default_compare_json_path(meta["suite"])
+            md_out = getattr(args, "compare_markdown", None)
+            written = write_compare_artifacts(
+                result,
+                json_path=json_out,
+                markdown_path=md_out,
+                suite=meta.get("suite") or "suite",
+                suite_path=suite_path,
+                reports=reports,
+                skips=skips,
+                kind="embedder-ab",
+            )
+            if written.get("json"):
+                print(f"[+] Wrote embedder A/B JSON: {written['json']}")
+            if written.get("markdown"):
+                print(f"[+] Wrote embedder A/B markdown: {written['markdown']}")
+        return
+
     for name in compare_names:
         ok, reason = probe_backend(name, config)
         if not ok:
             print(f"[!] Skipping {name}: {reason}")
             skips[name] = reason
             continue
-        cfg_one = Config.from_dict({
-            "embedding": dict(config.embedding),
-            "chunking": dict(config.chunking),
-            "vector_store": dict(config.vector_store),
-            "knowledge_graph": dict(config.knowledge_graph),
-            "repo_graph": dict(config.repo_graph),
-            "retrieval": dict(config.retrieval),
-            "llm": dict(config.llm),
-            "indexing": dict(config.indexing),
-            "context": dict(config.context),
-            "ccr": dict(config.ccr),
-            "session": dict(config.session),
-            "redaction": dict(config.redaction),
-            "serve": dict(config.serve),
-            "query_cache": dict(getattr(config, "query_cache", None) or {}),
-            "decision": dict(getattr(config, "decision", None) or {}),
-            "repo_path": config.repo_path,
-            "verbose": config.verbose,
-        })
+        cfg_one = _clone_eval_config(config)
         apply_vector_backend(cfg_one, name)
         report, err = _run_eval_backend(
             cfg_one, fixtures, meta, suite_path, repo_name, k, loop_config, cache=cache
@@ -1697,16 +1776,26 @@ def cmd_eval(args):
 
 def cmd_eval_ab(args):
     """Index fixture corpus into both stores (when available) and persist the A/B table."""
+    from harness.embedder import (
+        DEFAULT_EMBED_MODEL,
+        normalize_embed_model,
+        parse_embedder_list,
+        probe_embedder,
+    )
     from harness.eval_ab import (
+        COMMITTED_EMBED_RESULTS_JSON,
+        COMMITTED_EMBED_RESULTS_MD,
         COMMITTED_RESULTS_JSON,
         COMMITTED_RESULTS_MD,
         DEFAULT_SUITE,
+        run_embed_ab,
         run_fixture_ab,
     )
     from harness.vector_eval import parse_backend_list, probe_backend, selected_backend_name
 
     config = _load_config(args)
     config.repo_path = args.repo or "."
+    compare_embedders = parse_embedder_list(getattr(args, "compare_embedders", None))
     selected = selected_backend_name(config)
     compare_names = parse_backend_list(getattr(args, "compare_backends", None)) or [
         "chromadb",
@@ -1715,18 +1804,11 @@ def cmd_eval_ab(args):
     md_path = getattr(args, "markdown", None) or COMMITTED_RESULTS_MD
     json_path = getattr(args, "json", None) or COMMITTED_RESULTS_JSON
 
-    def index_backend(name):
-        index_args = argparse.Namespace(**vars(args))
-        index_args.vector_backend = name
-        index_args.repo = args.repo
-        if not hasattr(index_args, "save_config"):
-            index_args.save_config = None
-        cmd_index(index_args)
-
-    def eval_compare(names):
+    def _eval_args(names, *, backends=None, embedders=None):
         eval_args = argparse.Namespace(**vars(args))
         eval_args.suite = getattr(args, "suite", None) or DEFAULT_SUITE
-        eval_args.compare_backends = ",".join(names)
+        eval_args.compare_backends = ",".join(backends) if backends else None
+        eval_args.compare_embedders = ",".join(embedders) if embedders else None
         eval_args.compare_output = json_path
         eval_args.compare_markdown = md_path
         eval_args.dry_run = False
@@ -1738,7 +1820,60 @@ def cmd_eval_ab(args):
             eval_args.gate_tolerance = None
         if not hasattr(eval_args, "pack_mode"):
             eval_args.pack_mode = None
-        cmd_eval(eval_args)
+        return eval_args
+
+    if compare_embedders:
+        if md_path in (None, COMMITTED_RESULTS_MD):
+            md_path = COMMITTED_EMBED_RESULTS_MD
+        if json_path in (None, COMMITTED_RESULTS_JSON):
+            json_path = COMMITTED_EMBED_RESULTS_JSON
+        selected_embed = normalize_embed_model(
+            getattr(args, "embed_model", None) or config.embedding.get("model") or DEFAULT_EMBED_MODEL
+        )
+
+        def index_model(name):
+            index_args = argparse.Namespace(**vars(args))
+            index_args.embed_model = name
+            index_args.repo = args.repo
+            if not getattr(index_args, "vector_backend", None):
+                index_args.vector_backend = "chromadb"
+            if not hasattr(index_args, "save_config"):
+                index_args.save_config = None
+            cmd_index(index_args)
+
+        def eval_embedders(names):
+            cmd_eval(_eval_args(names, embedders=names))
+            return 0
+
+        code = run_embed_ab(
+            repo=args.repo or ".",
+            suite=getattr(args, "suite", None) or DEFAULT_SUITE,
+            selected=selected_embed,
+            compare_names=compare_embedders,
+            markdown_path=md_path,
+            json_path=json_path,
+            skip_index=bool(getattr(args, "skip_index", False)),
+            optional=True,
+            probe=lambda name, cfg=None, **kwargs: probe_embedder(name, cfg or config, **kwargs),
+            index_model=index_model,
+            eval_compare=eval_embedders,
+            config=config,
+            k=int(getattr(args, "k", None) or 10),
+        )
+        if code:
+            sys.exit(code)
+        return
+
+    def index_backend(name):
+        index_args = argparse.Namespace(**vars(args))
+        index_args.vector_backend = name
+        index_args.repo = args.repo
+        if not hasattr(index_args, "save_config"):
+            index_args.save_config = None
+        cmd_index(index_args)
+
+    def eval_compare(names):
+        cmd_eval(_eval_args(names, backends=names))
         return 0
 
     code = run_fixture_ab(
@@ -2019,8 +2154,14 @@ def _load_config(args) -> Config:
         config.llm["model"] = os.environ.get("LLM_MODEL", config.llm["model"])
     else:
         config.llm["model"] = args.llm_model
-    if hasattr(args, 'embed_model') and args.embed_model:
-        config.embedding["model"] = args.embed_model
+    from harness.embedder import apply_embedding_model, resolve_requested_embed_model
+
+    requested_embed = resolve_requested_embed_model(
+        embed_model=getattr(args, "embed_model", None),
+        environ=os.environ,
+        config_model=(config.embedding or {}).get("model"),
+    )
+    apply_embedding_model(config, requested_embed)
 
     for key, provider in [("OPENAI_API_KEY", "openai"),
                            ("ANTHROPIC_API_KEY", "anthropic"),
@@ -2105,6 +2246,8 @@ Examples:
   %(prog)s eval . --suite .docs/research/eval/code-harness.fixture.yaml
   %(prog)s eval . --suite .docs/research/eval/code-harness.fixture.yaml --loop
   %(prog)s eval-ab .                                            # Chroma vs TurboVec fixture A/B
+  %(prog)s eval-ab . --compare-embedders all-MiniLM-L6-v2,jina-embeddings-v2-base-code
+  %(prog)s eval . --suite .docs/research/eval/code-harness.fixture.yaml --embed-model jina-embeddings-v2-base-code
   %(prog)s query . --no-llm --pack-mode ccr_lite -q "how does the chunker work?"
   %(prog)s query . --no-llm --loop -q "Who calls Retriever index_chunks?"
   %(prog)s retrieve-chunk class:harness/chunker.py:CodeChunker:abcd1234
@@ -2251,9 +2394,22 @@ Examples:
         help="Dense backend for this run: chromadb (default) or turbovec (experimental)",
     )
     ev.add_argument(
+        "--embed-model",
+        default=argparse.SUPPRESS,
+        help="Local embedder for this run (default: all-MiniLM-L6-v2; alias: jina-code)",
+    )
+    ev.add_argument(
         "--compare-backends",
         default=None,
         help="Comma list to A/B (e.g. chromadb,turbovec). Prints Recall@k / nDCG@k side-by-side.",
+    )
+    ev.add_argument(
+        "--compare-embedders",
+        default=None,
+        help=(
+            "Comma list of local embedders to A/B on Chroma "
+            "(e.g. all-MiniLM-L6-v2,jina-embeddings-v2-base-code)."
+        ),
     )
     ev.add_argument(
         "--compare-output",
@@ -2317,9 +2473,22 @@ Examples:
         help="Selected backend (default chromadb). Missing turbovec here fails.",
     )
     ev_ab.add_argument(
+        "--embed-model",
+        default=argparse.SUPPRESS,
+        help="Selected embedder: all-MiniLM-L6-v2 (default) or jina-embeddings-v2-base-code",
+    )
+    ev_ab.add_argument(
         "--compare-backends",
         default="chromadb,turbovec",
         help="Comma list to index and compare (default: chromadb,turbovec)",
+    )
+    ev_ab.add_argument(
+        "--compare-embedders",
+        default=None,
+        help=(
+            "Compare local embedders on Chroma instead of vector backends "
+            "(e.g. all-MiniLM-L6-v2,jina-embeddings-v2-base-code)"
+        ),
     )
     ev_ab.add_argument(
         "--markdown",

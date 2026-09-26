@@ -471,5 +471,259 @@ class TestProbeChroma(unittest.TestCase):
         self.assertIn("chromadb", reason.lower())
 
 
+class TestEmbedABDecision(unittest.TestCase):
+    def test_optional_path_skips_missing_jina(self):
+        from harness.eval_ab import decide_embed_ab
+
+        decision = decide_embed_ab(
+            selected="all-MiniLM-L6-v2",
+            compare_names=["all-MiniLM-L6-v2", "jina-embeddings-v2-base-code"],
+            probes={
+                "all-MiniLM-L6-v2": (True, ""),
+                "jina-embeddings-v2-base-code": (
+                    False,
+                    "jina-embeddings-v2-base-code weights not cached",
+                ),
+            },
+            optional=True,
+        )
+        self.assertEqual(decision.exit_code, 0)
+        self.assertTrue(decision.optional_skip)
+        self.assertEqual(decision.models_to_run, [])
+        self.assertIn("jina-embeddings-v2-base-code", decision.skipped)
+        self.assertFalse(decision.failed)
+
+    def test_selected_jina_missing_fails(self):
+        from harness.eval_ab import decide_embed_ab
+
+        decision = decide_embed_ab(
+            selected="jina-embeddings-v2-base-code",
+            compare_names=["all-MiniLM-L6-v2", "jina-embeddings-v2-base-code"],
+            probes={
+                "all-MiniLM-L6-v2": (True, ""),
+                "jina-embeddings-v2-base-code": (
+                    False,
+                    "jina-embeddings-v2-base-code weights not cached",
+                ),
+            },
+            optional=True,
+        )
+        self.assertEqual(decision.exit_code, 1)
+        self.assertTrue(decision.failed)
+        self.assertIn("jina", decision.fail_message.lower())
+
+    def test_both_available_indexes_both(self):
+        from harness.eval_ab import decide_embed_ab
+
+        decision = decide_embed_ab(
+            selected="all-MiniLM-L6-v2",
+            compare_names=["all-MiniLM-L6-v2", "jina-code"],
+            probes={
+                "all-MiniLM-L6-v2": (True, ""),
+                "jina-embeddings-v2-base-code": (True, ""),
+            },
+            optional=True,
+        )
+        self.assertEqual(decision.exit_code, 0)
+        self.assertEqual(
+            decision.models_to_run,
+            ["all-MiniLM-L6-v2", "jina-embeddings-v2-base-code"],
+        )
+        self.assertEqual(decision.skipped, {})
+
+
+class TestEmbedABRunner(unittest.TestCase):
+    def test_runner_writes_placeholder_when_jina_missing(self):
+        from harness.eval_ab import run_embed_ab
+
+        indexed = []
+
+        def probe(name, config=None, **kwargs):
+            if "jina" in name:
+                return False, "jina-embeddings-v2-base-code weights not cached"
+            return True, ""
+
+        def index_model(name):
+            indexed.append(name)
+            raise AssertionError("optional skip must not index the missing model")
+
+        def eval_compare(names):
+            raise AssertionError("optional skip must not eval when only MiniLM is up")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            md_path = os.path.join(tmp, "RESULTS-embed.md")
+            json_path = os.path.join(tmp, "RESULTS-embed.json")
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                code = run_embed_ab(
+                    selected="all-MiniLM-L6-v2",
+                    compare_names=["all-MiniLM-L6-v2", "jina-embeddings-v2-base-code"],
+                    markdown_path=md_path,
+                    json_path=json_path,
+                    optional=True,
+                    probe=probe,
+                    index_model=index_model,
+                    eval_compare=eval_compare,
+                )
+            self.assertEqual(code, 0)
+            self.assertEqual(indexed, [])
+            self.assertTrue(os.path.isfile(md_path))
+            with open(md_path) as fh:
+                md = fh.read()
+            self.assertIn("jina", md.lower())
+            self.assertIn("eval-ab-embed", md)
+            with open(json_path) as fh:
+                payload = json.load(fh)
+            self.assertEqual(payload["kind"], "embedder-ab")
+            self.assertTrue(payload["compare"]["skipped"])
+
+    def test_runner_indexes_available_embedders_and_persists(self):
+        from harness.eval_ab import run_embed_ab
+        from harness.vector_eval import write_compare_artifacts
+
+        indexed = []
+
+        def probe(name, config=None, **kwargs):
+            return True, ""
+
+        def index_model(name):
+            indexed.append(name)
+
+        def eval_compare(names):
+            self.assertEqual(
+                names, ["all-MiniLM-L6-v2", "jina-embeddings-v2-base-code"]
+            )
+            result = compare_backend_reports(
+                _report(1.0, 1.0, dense_p50=5.0),
+                _report(0.99, 0.99, dense_p50=8.0),
+                baseline_name="all-MiniLM-L6-v2",
+                candidate_name="jina-embeddings-v2-base-code",
+            )
+            write_compare_artifacts(
+                result,
+                json_path=eval_compare.json_path,
+                markdown_path=eval_compare.md_path,
+                suite="code-harness",
+                kind="embedder-ab",
+            )
+            return 0
+
+        with tempfile.TemporaryDirectory() as tmp:
+            eval_compare.md_path = os.path.join(tmp, "RESULTS-embed.md")
+            eval_compare.json_path = os.path.join(tmp, "RESULTS-embed.json")
+            code = run_embed_ab(
+                selected="all-MiniLM-L6-v2",
+                compare_names=["all-MiniLM-L6-v2", "jina-embeddings-v2-base-code"],
+                markdown_path=eval_compare.md_path,
+                json_path=eval_compare.json_path,
+                optional=True,
+                probe=probe,
+                index_model=index_model,
+                eval_compare=eval_compare,
+            )
+            self.assertEqual(code, 0)
+            self.assertEqual(
+                indexed, ["all-MiniLM-L6-v2", "jina-embeddings-v2-base-code"]
+            )
+            with open(eval_compare.md_path) as fh:
+                md = fh.read()
+            self.assertIn("PASS", md)
+            self.assertIn("jina-embeddings-v2-base-code", md)
+
+    def test_runner_swallows_jina_download_failure(self):
+        from harness.eval_ab import run_embed_ab
+
+        def probe(name, config=None, **kwargs):
+            return True, ""
+
+        def index_model(name):
+            if "jina" in name:
+                raise RuntimeError("failed to download jina-embeddings-v2-base-code")
+            return None
+
+        with tempfile.TemporaryDirectory() as tmp:
+            md_path = os.path.join(tmp, "RESULTS-embed.md")
+            json_path = os.path.join(tmp, "RESULTS-embed.json")
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                code = run_embed_ab(
+                    selected="all-MiniLM-L6-v2",
+                    compare_names=["all-MiniLM-L6-v2", "jina-embeddings-v2-base-code"],
+                    markdown_path=md_path,
+                    json_path=json_path,
+                    optional=True,
+                    probe=probe,
+                    index_model=index_model,
+                    eval_compare=lambda names: 0,
+                )
+            self.assertEqual(code, 0)
+            with open(md_path) as fh:
+                self.assertIn("download", fh.read().lower())
+
+
+class TestEmbedABCli(unittest.TestCase):
+    def test_eval_ab_help_lists_compare_embedders(self):
+        ev = subprocess.run(
+            [sys.executable, "main.py", "eval", "--help"],
+            capture_output=True,
+            text=True,
+            cwd=ROOT,
+        )
+        self.assertEqual(ev.returncode, 0, ev.stderr)
+        self.assertIn("--compare-embedders", ev.stdout)
+        self.assertIn("--embed-model", ev.stdout)
+
+        ab = subprocess.run(
+            [sys.executable, "main.py", "eval-ab", "--help"],
+            capture_output=True,
+            text=True,
+            cwd=ROOT,
+        )
+        self.assertEqual(ab.returncode, 0, ab.stderr)
+        self.assertIn("--compare-embedders", ab.stdout)
+        self.assertIn("embeddings-v2-base-code", ab.stdout)
+
+    def test_eval_ab_embed_optional_path_exits_zero_without_jina(self):
+        from harness.embedder import probe_embedder
+
+        available, _reason = probe_embedder(
+            "jina-embeddings-v2-base-code", try_load=False
+        )
+        if available:
+            self.skipTest("Jina code weights are cached; optional skip path not exercised")
+        with tempfile.TemporaryDirectory() as tmp:
+            md_path = os.path.join(tmp, "RESULTS-embed.md")
+            json_path = os.path.join(tmp, "RESULTS-embed.json")
+            run = subprocess.run(
+                [
+                    sys.executable,
+                    "main.py",
+                    "eval-ab",
+                    ".",
+                    "--skip-index",
+                    "--compare-embedders",
+                    "jina-embeddings-v2-base-code",
+                    "--markdown",
+                    md_path,
+                    "--json",
+                    json_path,
+                ],
+                capture_output=True,
+                text=True,
+                cwd=ROOT,
+            )
+            self.assertEqual(run.returncode, 0, run.stderr + run.stdout)
+            self.assertTrue(
+                "skip" in run.stdout.lower() or "could not run" in run.stdout.lower(),
+                run.stdout,
+            )
+            self.assertTrue(os.path.isfile(md_path))
+            with open(md_path) as fh:
+                body = fh.read()
+            self.assertIn("How to run", body)
+            self.assertIn("eval-ab-embed", body)
+
+
 if __name__ == "__main__":
     unittest.main()
+

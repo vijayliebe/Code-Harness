@@ -26,13 +26,14 @@ python main.py serve /path/to/your/repo
 ## Testing
 
 ```bash
-make test      # python3 -m unittest discover -s tests -v
-make eval-ab   # python3 main.py eval-ab .  — skips cleanly (exit 0) if the turbovec extra is missing
+make test           # python3 -m unittest discover -s tests -v
+make eval-ab        # python3 main.py eval-ab .  — skips cleanly (exit 0) if the turbovec extra is missing
+make eval-ab-embed  # MiniLM vs jina-embeddings-v2-base-code on Chroma — skips (exit 0) if Jina weights are missing
 ```
 
 ## CI
 
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every pull request and on push to `main` (Ubuntu, Python 3.12): install `requirements.txt`, `make test`, then the canonical eval below. It does not run `make eval-ab`.
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every pull request and on push to `main` (Ubuntu, Python 3.12): install `requirements.txt`, `make test`, then the canonical eval below. It does not run `make eval-ab` or `make eval-ab-embed`.
 
 ## Canonical eval recipe
 
@@ -43,7 +44,7 @@ python3 main.py index .
 python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml
 ```
 
-See [`.docs/research/eval/README.md`](.docs/research/eval/README.md) for the suite schema, metrics, and the optional TurboVec A/B (`make eval-ab`).
+See [`.docs/research/eval/README.md`](.docs/research/eval/README.md) for the suite schema, metrics, the optional TurboVec A/B (`make eval-ab`), and the optional MiniLM vs Jina-code embedder A/B (`make eval-ab-embed`).
 
 ## Commands
 
@@ -344,15 +345,18 @@ python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml
 python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --dry-run
 python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --loop
 python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --compare-backends chromadb,turbovec
+python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --compare-embedders all-MiniLM-L6-v2,jina-embeddings-v2-base-code
+python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --embed-model jina-embeddings-v2-base-code
 python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --query-cache
 python3 main.py eval-ab .
+python3 main.py eval-ab . --compare-embedders all-MiniLM-L6-v2,jina-embeddings-v2-base-code
 ```
 
 Reports Recall@k, nDCG@k, citation-path hit rate, stage latency (dense / BM25 / graph / CE / MMR), estimated prompt tokens after context assembly (`prompt_tokens_full` vs `prompt_tokens_packed`), and easy/hard splits. Writes `.code-harness/eval/{suite}-{timestamp}.json`. Use `--pack-mode ccr_lite` to score citation paths against packed headers (Recall@k is unchanged). `--loop` / `--max-loops N` is opt-in; default remains one-shot. `--query-cache` reuses retrieve/pack on identical queries (hit/miss in the summary); Recall@k stays identical.
 
 `--compare-backends chromadb,turbovec` prints a side-by-side Recall@k / nDCG@k table and writes `.code-harness/eval/{suite}-ab-{timestamp}.json` (override with `--compare-output` / `--compare-markdown`). `eval-ab` indexes both persist dirs and writes [`.docs/research/eval/RESULTS.md`](.docs/research/eval/RESULTS.md). If `turbovec` is the selected backend and it misses the gate (more than 5% relative drop, or the deep-dive point limits: Recall@10 −2 pts / Recall@30 −1), eval exits non-zero unless `--force-experimental`. Missing `turbovec` extra is an honest skip, not a silent FAISS swap.
 
-See [`.docs/research/eval/README.md`](.docs/research/eval/README.md) for the fixture schema, failure taxonomy (`dense_miss | bm25_miss | graph_miss | rerank_drop | packer_drop`), and the experimental TurboVec recall gate.
+See [`.docs/research/eval/README.md`](.docs/research/eval/README.md) for the fixture schema, failure taxonomy (`dense_miss | bm25_miss | graph_miss | rerank_drop | packer_drop`), the experimental TurboVec recall gate, and the optional MiniLM vs Jina-code embedder A/B.
 
 ### Experimental TurboVec backend (recall-gated)
 
@@ -373,6 +377,32 @@ python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml \
   --compare-markdown .docs/research/eval/RESULTS.md \
   --compare-output .docs/research/eval/RESULTS.json
 ```
+
+### Optional MiniLM vs Jina-code embedder A/B
+
+Default local embedder remains **`all-MiniLM-L6-v2` (384-d)**. `jina-embeddings-v2-base-code` (768-d, Hugging Face `jinaai/jina-embeddings-v2-base-code`) is an opt-in local candidate for the same Chroma retrieve recipe. It is **not** the Jina API (`provider: jina`) and it does **not** change production defaults.
+
+| Model | Dims | Persist dir | Expected tradeoff |
+|-------|------|-------------|-------------------|
+| `all-MiniLM-L6-v2` (default) | 384 | `.code-harness/chromadb` | Small, fast, already cached by CI/`make test` |
+| `jina-embeddings-v2-base-code` (`jina-code`) | 768 | `.code-harness/chromadb-jina-embeddings-v2-base-code` | Code-specialized, longer context, heavier download/load; do not mix into the MiniLM collection |
+
+```bash
+# Same golden suite, default MiniLM
+python3 main.py index .
+python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml
+
+# Same recipe with the Jina-code local model (isolated Chroma dir)
+python3 main.py index . --embed-model jina-embeddings-v2-base-code
+python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml \
+  --embed-model jina-embeddings-v2-base-code
+
+# Or the fixture A/B (writes .docs/research/eval/RESULTS-embed.md)
+make eval-ab-embed
+# python3 main.py eval-ab . --compare-embedders all-MiniLM-L6-v2,jina-embeddings-v2-base-code
+```
+
+Env override: `CODEHARNESS_EMBED_MODEL=jina-code` (or the full id). Missing Jina weights → `make eval-ab-embed` writes a placeholder and exits 0. `make test` never downloads Jina. Do not flip the default until the embedder A/B table justifies it.
 
 Config (never flip `type` in a copied blog snippet without the gate):
 
@@ -556,10 +586,11 @@ Global flags:
 
 | Provider | Model | Config | API Key |
 |----------|-------|--------|---------|
-| **local** | sentence-transformers (default: all-MiniLM-L6-v2) | `"provider": "local"` | None |
+| **local** | sentence-transformers (default: all-MiniLM-L6-v2, 384-d) | `"provider": "local"` | None |
+| **local** | jina-embeddings-v2-base-code (768-d; HF `jinaai/jina-embeddings-v2-base-code`; eval candidate) | `"provider": "local"` | None |
 | **openai** | text-embedding-3-small / text-embedding-3-large | `"provider": "openai"` | `OPENAI_API_KEY` |
 | **voyage** | voyage-code-2, voyage-3-large | `"provider": "voyage"` | `VOYAGE_API_KEY` |
-| **jina** | jina-embeddings-v3 | `"provider": "jina"` | `JINA_API_KEY` |
+| **jina** | jina-embeddings-v3 (API; not the local code A/B) | `"provider": "jina"` | `JINA_API_KEY` |
 
 All API-based embedding calls wrapped with `retry_with_backoff` (3 retries, exponential backoff).
 

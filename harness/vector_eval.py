@@ -260,6 +260,7 @@ def render_compare_markdown(
     generated: Optional[str] = None,
     notes: str = "",
     skips: Optional[Dict[str, str]] = None,
+    kind: str = "vector-backend-ab",
 ) -> str:
     """Persistable fixture A/B table (Recall@k / nDCG@k / latency)."""
     generated = generated or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -297,34 +298,54 @@ def render_compare_markdown(
     if skip_reason:
         gate_lines.append(f"- skip: {skip_reason}")
 
-    return f"""# TurboVec vs Chroma fixture A/B
+    axis = "embedder" if kind == "embedder-ab" else "backend"
+    if kind == "embedder-ab":
+        title = "MiniLM vs Jina-code fixture A/B"
+        intro = (
+            "Committed retrieval A/B on the project fixture suite. "
+            "jina-embeddings-v2-base-code stays an optional local candidate; "
+            "this table is the honesty record, not a default flip."
+        )
+        how_to = """```bash
+# Core retrieve stack (Chroma + default MiniLM)
+pip install -r requirements.txt
 
-Committed retrieval A/B on the project fixture suite. TurboVec stays
-experimental; this table is the honesty record, not a default flip.
+# Routine recipe: index isolated Chroma dirs, compare, write this file
+python main.py eval-ab . --compare-embedders all-MiniLM-L6-v2,jina-embeddings-v2-base-code
+# or
+make eval-ab-embed
 
-| Field | Value |
-|-------|-------|
-| Suite | `{suite}` |
-| Suite path | `{suite_path}` |
-| k | {k} |
-| Generated | {generated} |
-| Gate | {status} |
-| Notes | {notes_cell} |
+# Same recipe, one embedder at a time
+python main.py index .
+python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml
+python main.py index . --embed-model jina-embeddings-v2-base-code
+python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml \\
+  --embed-model jina-embeddings-v2-base-code
+```
 
-## Metrics
+Make target: `make eval-ab-embed`. Script: `python scripts/eval_minilm_vs_jina.py`.
 
-| backend | Recall@{k} | nDCG@{k} | citation-path | dense p50 | n |
-|---------|------------|----------|---------------|-----------|---|
-{row(result.baseline_name, result.baseline_metrics)}
-{row(result.candidate_name, result.candidate_metrics, skipped=result.skipped)}
+`all-MiniLM-L6-v2` is 384-d, small, and fast (production default).
+`jina-embeddings-v2-base-code` is 768-d, code-specialized, slower to
+download/load (~161M params), and uses a separate Chroma persist dir
+because dimensions cannot share a collection. CI and default unittest
+skip the live Jina column when the weights are absent (exit 0).
+Selecting `--embed-model jina-embeddings-v2-base-code` while the model
+cannot be loaded fails clearly (exit 1).
 
-## Gate
+## Policy
 
-{chr(10).join(gate_lines)}
-
-## How to run (local)
-
-```bash
+Default embedder remains `all-MiniLM-L6-v2`. Default dense store remains
+Chroma. Do not flip either until this table plus a larger fixture set
+justify it. `decision.enabled` stays false.
+"""
+    else:
+        title = "TurboVec vs Chroma fixture A/B"
+        intro = (
+            "Committed retrieval A/B on the project fixture suite. TurboVec stays\n"
+            "experimental; this table is the honesty record, not a default flip."
+        )
+        how_to = """```bash
 # Core retrieve stack (Chroma + local embedder)
 pip install -r requirements.txt
 
@@ -359,6 +380,34 @@ the default are later work. Do not treat a skipped or placeholder row as
 TurboQuant recall.
 """
 
+    return f"""# {title}
+
+{intro}
+
+| Field | Value |
+|-------|-------|
+| Suite | `{suite}` |
+| Suite path | `{suite_path}` |
+| k | {k} |
+| Generated | {generated} |
+| Gate | {status} |
+| Notes | {notes_cell} |
+
+## Metrics
+
+| {axis} | Recall@{k} | nDCG@{k} | citation-path | dense p50 | n |
+|---------|------------|----------|---------------|-----------|---|
+{row(result.baseline_name, result.baseline_metrics)}
+{row(result.candidate_name, result.candidate_metrics, skipped=result.skipped)}
+
+## Gate
+
+{chr(10).join(gate_lines)}
+
+## How to run (local)
+
+{how_to}"""
+
 
 def compare_artifact_dict(
     result: BackendCompareResult,
@@ -369,6 +418,7 @@ def compare_artifact_dict(
     reports: Optional[Dict[str, Any]] = None,
     skips: Optional[Dict[str, str]] = None,
     notes: str = "",
+    kind: str = "vector-backend-ab",
 ) -> Dict[str, Any]:
     generated = generated or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     slim_reports = {}
@@ -379,7 +429,7 @@ def compare_artifact_dict(
             "metrics": (report or {}).get("metrics") or {},
         }
     return {
-        "kind": "vector-backend-ab",
+        "kind": kind,
         "suite": suite,
         "suite_path": suite_path,
         "generated": generated,
@@ -401,6 +451,7 @@ def write_compare_artifacts(
     reports: Optional[Dict[str, Any]] = None,
     skips: Optional[Dict[str, str]] = None,
     notes: str = "",
+    kind: str = "vector-backend-ab",
 ) -> Dict[str, str]:
     """Write JSON and/or markdown A/B artifacts. Missing dests are skipped."""
     generated = generated or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -419,6 +470,7 @@ def write_compare_artifacts(
                     reports=reports,
                     skips=skips,
                     notes=notes,
+                    kind=kind,
                 ),
                 fh,
                 indent=2,
@@ -438,6 +490,7 @@ def write_compare_artifacts(
                     generated=generated,
                     notes=notes,
                     skips=skips,
+                    kind=kind,
                 )
             )
         written["markdown"] = markdown_path
