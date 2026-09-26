@@ -2,6 +2,12 @@
 
 Vectorize, index, and query any code repository with AI. Provides optimal context to AI models via hybrid retrieval (semantic + lexical + knowledge graph + cross-encoder reranking).
 
+## Preview
+
+![Code-Harness hybrid retrieval demo](docs/images/code-harness-demo.png)
+
+Local `query --no-llm --debug` on this repo: dense, BM25, and knowledge-graph hits fused with RRF, then cross-encoder rerank.
+
 ## Quick Start
 
 ```bash
