@@ -112,7 +112,7 @@ Embedder
 Key design:
 - Model cached at module level (`_model_cache`) — repeated instantiations reuse loaded model
 - Embeddings L2-normalized for cosine similarity
-- `embed_query()` supports HyDE query expansion (disabled by default): generates hypothetical code document, concatenates with query before embedding
+- `embed_query()` supports HyDE query expansion (disabled by default): concatenates a **free template string** (no LLM / not the decision model) with the query before embedding
 - `_expand_query()` prepends "code that" to non-code queries for better alignment
 - All HTTP API calls wrapped with `retry_with_backoff(3 retries, exponential backoff)`
 

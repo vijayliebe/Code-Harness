@@ -434,9 +434,9 @@ Repository → Tree-sitter/Regex Parse → Entities → Chunk → Embed → Vect
                                                → Build → BM25 Lexical Index
 
 Query → [optional loop] retrieve → grade → (rewrite | HyDE | deepen | proceed)
-      → Embed Query (HyDE optional) → Dense Search (40%)
-                                     → BM25 Search (30%)
-                                     → Graph Expansion (30%)
+      → Embed Query (HyDE optional) → Dense Search (30%)
+                                     → BM25 Search (25%)
+                                     → Graph Expansion (20%)
                                      → RRF Fusion
                                      → Cross-Encoder Rerank
                                      → MMR Diversity Ranking
@@ -637,7 +637,7 @@ python main.py --llm-provider custom --llm-model my-model \
 
 A decision model (TypeSafe Jev / Venice System One style) returns **typed** yes/no (`noul`), choice, or score answers with probabilities. It is **not** a chat LLM and it does **not** replace HyDE. HyDE in `harness/embedder.py` stays a free template string used only at embed time.
 
-Default is off. When `decision.enabled` is false (or unset), the query path is identical to today: heuristic loop grade / rewrite, and the existing LLM verify path.
+Default is off. Do not flip `decision.enabled` on by default until loop/verify eval justifies it. When `decision.enabled` is false (or unset), the query path is identical to today: heuristic loop grade / rewrite, and the existing LLM verify path.
 
 Enable only when configured:
 
