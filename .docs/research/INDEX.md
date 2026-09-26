@@ -51,7 +51,7 @@ Target project: [vijayliebe/Code-Harness](https://github.com/vijayliebe/Code-Har
 | File | What |
 |------|------|
 | [fusion/STEAL_MATRIX.md](fusion/STEAL_MATRIX.md) | All 25 INDEX rows: steal / module / `done`·`partial`·`gap`·`reject` / P0–P3 |
-| [fusion/GAP_AUDIT.md](fusion/GAP_AUDIT.md) | Open gaps only; recommended next 5 PRs |
+| [fusion/GAP_AUDIT.md](fusion/GAP_AUDIT.md) | Open gaps only (G6+); fusion 1–5 and polish shipped |
 | [fusion/FUSION_THESIS.md](fusion/FUSION_THESIS.md) | Differentiators + non-goals + eval/token/latency scorecard |
 | [fusion/notes/](fusion/notes/) | Mini-deepens for thin Medium / weak-primary cards |
 
@@ -73,18 +73,20 @@ Target project: [vijayliebe/Code-Harness](https://github.com/vijayliebe/Code-Har
 
 ### HIGH fusion status (vs design-only)
 
-Spine on the KG-enrichment tip: eval harness, CCR-lite packer, corrective loop, KG enrichment. That is **not** full fusion.
+Shipped on `main` (eval-first spine, then fusion 1–5, then polish): eval harness, CCR-lite, corrective loop, KG enrichment, wiki + typed memory + BM25-over-memory, session/MCP, TurboVec A/B, query-cache, optional decision client, MiniLM vs Jina-code embed A/B. That is **not** full fusion and **not** a default flip.
+
+Treat this as a production retrieve system: keep `all-MiniLM-L6-v2`, Chroma, and `decision.enabled=false` until fixture A/B plus a larger hard-set justify a change. Do not chase a leaderboard by flipping knobs.
 
 | Item | Deep dive | Fusion |
 |------|-----------|--------|
-| headroom | [deep/headroom.md](deep/headroom.md) | **Partially fused** — CCR-lite + retrieve-back. Delta: expand-on-explain, stable cache key, type-aware pack |
-| strands harness | [deep/strands-harness.md](deep/strands-harness.md) | **Partially fused** — loop stops + easy path. Delta: session budget, MCP |
-| Memanto | [deep/memanto.md](deep/memanto.md) | **Design-only** |
-| forgecode | [deep/forgecode.md](deep/forgecode.md) | **Partially fused** — pack env knob. Delta: sage profile, `/compact`, MCP-as-`:sync` |
+| headroom | [deep/headroom.md](deep/headroom.md) | **Partially fused** — CCR-lite + retrieve-back + session expand-on-explain. Delta: stable cache key, type-aware pack |
+| strands harness | [deep/strands-harness.md](deep/strands-harness.md) | **Partially fused** — loop stops + session budget + MCP. Delta: graph-explorer digest |
+| Memanto | [deep/memanto.md](deep/memanto.md) | **Partially fused** — typed OKF memory + brief + extract + opt-in BM25-over-memory. Delta: eval “why did we…?” fixtures |
+| forgecode | [deep/forgecode.md](deep/forgecode.md) | **Partially fused** — sage + `/compact` + MCP retrieve. Delta: caveman prompt |
 | code graph | [deep/code-graph.md](deep/code-graph.md) | **Partially fused** — exposes/tested_by/gloss + beam + Mermaid. Delta: path templates, `calls` quality |
-| turboVec | [deep/turbovec.md](deep/turbovec.md) | **Design-only** (blocked on recall gates) |
-| OKF (Google SPEC) | [deep/okf.md](deep/okf.md) | **Partially fused** — WikiPage emit + typed memory + full-vault `knowledge export|import` + opt-in packer prefix-load + chat-over-wiki. Delta: BM25-over-memory |
-| Prompt→Loop→Graph | [deep/prompt-loop-graph-engineering.md](deep/prompt-loop-graph-engineering.md) | **Partially fused** — eval + loop. Delta: session state, `path:symbol` cites |
-| Google Code Wiki | [deep/google-code-wiki.md](deep/google-code-wiki.md) | **Partially fused** — `wiki generate` + Mermaid + `--dirty` / watch + opt-in wiki RRF + chat-over-wiki via CCR. Delta: LLM polish |
+| turboVec | [deep/turbovec.md](deep/turbovec.md) | **Partially fused** — opt-in backend + fixture A/B (`make eval-ab`). Default stays Chroma until gates say otherwise |
+| OKF (Google SPEC) | [deep/okf.md](deep/okf.md) | **Partially fused** — WikiPage + typed memory + vault export + packer prefix + chat-over-wiki + BM25-over-memory. Delta: Attested Computation (out of scope) |
+| Prompt→Loop→Graph | [deep/prompt-loop-graph-engineering.md](deep/prompt-loop-graph-engineering.md) | **Partially fused** — eval + loop + session + `path:symbol` + optional decision client (off). Delta: no LangGraph |
+| Google Code Wiki | [deep/google-code-wiki.md](deep/google-code-wiki.md) | **Partially fused** — `wiki generate` + `--dirty` / watch + opt-in wiki RRF + chat-over-wiki. Delta: LLM polish |
 | Claude Code harness | — (first-pass) | **Partially fused** — tool-result clearing + default-fail verify gate (opt-in). Not a Claude Code clone |
 | DeepSeek Harness | — (first-pass) | **Partially fused** — event log, pre-step retrieve, session FTS. Remainder: `llm-retry`. Do not vendor Cordis |

@@ -7,8 +7,9 @@ Code Harness is a RAG (Retrieval-Augmented Generation) system purpose-built for 
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                     CLI (main.py)                        │
-│   index | query | interactive | info | clear             │
-│   watch | visualize | eval | doctor | serve / mcp        │
+│   index | query | chat/session | info | wiki | memory    │
+│   knowledge | watch | visualize | eval | eval-ab         │
+│   doctor | serve / mcp stdio | audit | clear             │
 └──────┬──────────────────┬──────────────────────────────┘
        │                  │
        ▼                  ▼
@@ -120,7 +121,7 @@ Key design:
 
 **Purpose**: Persistent storage and similarity search over embeddings.
 
-**Backend**: ChromaDB PersistentClient with tuned HNSW index.
+**Backend**: default **ChromaDB** PersistentClient with tuned HNSW. Opt-in experimental **TurboVec** (`vector_store.type: turbovec`, isolated persist dir) is recall-gated via `make eval-ab`. Do not flip the default until that table plus a larger hard-set justify it. MiniLM vs local Jina-code uses isolated Chroma dirs (`make eval-ab-embed`); default embedder stays `all-MiniLM-L6-v2`.
 
 ```
 add_chunks(chunks, embeddings)
@@ -223,7 +224,7 @@ Pack modes (`context.pack_mode`, default **`full`**):
 
 Ranking (dense / BM25 / graph / CE / MMR) is unchanged. Expand via `python main.py retrieve-chunk <id>` or `query --expand-chunk <id>`.
 
-After assembly, `ContextBuilder` runs `harness/redact.py` (default on) so packed/LLM text never carries common secrets. Hits append fingerprints to `.code-harness/audit/audit.jsonl` (`python main.py audit show --last 20`). Disable only with `--no-redact` / `CODEHARNESS_REDACT=0`. `LLMInterface.prepare_outbound` is the same helper PR5 should call on retrieve/API bodies.
+After assembly, `ContextBuilder` runs `harness/redact.py` (default on) so packed/LLM text never carries common secrets. Hits append fingerprints to `.code-harness/audit/audit.jsonl` (`python main.py audit show --last 20`). Disable only with `--no-redact` / `CODEHARNESS_REDACT=0`. `LLMInterface.prepare_outbound` and serve/MCP `redact_and_audit` share that helper.
 
 MMR diversity: `MMR_score = relevance - lambda * max(similarity_to_selected)` prevents the same file from dominating the context window.
 
@@ -298,7 +299,7 @@ Files on disk
 
 ### Query Flow
 
-`query` / `chat` / session run registered `before_model` hooks (`harness/prestep.py`) before the model step. Default hook: `RetrievePreStep` (hybrid retrieve + pack). Disable with `--no-retrieve-prestep`. `POST /v1/retrieve` shares `run_retrieve_pack` (HTTP body unchanged).
+`query` / `chat` / session run registered `before_model` hooks (`harness/prestep.py`) before the model step. Default hook: `RetrievePreStep` (hybrid retrieve + pack). Disable with `--no-retrieve-prestep`. `POST /v1/retrieve` shares `run_retrieve_pack` (HTTP body unchanged). Opt-in loop (`--loop` / `max_loops`, default **0**) may rewrite / HyDE-on-retry / deepen. Optional decision client (`decision.enabled`, default **false**) can own loop grade + verify; on error it falls back to heuristics. HyDE stays a free template.
 
 ```
 User Query (--debug flag optional)
@@ -307,13 +308,20 @@ User Query (--debug flag optional)
 [HookRegistry.run_before_model]  # RetrievePreStep default
     │
     ▼
-[Embedder.embed_query()] → query vector (HyDE optional)
+[optional loop] retrieve → grade → (rewrite | HyDE | deepen | proceed)
+    │
+    ▼
+[Embedder.embed_query()] → query vector (HyDE optional template)
     │
     ├──→ [VectorStore.search()] → dense results (0.3 weight)
     │
     ├──→ [BM25.get_scores()] → sparse results (0.25 weight)
     │
-    └──→ [KG.get_related_chunks()] → graph results (0.2 weight)
+    ├──→ [KG.get_related_chunks()] → graph beam (0.2; width=6, depth=2)
+    │
+    ├──→ [wiki RRF] if wiki_weight > 0 (default 0.0)
+    │
+    └──→ [memory RRF] if memory_weight > 0 (default 0.0)
     │
     ▼
 [RRF Fusion] → merged + deduplicated results
@@ -329,24 +337,31 @@ User Query (--debug flag optional)
     │  Deduplicate by line range
     │  Rerank (term overlap, entity type, docstring)
     │  MMR diversity rerank (lambda=0.3)
-    │  Assemble context within token budget
+    │  Assemble context within token budget (full | ccr_lite)
     ▼
 [LLMInterface.query()] → AI response (retry-wrapped)
+    │
+    └── optional --verify (citation / session gate; decision client if enabled)
 ```
 
 ## Storage Layout
 
 ```
 .code-harness/
-├── chromadb/
-│   ├── chroma.sqlite3
-│   └── ...                      # HNSW index + document metadata
+├── chromadb/                    # Default MiniLM persist (HNSW + metadata)
+├── chromadb-jina-embeddings-v2-base-code/  # Isolated Jina-code Chroma dir
+├── turbovec/                    # Optional TurboVec persist (not default)
 ├── graph_{repo}.json            # Per-repo knowledge graph
 ├── bm25_{repo}.pkl              # Per-repo BM25 serialized index
 ├── repo_graph.json              # Inter-repo relationship graph
+├── eval/                        # Retrieval eval reports
+├── ccr/                         # Optional CCR-lite originals
+├── audit/                       # Redaction/LLM audit JSONL
+├── sessions/                    # Chat JSONL (+ optional .fts.sqlite)
+└── query_cache.sqlite           # Serve default-on; query/chat/eval opt-in
 ```
 
-**No `chunks.json`**: Chunks are loaded from ChromaDB at query time.
+**No `chunks.json`**: Chunks are loaded from the configured vector backend at query time. Do not mix MiniLM (384-d) and Jina-code (768-d) into one Chroma collection.
 
 ## Key Design Decisions
 

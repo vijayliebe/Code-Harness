@@ -6,12 +6,14 @@ This directory is the **map** from researched sources to a hybrid code-RAG that 
 |------|---------|
 | [FUSION_THESIS.md](FUSION_THESIS.md) | What “best of its kind” means for *this* product + scorecard |
 | [STEAL_MATRIX.md](STEAL_MATRIX.md) | Every INDEX resource (25) → stealable idea, module, status, priority |
-| [GAP_AUDIT.md](GAP_AUDIT.md) | Open gaps only, ranked; **next 5 after polish** (TurboVec A/B, query-cache) then historical fusion 1–5 |
+| [GAP_AUDIT.md](GAP_AUDIT.md) | Open gaps only, ranked. Fusion 1–5 and polish (TurboVec A/B, query-cache, decision client, embed A/B) **shipped**; remaining work is G6+ |
 | [notes/](notes/) | Mini-deepens for thin Medium / weak-primary cards |
 
-Spine already shipped on `cursor/kg-enrichment-3590` (and ancestors):
+Spine already shipped on `main`:
 
 `eval metrics → CCR-lite packer → corrective query loop → KG enrichment (exposes/tested_by/gloss + beam + Mermaid)`
+
+Do not cite `cursor/kg-enrichment-3590` as the tip — that was an intermediate spine branch.
 
 Fusion PR #1 (wiki generate MVP) adds `wiki generate|list|show` — OKF `WikiPage` markdown under `knowledge/wiki/`, `path:symbol` cites, Mermaid from the KG.
 
@@ -25,8 +27,10 @@ Fusion PR #3 (interactive session) adds `chat` / `session` / `repl` aliases, JSO
 
 Fusion PR #4 (secret redaction + audit) adds `harness/redact.py` + append-only `.code-harness/audit/audit.jsonl`. Packed/LLM text is redacted by default; `audit show --last N` prints fingerprint hashes, never raw secrets. Disable only via `--no-redact` / `CODEHARNESS_REDACT=0`.
 
-Fusion PR #5 (`doctor` + localhost MCP / `POST /v1/retrieve`) adds `harness/doctor.py` + `harness/serve.py`. `doctor` probes Python/deps/index/graph/embed/redact/audit/LLM-key (no network). `serve` / `mcp serve` / `api serve` bind **127.0.0.1** only unless `--allow-public` (dangerous, no auth). `mcp stdio` speaks the same tools over stdin/stdout (no bind). Response bodies go through `redact_and_audit`. Query-hash cache lives in `harness/query_cache.py` (serve default-on; `query` / `chat` / `eval` opt-in via `--query-cache`).
+Fusion PR #5 (`doctor` + localhost MCP / `POST /v1/retrieve`) adds `harness/doctor.py` + `harness/serve.py`. `doctor` probes Python/deps/index/graph/embed/redact/audit/LLM-key **and** optional decision-model key (no network; missing decision key is a warn). `serve` / `mcp serve` / `api serve` bind **127.0.0.1** only unless `--allow-public` (dangerous, no auth). `mcp stdio` speaks the same tools over stdin/stdout (no bind). Response bodies go through `redact_and_audit`. Query-hash cache lives in `harness/query_cache.py` (serve default-on; `query` / `chat` / `eval` opt-in via `--query-cache`).
 
-First-pass research (2026-09-25, merged from the parallel BM25 notes branch): [../claude-code-harness.md](../claude-code-harness.md) (#24) and [../deepseek-harness.md](../deepseek-harness.md) (#25). Steal **seams** (clearing, default-fail eval, event-sourced session, retrieve-as-pre-step, session FTS) — **shipped** on the session-event FTS tip. Do **not** vendor Cordis or clone Claude Code / community Plan→Work→Review repos. Session budget and “session ≠ memory ≠ index” stay with Strands (#3) / Memanto (#5) — do not double-count.
+**Polish shipped on `main` (still not default flips):** TurboVec fixture A/B (`make eval-ab` / [RESULTS.md](../eval/RESULTS.md)); MiniLM vs local `jina-embeddings-v2-base-code` embed A/B (`make eval-ab-embed` / [RESULTS-embed.md](../eval/RESULTS-embed.md) — not the Jina API); optional typed decision client (`harness/decision.py`, `decision.enabled` default **false**, loop grade + verify only — **not** HyDE). Keep MiniLM, Chroma, and `decision.enabled=false` until those tables plus a larger hard-set justify a change. This is a real retrieve system: eval first, trade-offs explicit, no leaderboard-knob flipping.
+
+First-pass research (2026-09-25, merged from the parallel BM25 notes branch): [../claude-code-harness.md](../claude-code-harness.md) (#24) and [../deepseek-harness.md](../deepseek-harness.md) (#25). Steal **seams** (clearing, default-fail eval, event-sourced session, retrieve-as-pre-step, session FTS) — **shipped**. Do **not** vendor Cordis or clone Claude Code / community Plan→Work→Review repos. Session budget and “session ≠ memory ≠ index” stay with Strands (#3) / Memanto (#5) — do not double-count.
 
 Read [../INDEX.md](../INDEX.md) → this pack → [../deep/INTEGRATION_PLAN.md](../deep/INTEGRATION_PLAN.md) for the original sequence.

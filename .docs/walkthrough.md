@@ -1,6 +1,6 @@
 # End-to-End Walkthrough
 
-This document traces a single piece of code through every stage of the pipeline, from raw file to query response, incorporating tree-sitter parsing, HyDE query expansion, cross-encoder reranking, and MMR diversity.
+This document traces a single piece of code through every stage of the pipeline, from raw file to query response, incorporating tree-sitter parsing, optional HyDE query expansion (a **free template string**, off by default — not an LLM and not the decision client), cross-encoder reranking, and MMR diversity. The corrective loop, `--verify`, and `decision.enabled` stay **off** unless you opt in.
 
 ## Sample Code
 
@@ -243,8 +243,8 @@ query = "How do I verify a user's password?"
 query_vec = embedder.embed_query("How do I verify a user's password?")
 # Internally expands to: "code that How do I verify a user's password?"
 
-# With HyDE enabled:
-# Generates hypothetical document first:
+# With HyDE enabled (retrieval.hyde.enabled / loop hyde-on-retry):
+# Concatenates a free template — no LLM call:
 # "The following code implements How do I verify a user's password?..."
 # Then embeds: query + hyde_text concatenated
 ```
@@ -253,7 +253,7 @@ The query vector is compared against all 8 chunk vectors in ChromaDB via cosine 
 
 ### Step 5b: Dense Search (semantic)
 
-ChromaDB finds the 40 nearest neighbors:
+ChromaDB returns `retrieval.top_k` neighbors (default **30**):
 
 | Chunk | Cosine Similarity |
 |-------|------------------|
@@ -285,7 +285,7 @@ Entity IDs from dense + sparse results:
 - `class:auth.py:User`
 - `method:auth.py:AuthService.login`
 
-Graph traversal (max_depth=3):
+Graph expansion is **beam** by default (`beam_width=6`, `beam_depth=2`, cap `expand_neighbors * 2`). `expand_mode: bfs` restores the old hop walk (`max_depth` ≈ `expand_neighbors`). On this toy graph the beam still reaches:
 
 | Seed Entity | Neighbors Found |
 |------------|-----------------|

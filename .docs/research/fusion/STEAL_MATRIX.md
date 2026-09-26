@@ -1,6 +1,6 @@
 # Steal matrix — every INDEX resource
 
-Inventory of [../INDEX.md](../INDEX.md) (25 items, including fuzzy-resolved names). Status is judged against **this branch tip**: eval harness, CCR-lite packer, corrective query loop, KG enrichment, wiki, typed memory+OKF + heuristic `memory extract` (opt-in auto), session `/compact`/`/cost` + **opt-in tool-result clearing** + **opt-in default-fail verify gate** + **opt-in event-sourced session + prefix-stable packing** + **retrieve-as-pre-step hook seam** + **session-event FTS** (DeepSeek steal wave **5/5**), secret redaction + audit JSONL, doctor + localhost MCP / `POST /v1/retrieve`, **experimental TurboVec backend (recall-gated) + fixture-suite A/B table**.
+Inventory of [../INDEX.md](../INDEX.md) (25 items, including fuzzy-resolved names). Status is judged against **`main`**: eval harness, CCR-lite packer, corrective query loop, KG enrichment, wiki, typed memory+OKF + heuristic `memory extract` (opt-in auto) + **opt-in BM25-over-memory**, session `/compact`/`/cost` + **opt-in tool-result clearing** + **opt-in default-fail verify gate** + **opt-in event-sourced session + prefix-stable packing** + **retrieve-as-pre-step hook seam** + **session-event FTS** (DeepSeek steal wave **5/5**), secret redaction + audit JSONL, doctor + localhost MCP / `POST /v1/retrieve` + **query-cache**, **experimental TurboVec backend (recall-gated) + fixture-suite A/B** (`make eval-ab`), **optional decision client** (`decision.enabled` default false; loop grade + verify only — not HyDE), **MiniLM vs local Jina-code embed A/B** (`make eval-ab-embed`). Defaults stay MiniLM / Chroma / decision off until those tables plus a larger hard-set justify a flip.
 
 **This is not a claim that fusion is complete.** Rows marked `done` mean the *stealable mechanism* is in-tree; siblings on the same card may still be `gap`.
 
@@ -72,7 +72,7 @@ Mini-deepens for thin cards: [notes/](notes/).
 - **Links:** https://github.com/strands-agents/harness-sdk · https://strandsagents.com/docs/user-guide/harness/ · deep [../deep/strands-harness.md](../deep/strands-harness.md)
 - **Best stealable ideas:** (1) Context-budget policy — never drop latest query + top pack; summarize/drop older packs. (2) Session ≠ long-term memory ≠ code index. (3) Explicit loop stops (grade / coverage / max_loops / easy path).
 - **Why it matters:** Tokens on interactive; accuracy by not mixing chat into Chroma; latency via BM25-only easy path (already in loop).
-- **Map to module:** query loop (`harness/loop.py` — **done** for stops/easy/HyDE-on-retry); NEW session store; later MCP.
+- **Map to module:** query loop (`harness/loop.py` — **done** for stops/easy/HyDE-on-retry); session store **done**; MCP **done**.
 - **Status:** `partial` — loop policy shipped (`max_loops` default 0); session JSONL + never-drop-latest-pack budget **shipped**. Tool-result clearing (keep latest pack / latest user, drop aged retrieve dumps) **shipped** opt-in. Default-fail verify gate **shipped** opt-in. Opt-in event-sourced session + `derive_messages` **shipped** (`--event-session`). Retrieve-as-pre-step hook seam **shipped** (DeepSeek #25). Session-event FTS **shipped** (`session search` / `/search` / `search_session`; DeepSeek steal wave 5/5). **Delta:** no subagent graph-explorer, no `create_harness` factory (correctly skipped).
 - **Fusion priority:** P1 session+budget. P2 graph-explorer subagent after wiki. Do not `pip install strands-harness`.
 - **Evidence:** deep-dive
@@ -153,7 +153,7 @@ Mini-deepens for thin cards: [notes/](notes/).
 - **Best stealable ideas:** (1) Ordered backend list + **real probe** + `doctor` prescription. (2) Jina Reader as no-key web ingest. (3) Fallback, not wrapper.
 - **Why it matters:** Ops/reliability when Voyage/OpenAI keys die; local-first default embed. Accuracy later via `index-url`.
 - **Map to module:** `harness/doctor.py` + CLI `doctor`; embedder/LLM fallback; ingest (P2 with Firecrawl).
-- **Status:** `partial` — `python main.py doctor` probes Python/deps/index/graph/embed config/redact/audit/LLM-key (no network) and prints a fix hint. Silent cloud-key fallback still refused (missing Voyage key **fails** doctor). LinkedIn/cookie platforms **reject**. **Delta:** no live embed ping; no ordered runtime fallback channel registry; Jina `index-url` still P2.
+- **Status:** `partial` — `python main.py doctor` probes Python/deps/index/graph/embed config/redact/audit/LLM-key **and** optional decision-model key (no network; missing decision key is a warn) and prints a fix hint. Silent cloud-key fallback still refused (missing Voyage key **fails** doctor). LinkedIn/cookie platforms **reject**. Local MiniLM vs `jina-embeddings-v2-base-code` embed A/B is **shipped** (`make eval-ab-embed`) and is **not** this card’s Jina Reader ingest. **Delta:** no live embed ping; no ordered runtime fallback channel registry; Jina `index-url` web ingest still P2.
 - **Fusion priority:** P1 doctor **shipped**; P2 Jina ingest.
 - **Evidence:** fusion-note
 
@@ -193,7 +193,7 @@ Mini-deepens for thin cards: [notes/](notes/).
 - **Best stealable ideas:** (1) Optional 4-bit TurboQuant backend. (2) BM25∪graph **allowlist inside SIMD** then dense. (3) Incremental `sync()` with `watch`.
 - **Why it matters:** Latency + RAM on multi-repo indexes. Accuracy **risk** (quantized ANN).
 - **Map to module:** vector store (`vector_store.type`); retriever dense stage only — do not replace RRF.
-- **Status:** `partial` — `VectorStore` protocol + `chromadb` default + opt-in `turbovec` (`IdMapIndex` / sidecar) + `eval --compare-backends` Recall@k / nDCG@k gate + **fixture-suite A/B runner** (`eval-ab` / `make eval-ab`) that persists [RESULTS.md](../eval/RESULTS.md). Default stays Chroma. **Delta:** dual-write spike, TQ+ `calibrate`, default flip after gates, incremental `sync()` cost vs Chroma upsert.
+- **Status:** `partial` — `VectorStore` protocol + `chromadb` default + opt-in `turbovec` (`IdMapIndex` / sidecar) + `eval --compare-backends` Recall@k / nDCG@k gate + **fixture-suite A/B runner** (`eval-ab` / `make eval-ab`) that persists [RESULTS.md](../eval/RESULTS.md). Default stays Chroma — n=8 is a gate record, not a leaderboard win. Sibling embed A/B (`make eval-ab-embed`) is the same discipline for MiniLM vs local Jina-code. **Delta:** dual-write spike, TQ+ `calibrate`, default flip only after gates + a larger fixture set, incremental `sync()` cost vs Chroma upsert.
 - **Fusion priority:** P1 experimental; stay opt-in until Recall@10 ≥ −2 pts and Recall@30 ≥ −1 vs Chroma (also 5% relative).
 - **Evidence:** deep-dive (no extra fusion note)
 
@@ -203,7 +203,7 @@ Mini-deepens for thin cards: [notes/](notes/).
 - **Best stealable ideas:** (1) Markdown+YAML concepts, path identity, required `type`, preserve unknown keys. (2) `knowledge/` as prefix source. (3) `okf_version: "0.2"` + `x_codeharness` extensions.
 - **Why it matters:** Portability across Claude/Cursor/Memanto; git-diffable wiki/memory; tokens via brief pages vs chat logs.
 - **Map to module:** `harness/okf.py` (WikiPage + typed memory + vault); CLI `knowledge export|import` (alias `okf`) and `memory export|import`.
-- **Status:** `partial` — `wiki generate` writes SPEC v0.2 `WikiPage`; `memory export|import` round-trips `Decision`/`Error`/`Preference`/`Fact`; `knowledge export|import` ships the whole vault (wiki + memory + gloss + local `.code-harness/gloss`) with `okf-manifest.yaml` (`counts`, `okf_version`, `generated`) and unknown-key preservation (`x_memanto` / `x_other`). Shared parser, path identity, `okf_version: "0.2"`, `x_codeharness`. Packer prefix-load of `knowledge/**/*.md` is **opt-in** (`context.knowledge_prefix`, default **off**; `--include-knowledge-prefix` / `CODEHARNESS_KNOWLEDGE_PREFIX=1`) with a hard `context.knowledge_token_budget` (default **800**, `len//4`), keyword rank on title/path, path-dedupe against wiki RRF hits, and skip of memory pages when `--include-memory-brief` is on. Chat-over-wiki via CCR is **shipped** (`chat --wiki` / `query --wiki` / `/wiki` / `chat.wiki_mode`; `harness/wiki_chat.py`). **Delta:** BM25-over-memory channel, Attested Computation **out of scope**.
+- **Status:** `partial` — `wiki generate` writes SPEC v0.2 `WikiPage`; `memory export|import` round-trips `Decision`/`Error`/`Preference`/`Fact`; `knowledge export|import` ships the whole vault (wiki + memory + gloss + local `.code-harness/gloss`) with `okf-manifest.yaml` (`counts`, `okf_version`, `generated`) and unknown-key preservation (`x_memanto` / `x_other`). Shared parser, path identity, `okf_version: "0.2"`, `x_codeharness`. Packer prefix-load of `knowledge/**/*.md` is **opt-in** (`context.knowledge_prefix`, default **off**; `--include-knowledge-prefix` / `CODEHARNESS_KNOWLEDGE_PREFIX=1`) with a hard `context.knowledge_token_budget` (default **800**, `len//4`), keyword rank on title/path, path-dedupe against wiki RRF hits, and skip of memory pages when `--include-memory-brief` is on. Chat-over-wiki via CCR is **shipped** (`chat --wiki` / `query --wiki` / `/wiki` / `chat.wiki_mode`; `harness/wiki_chat.py`). Opt-in BM25-over-memory RRF **shipped** (`retrieval.memory_weight` default **0.0**). **Delta:** eval “why” fixtures; Attested Computation **out of scope**.
 - **Fusion priority:** P0 (same wave as memory; wiki emits `WikiPage`)
 - **Evidence:** deep-dive
 
@@ -223,7 +223,7 @@ Mini-deepens for thin cards: [notes/](notes/).
 - **Best stealable ideas:** (1) Retrieve as a graded loop with stop conditions. (2) Eval anchors before topology fashion. (3) Independent verify node (fresh context, no generator CoT). (4) Do **not** graphify indexing.
 - **Why it matters:** Accuracy (retry/deepen); tokens (easy path); ops (replayable traces).
 - **Map to module:** eval **done**; loop **done** (opt-in); citation `--verify` **wired, off**; session completion gate **shipped, off**; `path:symbol` system line **done**; session JSONL **done**.
-- **Status:** `partial` — independent completion verify **shipped** (`harness/verify.py`, `/verify`, `/done --force`, optional `eval --verify` on `completion_criteria`). Retrieval eval stays retrieval-only unless `--verify` and a rubric are present. **Delta:** no LangGraph.
+- **Status:** `partial` — independent completion verify **shipped** (`harness/verify.py`, `/verify`, `/done --force`, optional `eval --verify` on `completion_criteria`). Retrieval eval stays retrieval-only unless `--verify` and a rubric are present. Optional typed **decision client** (`harness/decision.py`) can own loop grade / verify when `decision.enabled` is on; default **false**; HyDE stays a free template. Do not flip that default until loop/verify eval justifies it. **Delta:** no LangGraph.
 - **Fusion priority:** P1 citation instruction (tiny) + session (with #3/#13).
 - **Evidence:** deep-dive
 
@@ -314,6 +314,11 @@ Mini-deepens for thin cards: [notes/](notes/).
 | Event-sourced session + `derive_messages` + prefix-stable packing (opt-in) | `harness/events.py`, `harness/prefix.py`, `harness/session.py`, `ContextBuilder` |
 | Retrieve-as-pre-step hook seam (default on; disable to skip) | `harness/prestep.py`, `query` / `chat` / `RetrieveService` |
 | Session-event FTS (SQLite FTS5; event log only, not OKF memory) | `harness/session_fts.py`, `session search` / `/search` / `search_session` |
+| Query-hash cache (serve default-on; query/chat/eval opt-in) | `harness/query_cache.py` |
+| TurboVec opt-in + fixture A/B (Chroma stays default) | `harness/turbovec_store.py`, `eval-ab` / `make eval-ab` |
+| MiniLM vs local Jina-code embed A/B (MiniLM stays default) | `harness/embedder.py`, `eval-ab --compare-embedders` / `make eval-ab-embed` |
+| Optional decision client (off; loop grade + verify; not HyDE) | `harness/decision.py` |
+| BM25-over-memory RRF (weight default 0.0) | `harness/memory.py`, `retrieval.memory_weight` |
 
 ## Biggest underextracted sources
 
@@ -322,7 +327,7 @@ Sources with the most **material delta** still on the table (not rejects):
 1. **Google Code Wiki + OKF** — `wiki generate` + WikiPage emit + `--dirty` / watch hook + opt-in RRF `wiki_weight` + full-vault `knowledge export|import` + opt-in packer prefix-load of `knowledge/**/*.md` + chat-over-wiki via CCR shipped; remaining: LLM polish.
 2. **Memanto** — typed store + supersession + brief + heuristic auto-extract + opt-in BM25-over-memory RRF shipped; remaining: eval “why” fixtures.
 3. **Strands + Forge + Claurst + Claude Code + DeepSeek** — session `/compact` `/cost` sage + **opt-in tool-result clearing** + **opt-in default-fail verify gate** + **opt-in event-session + prefix-stable packing** + **retrieve-as-pre-step hook seam** + **session-event FTS** + localhost HTTP + stdio MCP retrieve shipped; remaining: caveman, graph-explorer digest, DeepSeek `llm-retry`.
-4. **Agent-Reach + Proxima + OpenHuman** — doctor + query cache + MCP/`POST /v1/retrieve` + **stdio MCP** **shipped** (loopback HTTP / no-bind stdio). Query cache now covers serve + opt-in query/chat/eval. Remainder: Jina ingest.
-5. **TurboVec** — protocol + opt-in backend + eval A/B gate + **fixture-suite A/B table** shipped; still experimental, not default. Remainder: dual-write, TQ+ calibrate, default flip.
+4. **Agent-Reach + Proxima + OpenHuman** — doctor (incl. decision-key warn) + query cache + MCP/`POST /v1/retrieve` + **stdio MCP** **shipped** (loopback HTTP / no-bind stdio). Query cache now covers serve + opt-in query/chat/eval. Local Jina-code *embed* A/B is shipped separately (`make eval-ab-embed`). Remainder: Jina/Firecrawl `index-url` *web ingest*.
+5. **TurboVec + embed A/B** — protocol + opt-in backend + fixture A/B tables shipped; still experimental. Do not flip Chroma or MiniLM until gates plus a larger hard-set say so. Remainder: dual-write, TQ+ calibrate, default flip.
 6. **Headroom remainder** — expand-on-explain, stable cache key, type-aware pack.
 7. **Code-graph remainder** — path templates, `calls` quality (regex is the real accuracy bug).
