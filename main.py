@@ -185,9 +185,12 @@ def cmd_query(args):
             generate = lambda system, context, user_q: llm.stream_query(system, context, user_q)
         else:
             generate = lambda system, context, user_q: llm.query(system, context, user_q)
+    from harness.decision import build_decision_client
+
+    decider = build_decision_client(config)
     verifier = None
-    if config.retrieval.get("verify") and llm is not None:
-        verifier = lambda q, a, packed: verify_answer(llm, q, a, packed)
+    if config.retrieval.get("verify") and (llm is not None or decider is not None):
+        verifier = lambda q, a, packed: verify_answer(llm, q, a, packed, decider=decider)
 
     debug = getattr(args, 'debug', False)
     cache = _build_query_cache(args, config, print)
@@ -465,9 +468,12 @@ def cmd_interactive(args):
                 generate = lambda system, context, user_q: llm.stream_query(system, context, user_q)
             else:
                 generate = lambda system, context, user_q: llm.query(system, context, user_q)
+        from harness.decision import build_decision_client
+
+        decider = build_decision_client(config)
         verifier = None
-        if config.retrieval.get("verify") and can_generate:
-            verifier = lambda q, a, packed: verify_answer(llm, q, a, packed)
+        if config.retrieval.get("verify") and (can_generate or decider is not None):
+            verifier = lambda q, a, packed: verify_answer(llm, q, a, packed, decider=decider)
         ctx = run_query_turn(
             query,
             retriever=retriever,
@@ -1494,6 +1500,11 @@ def _eval_snapshot(config, context_builder, backend_name: str) -> Dict:
         "session": {
             "verify": bool((getattr(config, "session", None) or {}).get("verify")),
         },
+        "decision": {
+            "enabled": bool((getattr(config, "decision", None) or {}).get("enabled")),
+            "provider": (getattr(config, "decision", None) or {}).get("provider"),
+            "uses": list((getattr(config, "decision", None) or {}).get("uses") or []),
+        },
     }
 
 
@@ -1617,6 +1628,7 @@ def cmd_eval(args):
             "redaction": dict(config.redaction),
             "serve": dict(config.serve),
             "query_cache": dict(getattr(config, "query_cache", None) or {}),
+            "decision": dict(getattr(config, "decision", None) or {}),
             "repo_path": config.repo_path,
             "verbose": config.verbose,
         })
@@ -1978,6 +1990,7 @@ def _load_config(args) -> Config:
     if env_audit in ("0", "false", "off", "no"):
         config.redaction["audit"] = False
 
+    from harness.decision import apply_decision_config
     from harness.events import apply_event_session_config
     from harness.prestep import apply_retrieve_prestep_config
     from harness.tool_clear import apply_clear_tool_config
@@ -1987,6 +2000,7 @@ def _load_config(args) -> Config:
     apply_verify_config(config, args)
     apply_event_session_config(config, args)
     apply_retrieve_prestep_config(config, args)
+    apply_decision_config(config, args)
 
     _apply_loop_args(config, args)
 

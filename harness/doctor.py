@@ -106,6 +106,7 @@ def run_doctor(
     report.checks.append(_check_redact(cfg, env))
     report.checks.append(_check_audit(cfg, root))
     report.checks.append(_check_llm(cfg, env))
+    report.checks.append(_check_decision(cfg, env))
     return report
 
 
@@ -362,6 +363,35 @@ def _check_llm(config: Config, env: Dict[str, str]) -> CheckResult:
             f"export {env_name}=... or use --llm-provider ollama / --no-llm",
         )
     return CheckResult("llm", "pass", f"{provider}/{model} (key present, no ping)")
+
+
+def _check_decision(config: Config, env: Dict[str, str]) -> CheckResult:
+    from .decision import LOCAL_PROVIDERS, resolve_decision_api_key
+
+    decision = getattr(config, "decision", None) or {}
+    if not decision.get("enabled"):
+        return CheckResult("decision", "pass", "disabled (default)")
+    provider = str(decision.get("provider") or "").strip().lower()
+    if provider in LOCAL_PROVIDERS:
+        return CheckResult(
+            "decision",
+            "pass",
+            f"{provider or 'local'} (no key required)",
+        )
+    key = resolve_decision_api_key(decision, environ=env)
+    if not key:
+        return CheckResult(
+            "decision",
+            "warn",
+            f"{provider or 'jev'} enabled but no API key; falling back to heuristics",
+            "export CODEHARNESS_DECISION_API_KEY / TYPESAFE_API_KEY / JEV_API_KEY "
+            "(or set decision.provider to mock)",
+        )
+    return CheckResult(
+        "decision",
+        "pass",
+        f"{provider or 'jev'} (key present, no ping)",
+    )
 
 
 def print_report(report: DoctorReport, file=None) -> None:
