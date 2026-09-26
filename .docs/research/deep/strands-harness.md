@@ -162,7 +162,7 @@ Otherwise `hybrid`. Graph-deepen words: `{caller, callee, exposes, unused, dead,
 
 ## 13. Implementation checklist
 
-- [ ] `retrieval.max_loops` (default 1 extra)
+- [x] `retrieval.max_loops` (shipped default **0** = one-shot; `--loop` is one extra)
 - [ ] Easy-path detector unit tests (identifier vs explain)
 - [ ] Budget never drops latest pack
 - [ ] Session JSONL optional behind `session.enabled` (default off)

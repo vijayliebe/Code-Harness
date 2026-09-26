@@ -4,9 +4,9 @@ Status `gap`, or `partial` with a **material** delta. Rejects and fully shipped 
 
 Spine already shipped: **eval → CCR-lite → corrective loop → KG enrichment**. This file is what to fuse *next*. Nothing here claims best-of-kind is done.
 
-## Recommended next 5 fusion PRs
+## Recommended next 5 fusion PRs (historical — all shipped)
 
-Order is RAG-quality first (Recall@k, citation-path, tokens), then ops/distribution. Each PR stays local-first and eval-gated.
+These five landed on `main`. Remaining open work is G6+ below. Order was RAG-quality first (Recall@k, citation-path, tokens), then ops/distribution. Each PR stayed local-first and eval-gated.
 
 | # | PR | Size | Owns | Depends on |
 |---|-----|------|------|------------|
@@ -16,7 +16,7 @@ Order is RAG-quality first (Recall@k, citation-path, tokens), then ops/distribut
 | **4** | **Secret redaction + audit JSONL** — strip key/token patterns before assemble; append query/chunk_ids/tokens/model. *(redact + audit JSONL + `audit show` shipped; optional max-token hard stop still open)* | S | Governance #19, Proxima `analyze_file` strip | None. **Do this before binding a network port** |
 | **5** | **`doctor` + `mcp serve` / `mcp stdio` / `POST /v1/retrieve`** — probe embed/LLM with ordered fallbacks; expose `retrieve`, `retrieve_chunk`, `graph_neighbors`. Optional SQLite query-hash cache. *(`doctor` + localhost HTTP/MCP + **stdio MCP** + bind guard + redacted bodies + query cache on serve + opt-in query/chat/eval shipped; no public bind without `--allow-public`)* | L (or S doctor + M serve) | Agent-Reach #11, OpenHuman #8, Proxima #9, Forge #13 | PR 4 preferred. Query cache remainder shipped |
 
-**Immediately after these (not in the 5):** grow the eval hard-set (LLM-in-production #20); TurboVec default flip after recall gates (#15, protocol+opt-in+A/B shipped); Jina/`index-url` (#11/#22, P2); path templates + `calls` quality (#14).
+**Immediately after these (not in the 5):** grow the eval hard-set (LLM-in-production #20) — n=8 is too thin to flip production knobs. TurboVec and local Jina-code **A/B recipes are shipped** (`make eval-ab`, `make eval-ab-embed`); **default flip** of Chroma / MiniLM / `decision.enabled` waits on those tables plus a larger hard-set. Optional decision client (`harness/decision.py`) is shipped **off** (loop grade + verify only; HyDE stays a free template). Jina/Firecrawl `index-url` *web ingest* (#11/#22, P2) is a different knob from the local embed A/B. Path templates + `calls` quality (#14).
 
 ---
 
@@ -56,7 +56,7 @@ Order is RAG-quality first (Recall@k, citation-path, tokens), then ops/distribut
 
 - **Steal:** Governance default-deny *lite*; Proxima credential strip.
 - **Sources:** #19, #9
-- **Shipped:** `harness/redact.py` + `harness/audit.py`. Outbound packed/LLM text is redacted by default (regex + assignment entropy; disable only via `CODEHARNESS_REDACT=0` / `redaction.enabled: false` / `--no-redact`). Session JSONL and chat prints go through the same helper. `memory brief|export --redact` is opt-in. Wiki generate strips env-like echoes. Append-only `.code-harness/audit/audit.jsonl` records counts + fingerprint hashes (never raw secrets). CLI: `audit show --last N` / `audit tail`. PR5 should call `redact_text` / `redact_and_audit` on retrieve/API bodies.
+- **Shipped:** `harness/redact.py` + `harness/audit.py`. Outbound packed/LLM text is redacted by default (regex + assignment entropy; disable only via `CODEHARNESS_REDACT=0` / `redaction.enabled: false` / `--no-redact`). Session JSONL and chat prints go through the same helper. `memory brief|export --redact` is opt-in. Wiki generate strips env-like echoes. Append-only `.code-harness/audit/audit.jsonl` records counts + fingerprint hashes (never raw secrets). CLI: `audit show --last N` / `audit tail`. Serve / MCP already call `redact_and_audit` on retrieve/API bodies.
 - **Change:** Problem — packed first/last lines can leak secrets; no durable “what we sent.” Outcome — remaining: optional `redaction.max_prompt_tokens` hard stop (config key reserved, not enforced).
 - **Metric move:** Tokens slightly **down** (redacted spans). Recall@k unchanged (ids unchanged). Measure: unit tests on synthetic key-bearing chunks + eval suite must stay green.
 - **Risk / complexity / local-first:** Low. False-positive redaction of example keys in *this* repo’s tests — allowlist fixtures. No OPA. Repo scan of harness/docs only hit `tests/test_redact.py` fixtures.
@@ -66,7 +66,7 @@ Order is RAG-quality first (Recall@k, citation-path, tokens), then ops/distribut
 
 - **Steal:** Agent-Reach channel probe; OpenHuman/Forge MCP tools; Proxima OpenAI-shaped local HTTP (**retrieve**, not their chat gateway).
 - **Sources:** #11, #8, #13, #9
-- **Shipped:** `python main.py doctor` (Python/deps/index/graph/embed/redact/audit/LLM-key; no network; actionable hints; exit 1 on required fails). `python main.py serve` / `mcp serve` / `api serve` bind **127.0.0.1** (`GET /health`, `POST /v1/retrieve`, `POST /mcp`). `python main.py mcp stdio` (also `mcp serve --stdio`) speaks the same JSON-RPC tool surface on stdin/stdout with **no network bind**; logs on stderr. MCP tools: `retrieve`, `retrieve_chunk`, `doctor`, `wiki_show`, `memory_brief`, `graph_neighbors`, `search_session`. Bodies go through `redact_and_audit`. `--allow-public` is the documented dangerous all-interfaces opt-in (no auth). Optional SQLite query-hash cache. Same `Retriever` + pack/loop flags as CLI. Does not start on import.
+- **Shipped:** `python main.py doctor` (Python/deps/index/graph/embed/redact/audit/LLM-key **and** optional decision-model key; no network; actionable hints; exit 1 on required fails; missing decision key is a warn). `python main.py serve` / `mcp serve` / `api serve` bind **127.0.0.1** (`GET /health`, `POST /v1/retrieve`, `POST /mcp`). `python main.py mcp stdio` (also `mcp serve --stdio`) speaks the same JSON-RPC tool surface on stdin/stdout with **no network bind**; logs on stderr. MCP tools: `retrieve`, `retrieve_chunk`, `doctor`, `wiki_show`, `memory_brief`, `graph_neighbors`, `search_session`. Bodies go through `redact_and_audit`. `--allow-public` is the documented dangerous all-interfaces opt-in (no auth). Optional SQLite query-hash cache. Same `Retriever` + pack/loop flags as CLI. Does not start on import.
 - **Change:** Problem — other agents cannot use our index; embed/LLM failures are silent. Outcome — remaining: live embed ping (intentionally skipped — no network). Stdio MCP **done**. Query cache on eval/interactive **done** (opt-in; serve stays default-on).
 - **Metric move:** Product/latency for *clients*; eval Recall@k of the retrieve endpoint **equals** CLI `eval` (same `Retriever`). Doctor: no metric, contract tests. Optional query cache: p50 **down** on second suite pass, Recall@k identical.
 - **Risk / complexity / local-first:** Medium–high (serve). Bind localhost default. No hosted `:sync`. Redaction (G4) runs on the serve path.
@@ -104,7 +104,7 @@ Order is RAG-quality first (Recall@k, citation-path, tokens), then ops/distribut
 - **Steal:** TurboQuant + allowlist hybrid + incremental sync.
 - **Sources:** #15
 - **Shipped:** `vector_store.type: chromadb|turbovec` (aliases `chroma` / `turbo-vec`). `TurboVecStore` wraps real `turbovec.IdMapIndex` (`add_with_ids` / `search(..., allowlist=)` / `sync`) plus a JSON sidecar for chunk text. `eval --compare-backends chromadb,turbovec` prints Recall@k / nDCG@k and fails if turbovec is selected and below chromadb by >5% relative or the deep-dive point gates (R@10 −2 pts, R@30 −1). `--force-experimental` bypasses. `eval-ab` / `make eval-ab` indexes both persist dirs and writes `.docs/research/eval/RESULTS.md` (optional extra missing → skip, exit 0). Optional extra: `requirements-turbovec.txt`. Retriever uses BM25 allowlist (≥20 ids) only when the backend `supports_allowlist`. Default remains Chroma.
-- **Change:** Problem — Chroma RAM/disk on multi-repo. Outcome remaining — dual-write spike; TQ+ `calibrate`; flip default only after Recall@10 ≥ −2 pts, Recall@30 ≥ −1, dense p50 ≤ 1.0× on the fixture suite.
+- **Change:** Problem — Chroma RAM/disk on multi-repo. Outcome remaining — dual-write spike; TQ+ `calibrate`; flip default only after Recall@10 ≥ −2 pts, Recall@30 ≥ −1, dense p50 ≤ 1.0× on the fixture suite **and** a larger hard-set. Sibling: MiniLM vs local Jina-code embed A/B (`make eval-ab-embed`) is shipped the same way — do not flip `all-MiniLM-L6-v2` until that table justifies it. n=8 is a failure-analysis record, not a leaderboard.
 - **Metric move:** dense-stage p50 and RSS **down** *if* gates pass; otherwise **reject default**. Measure: `eval --compare-backends`.
 - **Risk / complexity / local-first:** High (recall cliff, sidecar text, extra Rust wheel). Optional extra dep only.
 - **PR size / deps:** L. Wiki/memory already landed on this parent tip.
@@ -185,6 +185,9 @@ python main.py index .
 python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml
 python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --pack-mode ccr_lite
 python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --loop
+# Optional A/B (skip cleanly if the extra / Jina weights are missing):
+make eval-ab
+make eval-ab-embed
 ```
 
-Paste `metrics.recall_at_k`, `citation_path_hit_rate`, `prompt_token_drop`, `latencies_ms.*.p50`, `by_difficulty.hard` before/after. If a PR cannot name which of those it moves, it is not a fusion PR.
+Paste `metrics.recall_at_k`, `citation_path_hit_rate`, `prompt_token_drop`, `latencies_ms.*.p50`, `by_difficulty.hard` before/after. If a PR cannot name which of those it moves, it is not a fusion PR. Do not flip MiniLM, Chroma, or `decision.enabled` to “look better.”

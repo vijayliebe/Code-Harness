@@ -1,6 +1,6 @@
 # Integration plan — sequenced PRs
 
-**Status:** PRs 1–4 (eval → CCR-lite → query loop → KG enrichment) are **implemented** on the KG-enrichment line. This file stays the design record for that sequence. Fusion PRs 1–5 on that line also landed (wiki / memory / session / redact / doctor+MCP, plus BM25-over-memory). Polish (TurboVec A/B, query-cache) and the post-polish steal wave (Claude Code #24 + DeepSeek #25) **shipped**. Remaining deltas: [../fusion/GAP_AUDIT.md](../fusion/GAP_AUDIT.md) · [../fusion/STEAL_MATRIX.md](../fusion/STEAL_MATRIX.md).
+**Status:** PRs 1–4 (eval → CCR-lite → query loop → KG enrichment) are **implemented**. This file stays the design record for that sequence. Fusion PRs 1–5 also landed (wiki / memory / session / redact / doctor+MCP, plus BM25-over-memory). Polish on `main`: TurboVec A/B, query-cache, optional decision client (off), MiniLM vs Jina-code embed A/B, Claude Code #24 + DeepSeek #25 seams. Remaining deltas: [../fusion/GAP_AUDIT.md](../fusion/GAP_AUDIT.md) · [../fusion/STEAL_MATRIX.md](../fusion/STEAL_MATRIX.md). Do not flip MiniLM, Chroma, or `decision.enabled` until eval says so.
 
 This plan turns the HIGH-source deep dives into a short, ordered backlog. It **reorders** the first-pass 90-day table in [../SYNTHESIS.md](../SYNTHESIS.md): evaluation lands *before* packer/loop/KG so later PRs have anchors instead of Goodharting `top_k` and token folklore.
 
@@ -74,7 +74,7 @@ retrieve → grade → (rewrite | HyDE | deepen graph | proceed)
 
 **In scope**
 
-- Max 2 extra retrieve rounds (configurable `retrieval.max_loops`, default 1 extra).
+- Max 2 extra retrieve rounds (configurable `retrieval.max_loops`, default **0** = one-shot). `--loop` is one extra; `--max-loops N` caps at 2 extra. Do not raise the default until loop eval shows a hard-set citation-path win without easy-p50 regression.
 - Cheap grader: heuristic first (overlap of query tokens vs chunk names/paths); optional tiny LLM grade later.
 - Easy path: identifier-like queries → BM25-only (or `--no-llm` unchanged).
 - Independent verify: optional second LLM call that sees `{query, answer, packed chunks}` only — no generator CoT.
@@ -107,9 +107,9 @@ retrieve → grade → (rewrite | HyDE | deepen graph | proceed)
 
 ## Guardrails (all PRs)
 
-- **Docs-first default:** flags off or `full` packer until eval is green.
+- **Docs-first default:** flags off or `full` packer until eval is green. Keep MiniLM, Chroma, and `decision.enabled=false` until A/B tables plus a larger hard-set justify a flip.
 - **Local-first:** no new hosted index (Forge `:sync` default is a cautionary tale).
-- **Do not change ranking to “look better”** without suite deltas.
+- **Do not change ranking to “look better”** without suite deltas. This is a production retrieve system, not a leaderboard game.
 - **OKF / wiki / TurboVec / MCP** stay behind PRs 5–8.
 - **No `harness/*.py` or `main.py` changes in this research PR.**
 
