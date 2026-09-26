@@ -17,7 +17,7 @@ python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml
 python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --dry-run
 ```
 
-CI does not run `make eval-ab`. That target is the optional Chroma vs TurboVec A/B below and skips cleanly (exit 0) if the `turbovec` extra is missing.
+CI does not run `make eval-ab` or `make eval-ab-embed`. Those targets are optional A/B recipes and skip cleanly (exit 0) if the `turbovec` extra or Jina-code weights are missing.
 
 The last run is written to `.code-harness/eval/{suite}-{timestamp}.json` (gitignored). Override with `--output path.json`. `--k` overrides the suite cutoff (default 10).
 
@@ -127,6 +127,39 @@ do not share persist directories.
 `eval-ab` is the optional path: if the TurboVec wheel or the embedder/Chroma
 stack cannot run, it writes a placeholder RESULTS table and exits 0. Selecting
 TurboVec as the active backend while the extra is missing still fails clearly.
+
+## Optional embedder A/B (MiniLM vs Jina-code)
+
+Same fixture suite, same Chroma default, two local sentence-transformers models.
+Production default stays `all-MiniLM-L6-v2`. `decision.enabled` stays false.
+
+| Model | Dims | Persist | Tradeoff |
+|-------|------|---------|----------|
+| `all-MiniLM-L6-v2` | 384 | `.code-harness/chromadb` | Default. Fast, small, CI-friendly. |
+| `jina-embeddings-v2-base-code` (`jina-code`) | 768 | `.code-harness/chromadb-jina-embeddings-v2-base-code` | Code-specialized (HF `jinaai/jina-embeddings-v2-base-code`). Heavier first download. Isolated dir because 384-d and 768-d cannot share a Chroma collection. |
+
+```bash
+# One embedder at a time (same retrieve/eval recipe)
+python3 main.py index .
+python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml
+python3 main.py index . --embed-model jina-embeddings-v2-base-code
+python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml \
+  --embed-model jina-embeddings-v2-base-code
+
+# Fixture A/B (indexes both persist dirs, writes RESULTS-embed.*)
+python3 main.py eval-ab . --compare-embedders all-MiniLM-L6-v2,jina-embeddings-v2-base-code
+make eval-ab-embed
+python3 scripts/eval_minilm_vs_jina.py
+```
+
+CLI aliases: `--embed-model jina-code` and `CODEHARNESS_EMBED_MODEL=jina-code`.
+This is a **local** Hugging Face model (`provider: local`), not the Jina API.
+
+`make eval-ab-embed` is the optional path: if the Jina weights are not cached
+or the download fails, it writes a placeholder [RESULTS-embed.md](RESULTS-embed.md)
+and exits 0. Selecting `--embed-model jina-embeddings-v2-base-code` as the
+active model while it cannot be loaded still fails clearly. `make test` does
+not download Jina and stays green on the MiniLM default.
 
 Interactive `/compact` is session-only and does not change these eval numbers (easy p50 stays the one-shot path). A synthetic 10-turn session is kept under `llm.max_tokens * 2` by dropping older packs while never dropping the latest pack ids; see `tests/test_session.py`.
 
