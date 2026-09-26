@@ -23,6 +23,28 @@ python main.py doctor /path/to/your/repo
 python main.py serve /path/to/your/repo
 ```
 
+## Testing
+
+```bash
+make test      # python3 -m unittest discover -s tests -v
+make eval-ab   # python3 main.py eval-ab .  — skips cleanly (exit 0) if the turbovec extra is missing
+```
+
+## CI
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every pull request and on push to `main` (Ubuntu, Python 3.12): install `requirements.txt`, `make test`, then the canonical eval below. It does not run `make eval-ab`.
+
+## Canonical eval recipe
+
+Same commands CI uses (local embeddings; no LLM key):
+
+```bash
+python3 main.py index .
+python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml
+```
+
+See [`.docs/research/eval/README.md`](.docs/research/eval/README.md) for the suite schema, metrics, and the optional TurboVec A/B (`make eval-ab`).
+
 ## Commands
 
 ### `index` — Index a repository
@@ -314,16 +336,16 @@ Generates an interactive 3D HTML visualization of the embedding space using PCA/
 
 ### `eval` — Score retrieval against a golden suite
 
-Local, retrieval-only (no LLM, no API keys). Requires a prior `index` of the repo.
+Local, retrieval-only (no LLM, no API keys). Requires a prior `index` of the repo. The first two commands are the [canonical recipe](#canonical-eval-recipe) (same as CI).
 
 ```bash
-python main.py index .
-python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml
-python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --dry-run
-python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --loop
-python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --compare-backends chromadb,turbovec
-python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --query-cache
-python main.py eval-ab .
+python3 main.py index .
+python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml
+python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --dry-run
+python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --loop
+python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --compare-backends chromadb,turbovec
+python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --query-cache
+python3 main.py eval-ab .
 ```
 
 Reports Recall@k, nDCG@k, citation-path hit rate, stage latency (dense / BM25 / graph / CE / MMR), estimated prompt tokens after context assembly (`prompt_tokens_full` vs `prompt_tokens_packed`), and easy/hard splits. Writes `.code-harness/eval/{suite}-{timestamp}.json`. Use `--pack-mode ccr_lite` to score citation paths against packed headers (Recall@k is unchanged). `--loop` / `--max-loops N` is opt-in; default remains one-shot. `--query-cache` reuses retrieve/pack on identical queries (hit/miss in the summary); Recall@k stays identical.

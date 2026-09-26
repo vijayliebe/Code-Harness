@@ -4,16 +4,20 @@ Local, no-network-required scoring of the current retrieve → pack pipeline. La
 
 ## Run
 
+Canonical recipe (same path [CI](../../../.github/workflows/ci.yml) uses on PRs and push to `main`):
+
 ```bash
 # 1. Index this repo once (local embeddings; no LLM key required)
-python main.py index .
+python3 main.py index .
 
 # 2. Score the committed golden suite
-python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml
+python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml
 
 # Validate suite shape without an index
-python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --dry-run
+python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --dry-run
 ```
+
+CI does not run `make eval-ab`. That target is the optional Chroma vs TurboVec A/B below and skips cleanly (exit 0) if the `turbovec` extra is missing.
 
 The last run is written to `.code-harness/eval/{suite}-{timestamp}.json` (gitignored). Override with `--output path.json`. `--k` overrides the suite cutoff (default 10).
 
