@@ -13,7 +13,7 @@ Spine already shipped on `main`:
 
 `eval metrics → CCR-lite packer → corrective query loop → KG enrichment (exposes/tested_by/gloss + beam + Mermaid)`
 
-Do not cite `cursor/kg-enrichment-3590` as the tip — that was an intermediate spine branch.
+Do not cite `feature/kg-enrichment` as the tip — that was an intermediate spine branch.
 
 Fusion PR #1 (wiki generate MVP) adds `wiki generate|list|show` — OKF `WikiPage` markdown under `knowledge/wiki/`, `path:symbol` cites, Mermaid from the KG.
 
