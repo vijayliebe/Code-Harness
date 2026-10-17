@@ -1,0 +1,1880 @@
+{
+  "kind": "harness-ablation",
+  "suite": "code-harness",
+  "suite_path": ".docs/research/eval/code-harness.fixture.yaml",
+  "k": 10,
+  "generated": "2026-10-17T12:57:33Z",
+  "commit": "bccb0d492dc581a9d60469b9ee5764199a93b091",
+  "machine": {
+    "python": "3.12.3",
+    "platform": "Linux-6.12.94+-x86_64-with-glibc2.39",
+    "summary": "python 3.12.3; Linux-6.12.94+-x86_64-with-glibc2.39"
+  },
+  "notes": "Live one-shot retrieve+pack on the committed fixture. Defaults unchanged.",
+  "answer_level": {
+    "ran": false,
+    "reason": "No chat-LLM key in the environment. Answer-level comparison was not run."
+  },
+  "variants": {
+    "full": {
+      "label": "Full harness",
+      "kind": "baseline",
+      "notes": "Default retrieve+pack: dense + BM25 + graph expand + CE + MMR; HyDE off; pack_mode=full.",
+      "metrics": {
+        "recall_at_k": 0.3125,
+        "ndcg_at_k": 0.2629,
+        "citation_path_hit_rate": 0.625,
+        "prompt_tokens_full_mean": 1713.0,
+        "prompt_tokens_packed_mean": 1269.1,
+        "prompt_token_drop": 0.2591,
+        "failure_counts": {
+          "bm25_miss": 5,
+          "graph_miss": 7,
+          "rerank_drop": 4,
+          "dense_miss": 1
+        },
+        "latencies_ms": {
+          "dense": {
+            "mean": 541.29,
+            "p50": 26.242
+          },
+          "bm25": {
+            "mean": 6.697,
+            "p50": 6.92
+          },
+          "graph": {
+            "mean": 1.324,
+            "p50": 1.207
+          },
+          "ce": {
+            "mean": 983.833,
+            "p50": 753.942
+          },
+          "mmr": {
+            "mean": 0.123,
+            "p50": 0.113
+          }
+        },
+        "n": 8,
+        "k": 10,
+        "loop_attempts_mean": 1.0,
+        "stall_count": null,
+        "stall_rate": null,
+        "escape_rate": null
+      }
+    },
+    "no_dense": {
+      "label": "Dense off",
+      "kind": "leave_one_out",
+      "notes": "Skip dense search; dense_weight=0.",
+      "metrics": {
+        "recall_at_k": 0.1875,
+        "ndcg_at_k": 0.1916,
+        "citation_path_hit_rate": 0.375,
+        "prompt_tokens_full_mean": 1428.0,
+        "prompt_tokens_packed_mean": 1176.8,
+        "prompt_token_drop": 0.1759,
+        "failure_counts": {
+          "dense_miss": 8,
+          "bm25_miss": 5,
+          "rerank_drop": 5,
+          "graph_miss": 4
+        },
+        "latencies_ms": {
+          "dense": {
+            "mean": 0.0,
+            "p50": 0.0
+          },
+          "bm25": {
+            "mean": 6.76,
+            "p50": 7.324
+          },
+          "graph": {
+            "mean": 1.038,
+            "p50": 1.063
+          },
+          "ce": {
+            "mean": 755.742,
+            "p50": 754.752
+          },
+          "mmr": {
+            "mean": 0.107,
+            "p50": 0.106
+          }
+        },
+        "n": 8,
+        "k": 10,
+        "loop_attempts_mean": 1.0,
+        "stall_count": null,
+        "stall_rate": null,
+        "escape_rate": null
+      }
+    },
+    "no_bm25": {
+      "label": "BM25 off",
+      "kind": "leave_one_out",
+      "notes": "Skip BM25 search; sparse_weight=0.",
+      "metrics": {
+        "recall_at_k": 0.5,
+        "ndcg_at_k": 0.4152,
+        "citation_path_hit_rate": 0.75,
+        "prompt_tokens_full_mean": 2121.8,
+        "prompt_tokens_packed_mean": 1579.4,
+        "prompt_token_drop": 0.2556,
+        "failure_counts": {
+          "bm25_miss": 8,
+          "graph_miss": 8,
+          "rerank_drop": 2,
+          "dense_miss": 1
+        },
+        "latencies_ms": {
+          "dense": {
+            "mean": 25.817,
+            "p50": 25.573
+          },
+          "bm25": {
+            "mean": 0.0,
+            "p50": 0.0
+          },
+          "graph": {
+            "mean": 1.193,
+            "p50": 1.132
+          },
+          "ce": {
+            "mean": 660.665,
+            "p50": 659.661
+          },
+          "mmr": {
+            "mean": 0.179,
+            "p50": 0.175
+          }
+        },
+        "n": 8,
+        "k": 10,
+        "loop_attempts_mean": 1.0,
+        "stall_count": null,
+        "stall_rate": null,
+        "escape_rate": null
+      }
+    },
+    "no_graph": {
+      "label": "Graph expansion off",
+      "kind": "leave_one_out",
+      "notes": "Skip neighbor expansion; expand_neighbors=0; graph_weight=0.",
+      "metrics": {
+        "recall_at_k": 0.3125,
+        "ndcg_at_k": 0.2629,
+        "citation_path_hit_rate": 0.625,
+        "prompt_tokens_full_mean": 1809.6,
+        "prompt_tokens_packed_mean": 1340.4,
+        "prompt_token_drop": 0.2593,
+        "failure_counts": {
+          "bm25_miss": 5,
+          "graph_miss": 8,
+          "rerank_drop": 4,
+          "dense_miss": 1
+        },
+        "latencies_ms": {
+          "dense": {
+            "mean": 26.099,
+            "p50": 25.478
+          },
+          "bm25": {
+            "mean": 6.749,
+            "p50": 7.012
+          },
+          "graph": {
+            "mean": 0.0,
+            "p50": 0.0
+          },
+          "ce": {
+            "mean": 757.394,
+            "p50": 756.429
+          },
+          "mmr": {
+            "mean": 0.137,
+            "p50": 0.115
+          }
+        },
+        "n": 8,
+        "k": 10,
+        "loop_attempts_mean": 1.0,
+        "stall_count": null,
+        "stall_rate": null,
+        "escape_rate": null
+      }
+    },
+    "no_rerank": {
+      "label": "Cross-encoder off",
+      "kind": "leave_one_out",
+      "notes": "retrieval.cross_encoder.enabled=false.",
+      "metrics": {
+        "recall_at_k": 0.4375,
+        "ndcg_at_k": 0.3769,
+        "citation_path_hit_rate": 0.75,
+        "prompt_tokens_full_mean": 1901.2,
+        "prompt_tokens_packed_mean": 1480.0,
+        "prompt_token_drop": 0.2216,
+        "failure_counts": {
+          "bm25_miss": 5,
+          "graph_miss": 7,
+          "packer_drop": 1,
+          "dense_miss": 1
+        },
+        "latencies_ms": {
+          "dense": {
+            "mean": 21.48,
+            "p50": 22.062
+          },
+          "bm25": {
+            "mean": 5.517,
+            "p50": 5.433
+          },
+          "graph": {
+            "mean": 1.171,
+            "p50": 1.139
+          },
+          "ce": {
+            "mean": 0.0,
+            "p50": 0.0
+          },
+          "mmr": {
+            "mean": 0.156,
+            "p50": 0.142
+          }
+        },
+        "n": 8,
+        "k": 10,
+        "loop_attempts_mean": 1.0,
+        "stall_count": null,
+        "stall_rate": null,
+        "escape_rate": null
+      }
+    },
+    "no_mmr": {
+      "label": "MMR off",
+      "kind": "leave_one_out",
+      "notes": "Skip diversity rerank after lexical boost.",
+      "metrics": {
+        "recall_at_k": 0.3125,
+        "ndcg_at_k": 0.2629,
+        "citation_path_hit_rate": 0.625,
+        "prompt_tokens_full_mean": 1713.0,
+        "prompt_tokens_packed_mean": 1269.1,
+        "prompt_token_drop": 0.2591,
+        "failure_counts": {
+          "bm25_miss": 5,
+          "graph_miss": 7,
+          "rerank_drop": 4,
+          "dense_miss": 1
+        },
+        "latencies_ms": {
+          "dense": {
+            "mean": 25.329,
+            "p50": 24.895
+          },
+          "bm25": {
+            "mean": 6.809,
+            "p50": 6.995
+          },
+          "graph": {
+            "mean": 1.41,
+            "p50": 1.423
+          },
+          "ce": {
+            "mean": 763.689,
+            "p50": 762.347
+          },
+          "mmr": {
+            "mean": 0.0,
+            "p50": 0.0
+          }
+        },
+        "n": 8,
+        "k": 10,
+        "loop_attempts_mean": 1.0,
+        "stall_count": null,
+        "stall_rate": null,
+        "escape_rate": null
+      }
+    },
+    "hyde": {
+      "label": "HyDE template on",
+      "kind": "optional_on",
+      "notes": "Default HyDE is off; this row enables the local template (no LLM).",
+      "metrics": {
+        "recall_at_k": 0.375,
+        "ndcg_at_k": 0.2851,
+        "citation_path_hit_rate": 0.625,
+        "prompt_tokens_full_mean": 1701.9,
+        "prompt_tokens_packed_mean": 1268.9,
+        "prompt_token_drop": 0.2544,
+        "failure_counts": {
+          "bm25_miss": 5,
+          "graph_miss": 6,
+          "dense_miss": 3,
+          "rerank_drop": 3
+        },
+        "latencies_ms": {
+          "dense": {
+            "mean": 26.995,
+            "p50": 26.331
+          },
+          "bm25": {
+            "mean": 6.9,
+            "p50": 6.983
+          },
+          "graph": {
+            "mean": 1.414,
+            "p50": 1.435
+          },
+          "ce": {
+            "mean": 769.358,
+            "p50": 765.968
+          },
+          "mmr": {
+            "mean": 0.131,
+            "p50": 0.129
+          }
+        },
+        "n": 8,
+        "k": 10,
+        "loop_attempts_mean": 1.0,
+        "stall_count": null,
+        "stall_rate": null,
+        "escape_rate": null
+      }
+    },
+    "ccr_lite": {
+      "label": "CCR-lite packing",
+      "kind": "optional_on",
+      "notes": "Default pack_mode is full; this row packs signatures + key spans.",
+      "metrics": {
+        "recall_at_k": 0.3125,
+        "ndcg_at_k": 0.2629,
+        "citation_path_hit_rate": 0.625,
+        "prompt_tokens_full_mean": 1713.0,
+        "prompt_tokens_packed_mean": 1269.1,
+        "prompt_token_drop": 0.2591,
+        "failure_counts": {
+          "bm25_miss": 5,
+          "graph_miss": 7,
+          "rerank_drop": 4,
+          "dense_miss": 1
+        },
+        "latencies_ms": {
+          "dense": {
+            "mean": 23.071,
+            "p50": 22.847
+          },
+          "bm25": {
+            "mean": 6.894,
+            "p50": 7.411
+          },
+          "graph": {
+            "mean": 1.456,
+            "p50": 1.456
+          },
+          "ce": {
+            "mean": 766.18,
+            "p50": 764.287
+          },
+          "mmr": {
+            "mean": 0.13,
+            "p50": 0.119
+          }
+        },
+        "n": 8,
+        "k": 10,
+        "loop_attempts_mean": 1.0,
+        "stall_count": null,
+        "stall_rate": null,
+        "escape_rate": null
+      }
+    },
+    "no_retrieval": {
+      "label": "No-retrieval baseline",
+      "kind": "baseline_off",
+      "notes": "Empty hit set. Retrieval recall/nDCG/citation-path are zero by construction.",
+      "metrics": {
+        "recall_at_k": 0.0,
+        "ndcg_at_k": 0.0,
+        "citation_path_hit_rate": 0.0,
+        "prompt_tokens_full_mean": 5.0,
+        "prompt_tokens_packed_mean": 5.0,
+        "prompt_token_drop": 0.0,
+        "failure_counts": {
+          "dense_miss": 8,
+          "bm25_miss": 8,
+          "graph_miss": 8
+        },
+        "latencies_ms": {
+          "dense": {
+            "mean": 0.0,
+            "p50": 0.0
+          },
+          "bm25": {
+            "mean": 0.0,
+            "p50": 0.0
+          },
+          "graph": {
+            "mean": 0.0,
+            "p50": 0.0
+          },
+          "ce": {
+            "mean": 0.0,
+            "p50": 0.0
+          },
+          "mmr": {
+            "mean": 0.0,
+            "p50": 0.0
+          }
+        },
+        "n": 8,
+        "k": 10,
+        "loop_attempts_mean": 1.0,
+        "stall_count": null,
+        "stall_rate": null,
+        "escape_rate": null
+      }
+    }
+  },
+  "reports": {
+    "full": {
+      "metrics": {
+        "k": 10,
+        "n": 8,
+        "recall_at_k": 0.3125,
+        "ndcg_at_k": 0.2629,
+        "citation_path_hit_rate": 0.625,
+        "citation_path_full_hit_rate": 0.625,
+        "prompt_tokens_mean": 1713.0,
+        "prompt_tokens_full_mean": 1713.0,
+        "prompt_tokens_packed_mean": 1269.1,
+        "prompt_token_drop": 0.2591,
+        "latencies_ms": {
+          "bm25": {
+            "mean": 6.697,
+            "p50": 6.92
+          },
+          "ce": {
+            "mean": 983.833,
+            "p50": 753.942
+          },
+          "dense": {
+            "mean": 541.29,
+            "p50": 26.242
+          },
+          "graph": {
+            "mean": 1.324,
+            "p50": 1.207
+          },
+          "memory": {
+            "mean": 0.0,
+            "p50": 0.0
+          },
+          "mmr": {
+            "mean": 0.123,
+            "p50": 0.113
+          },
+          "wiki": {
+            "mean": 0.0,
+            "p50": 0.0
+          }
+        },
+        "failure_counts": {
+          "bm25_miss": 5,
+          "graph_miss": 7,
+          "rerank_drop": 4,
+          "dense_miss": 1
+        },
+        "loop_attempts_mean": 1.0,
+        "by_difficulty": {
+          "easy": {
+            "n": 3,
+            "recall_at_k": 0.5,
+            "ndcg_at_k": 0.511,
+            "citation_path_hit_rate": 1.0,
+            "prompt_tokens_mean": 2343.7,
+            "loop_attempts_mean": 1.0
+          },
+          "medium": {
+            "n": 2,
+            "recall_at_k": 0.0,
+            "ndcg_at_k": 0.0,
+            "citation_path_hit_rate": 0.5,
+            "prompt_tokens_mean": 1678.5,
+            "loop_attempts_mean": 1.0
+          },
+          "hard": {
+            "n": 3,
+            "recall_at_k": 0.3333,
+            "ndcg_at_k": 0.1902,
+            "citation_path_hit_rate": 0.3333,
+            "prompt_tokens_mean": 1105.3,
+            "loop_attempts_mean": 1.0
+          }
+        }
+      },
+      "config": {
+        "retrieval": {
+          "dense_weight": 0.3,
+          "sparse_weight": 0.25,
+          "graph_weight": 0.2,
+          "wiki_weight": 0.0,
+          "memory_weight": 0.0,
+          "top_k": 30,
+          "rerank_top_k": 15,
+          "expand_neighbors": 3,
+          "expand_mode": "beam",
+          "beam_width": 6,
+          "beam_depth": 2,
+          "max_loops": 0,
+          "grade_threshold": 0.35,
+          "citation_threshold": 0.5,
+          "verify": false,
+          "deepen_neighbors": 8,
+          "cross_encoder": {
+            "enabled": true,
+            "model": "cross-encoder/ms-marco-MiniLM-L-6-v2"
+          },
+          "hyde": {
+            "enabled": false,
+            "on_retry": true
+          }
+        },
+        "embedding": {
+          "provider": "local",
+          "model": "all-MiniLM-L6-v2"
+        },
+        "llm": {
+          "max_tokens": 4096
+        },
+        "chunking": {
+          "max_chunk_size": 1500,
+          "min_chunk_size": 50,
+          "overlap_lines": 20,
+          "use_language_parsing": true
+        },
+        "context": {
+          "pack_mode": "full",
+          "prefix_files": [
+            "ARCHITECTURE.md",
+            "AGENTS.md",
+            "CLAUDE.md"
+          ],
+          "include_memory_brief": false,
+          "include_memory_search": false,
+          "memory_brief_tokens": 800,
+          "memory_dir": null,
+          "knowledge_prefix": false,
+          "knowledge_token_budget": 800,
+          "prefix_stable": false,
+          "max_tokens_multiplier": 2
+        },
+        "ccr": {
+          "first_lines": 12,
+          "last_lines": 8,
+          "omit_threshold": 8,
+          "spill_dir": ".code-harness/ccr",
+          "spill": null,
+          "expand_on": []
+        },
+        "pack_mode": "full",
+        "vector_backend": "chromadb",
+        "loop": {
+          "max_loops": 0,
+          "grade_threshold": 0.35,
+          "citation_threshold": 0.5
+        },
+        "session": {
+          "verify": false
+        },
+        "decision": {
+          "enabled": false,
+          "provider": null,
+          "uses": [
+            "loop_grade",
+            "verify"
+          ]
+        }
+      }
+    },
+    "no_dense": {
+      "metrics": {
+        "k": 10,
+        "n": 8,
+        "recall_at_k": 0.1875,
+        "ndcg_at_k": 0.1916,
+        "citation_path_hit_rate": 0.375,
+        "citation_path_full_hit_rate": 0.375,
+        "prompt_tokens_mean": 1428.0,
+        "prompt_tokens_full_mean": 1428.0,
+        "prompt_tokens_packed_mean": 1176.8,
+        "prompt_token_drop": 0.1759,
+        "latencies_ms": {
+          "bm25": {
+            "mean": 6.76,
+            "p50": 7.324
+          },
+          "ce": {
+            "mean": 755.742,
+            "p50": 754.752
+          },
+          "dense": {
+            "mean": 0.0,
+            "p50": 0.0
+          },
+          "graph": {
+            "mean": 1.038,
+            "p50": 1.063
+          },
+          "memory": {
+            "mean": 0.0,
+            "p50": 0.0
+          },
+          "mmr": {
+            "mean": 0.107,
+            "p50": 0.106
+          },
+          "wiki": {
+            "mean": 0.0,
+            "p50": 0.0
+          }
+        },
+        "failure_counts": {
+          "dense_miss": 8,
+          "bm25_miss": 5,
+          "rerank_drop": 5,
+          "graph_miss": 4
+        },
+        "loop_attempts_mean": 1.0,
+        "by_difficulty": {
+          "easy": {
+            "n": 3,
+            "recall_at_k": 0.3333,
+            "ndcg_at_k": 0.4088,
+            "citation_path_hit_rate": 0.6667,
+            "prompt_tokens_mean": 1542.7,
+            "loop_attempts_mean": 1.0
+          },
+          "medium": {
+            "n": 2,
+            "recall_at_k": 0.0,
+            "ndcg_at_k": 0.0,
+            "citation_path_hit_rate": 0.0,
+            "prompt_tokens_mean": 1480.5,
+            "loop_attempts_mean": 1.0
+          },
+          "hard": {
+            "n": 3,
+            "recall_at_k": 0.1667,
+            "ndcg_at_k": 0.1022,
+            "citation_path_hit_rate": 0.3333,
+            "prompt_tokens_mean": 1278.3,
+            "loop_attempts_mean": 1.0
+          }
+        }
+      },
+      "config": {
+        "retrieval": {
+          "dense_weight": 0.0,
+          "sparse_weight": 0.25,
+          "graph_weight": 0.2,
+          "wiki_weight": 0.0,
+          "memory_weight": 0.0,
+          "top_k": 30,
+          "rerank_top_k": 15,
+          "expand_neighbors": 3,
+          "expand_mode": "beam",
+          "beam_width": 6,
+          "beam_depth": 2,
+          "max_loops": 0,
+          "grade_threshold": 0.35,
+          "citation_threshold": 0.5,
+          "verify": false,
+          "deepen_neighbors": 8,
+          "cross_encoder": {
+            "enabled": true,
+            "model": "cross-encoder/ms-marco-MiniLM-L-6-v2"
+          },
+          "hyde": {
+            "enabled": false,
+            "on_retry": true
+          },
+          "dense_enabled": false
+        },
+        "embedding": {
+          "provider": "local",
+          "model": "all-MiniLM-L6-v2"
+        },
+        "llm": {
+          "max_tokens": 4096
+        },
+        "chunking": {
+          "max_chunk_size": 1500,
+          "min_chunk_size": 50,
+          "overlap_lines": 20,
+          "use_language_parsing": true
+        },
+        "context": {
+          "pack_mode": "full",
+          "prefix_files": [
+            "ARCHITECTURE.md",
+            "AGENTS.md",
+            "CLAUDE.md"
+          ],
+          "include_memory_brief": false,
+          "include_memory_search": false,
+          "memory_brief_tokens": 800,
+          "memory_dir": null,
+          "knowledge_prefix": false,
+          "knowledge_token_budget": 800,
+          "prefix_stable": false,
+          "max_tokens_multiplier": 2
+        },
+        "ccr": {
+          "first_lines": 12,
+          "last_lines": 8,
+          "omit_threshold": 8,
+          "spill_dir": ".code-harness/ccr",
+          "spill": null,
+          "expand_on": []
+        },
+        "pack_mode": "full",
+        "vector_backend": "chromadb",
+        "loop": {
+          "max_loops": 0,
+          "grade_threshold": 0.35,
+          "citation_threshold": 0.5
+        },
+        "session": {
+          "verify": false
+        },
+        "decision": {
+          "enabled": false,
+          "provider": null,
+          "uses": [
+            "loop_grade",
+            "verify"
+          ]
+        }
+      }
+    },
+    "no_bm25": {
+      "metrics": {
+        "k": 10,
+        "n": 8,
+        "recall_at_k": 0.5,
+        "ndcg_at_k": 0.4152,
+        "citation_path_hit_rate": 0.75,
+        "citation_path_full_hit_rate": 0.75,
+        "prompt_tokens_mean": 2121.8,
+        "prompt_tokens_full_mean": 2121.8,
+        "prompt_tokens_packed_mean": 1579.4,
+        "prompt_token_drop": 0.2556,
+        "latencies_ms": {
+          "bm25": {
+            "mean": 0.0,
+            "p50": 0.0
+          },
+          "ce": {
+            "mean": 660.665,
+            "p50": 659.661
+          },
+          "dense": {
+            "mean": 25.817,
+            "p50": 25.573
+          },
+          "graph": {
+            "mean": 1.193,
+            "p50": 1.132
+          },
+          "memory": {
+            "mean": 0.0,
+            "p50": 0.0
+          },
+          "mmr": {
+            "mean": 0.179,
+            "p50": 0.175
+          },
+          "wiki": {
+            "mean": 0.0,
+            "p50": 0.0
+          }
+        },
+        "failure_counts": {
+          "bm25_miss": 8,
+          "graph_miss": 8,
+          "rerank_drop": 2,
+          "dense_miss": 1
+        },
+        "loop_attempts_mean": 1.0,
+        "by_difficulty": {
+          "easy": {
+            "n": 3,
+            "recall_at_k": 0.5,
+            "ndcg_at_k": 0.511,
+            "citation_path_hit_rate": 1.0,
+            "prompt_tokens_mean": 2661.0,
+            "loop_attempts_mean": 1.0
+          },
+          "medium": {
+            "n": 2,
+            "recall_at_k": 0.25,
+            "ndcg_at_k": 0.1092,
+            "citation_path_hit_rate": 0.5,
+            "prompt_tokens_mean": 2169.0,
+            "loop_attempts_mean": 1.0
+          },
+          "hard": {
+            "n": 3,
+            "recall_at_k": 0.6667,
+            "ndcg_at_k": 0.5235,
+            "citation_path_hit_rate": 0.6667,
+            "prompt_tokens_mean": 1551.0,
+            "loop_attempts_mean": 1.0
+          }
+        }
+      },
+      "config": {
+        "retrieval": {
+          "dense_weight": 0.3,
+          "sparse_weight": 0.0,
+          "graph_weight": 0.2,
+          "wiki_weight": 0.0,
+          "memory_weight": 0.0,
+          "top_k": 30,
+          "rerank_top_k": 15,
+          "expand_neighbors": 3,
+          "expand_mode": "beam",
+          "beam_width": 6,
+          "beam_depth": 2,
+          "max_loops": 0,
+          "grade_threshold": 0.35,
+          "citation_threshold": 0.5,
+          "verify": false,
+          "deepen_neighbors": 8,
+          "cross_encoder": {
+            "enabled": true,
+            "model": "cross-encoder/ms-marco-MiniLM-L-6-v2"
+          },
+          "hyde": {
+            "enabled": false,
+            "on_retry": true
+          },
+          "sparse_enabled": false
+        },
+        "embedding": {
+          "provider": "local",
+          "model": "all-MiniLM-L6-v2"
+        },
+        "llm": {
+          "max_tokens": 4096
+        },
+        "chunking": {
+          "max_chunk_size": 1500,
+          "min_chunk_size": 50,
+          "overlap_lines": 20,
+          "use_language_parsing": true
+        },
+        "context": {
+          "pack_mode": "full",
+          "prefix_files": [
+            "ARCHITECTURE.md",
+            "AGENTS.md",
+            "CLAUDE.md"
+          ],
+          "include_memory_brief": false,
+          "include_memory_search": false,
+          "memory_brief_tokens": 800,
+          "memory_dir": null,
+          "knowledge_prefix": false,
+          "knowledge_token_budget": 800,
+          "prefix_stable": false,
+          "max_tokens_multiplier": 2
+        },
+        "ccr": {
+          "first_lines": 12,
+          "last_lines": 8,
+          "omit_threshold": 8,
+          "spill_dir": ".code-harness/ccr",
+          "spill": null,
+          "expand_on": []
+        },
+        "pack_mode": "full",
+        "vector_backend": "chromadb",
+        "loop": {
+          "max_loops": 0,
+          "grade_threshold": 0.35,
+          "citation_threshold": 0.5
+        },
+        "session": {
+          "verify": false
+        },
+        "decision": {
+          "enabled": false,
+          "provider": null,
+          "uses": [
+            "loop_grade",
+            "verify"
+          ]
+        }
+      }
+    },
+    "no_graph": {
+      "metrics": {
+        "k": 10,
+        "n": 8,
+        "recall_at_k": 0.3125,
+        "ndcg_at_k": 0.2629,
+        "citation_path_hit_rate": 0.625,
+        "citation_path_full_hit_rate": 0.625,
+        "prompt_tokens_mean": 1809.6,
+        "prompt_tokens_full_mean": 1809.6,
+        "prompt_tokens_packed_mean": 1340.4,
+        "prompt_token_drop": 0.2593,
+        "latencies_ms": {
+          "bm25": {
+            "mean": 6.749,
+            "p50": 7.012
+          },
+          "ce": {
+            "mean": 757.394,
+            "p50": 756.429
+          },
+          "dense": {
+            "mean": 26.099,
+            "p50": 25.478
+          },
+          "graph": {
+            "mean": 0.0,
+            "p50": 0.0
+          },
+          "memory": {
+            "mean": 0.0,
+            "p50": 0.0
+          },
+          "mmr": {
+            "mean": 0.137,
+            "p50": 0.115
+          },
+          "wiki": {
+            "mean": 0.0,
+            "p50": 0.0
+          }
+        },
+        "failure_counts": {
+          "bm25_miss": 5,
+          "graph_miss": 8,
+          "rerank_drop": 4,
+          "dense_miss": 1
+        },
+        "loop_attempts_mean": 1.0,
+        "by_difficulty": {
+          "easy": {
+            "n": 3,
+            "recall_at_k": 0.5,
+            "ndcg_at_k": 0.511,
+            "citation_path_hit_rate": 1.0,
+            "prompt_tokens_mean": 2601.3,
+            "loop_attempts_mean": 1.0
+          },
+          "medium": {
+            "n": 2,
+            "recall_at_k": 0.0,
+            "ndcg_at_k": 0.0,
+            "citation_path_hit_rate": 0.5,
+            "prompt_tokens_mean": 1678.5,
+            "loop_attempts_mean": 1.0
+          },
+          "hard": {
+            "n": 3,
+            "recall_at_k": 0.3333,
+            "ndcg_at_k": 0.1902,
+            "citation_path_hit_rate": 0.3333,
+            "prompt_tokens_mean": 1105.3,
+            "loop_attempts_mean": 1.0
+          }
+        }
+      },
+      "config": {
+        "retrieval": {
+          "dense_weight": 0.3,
+          "sparse_weight": 0.25,
+          "graph_weight": 0.0,
+          "wiki_weight": 0.0,
+          "memory_weight": 0.0,
+          "top_k": 30,
+          "rerank_top_k": 15,
+          "expand_neighbors": 0,
+          "expand_mode": "beam",
+          "beam_width": 6,
+          "beam_depth": 2,
+          "max_loops": 0,
+          "grade_threshold": 0.35,
+          "citation_threshold": 0.5,
+          "verify": false,
+          "deepen_neighbors": 8,
+          "cross_encoder": {
+            "enabled": true,
+            "model": "cross-encoder/ms-marco-MiniLM-L-6-v2"
+          },
+          "hyde": {
+            "enabled": false,
+            "on_retry": true
+          },
+          "graph_enabled": false
+        },
+        "embedding": {
+          "provider": "local",
+          "model": "all-MiniLM-L6-v2"
+        },
+        "llm": {
+          "max_tokens": 4096
+        },
+        "chunking": {
+          "max_chunk_size": 1500,
+          "min_chunk_size": 50,
+          "overlap_lines": 20,
+          "use_language_parsing": true
+        },
+        "context": {
+          "pack_mode": "full",
+          "prefix_files": [
+            "ARCHITECTURE.md",
+            "AGENTS.md",
+            "CLAUDE.md"
+          ],
+          "include_memory_brief": false,
+          "include_memory_search": false,
+          "memory_brief_tokens": 800,
+          "memory_dir": null,
+          "knowledge_prefix": false,
+          "knowledge_token_budget": 800,
+          "prefix_stable": false,
+          "max_tokens_multiplier": 2
+        },
+        "ccr": {
+          "first_lines": 12,
+          "last_lines": 8,
+          "omit_threshold": 8,
+          "spill_dir": ".code-harness/ccr",
+          "spill": null,
+          "expand_on": []
+        },
+        "pack_mode": "full",
+        "vector_backend": "chromadb",
+        "loop": {
+          "max_loops": 0,
+          "grade_threshold": 0.35,
+          "citation_threshold": 0.5
+        },
+        "session": {
+          "verify": false
+        },
+        "decision": {
+          "enabled": false,
+          "provider": null,
+          "uses": [
+            "loop_grade",
+            "verify"
+          ]
+        }
+      }
+    },
+    "no_rerank": {
+      "metrics": {
+        "k": 10,
+        "n": 8,
+        "recall_at_k": 0.4375,
+        "ndcg_at_k": 0.3769,
+        "citation_path_hit_rate": 0.75,
+        "citation_path_full_hit_rate": 0.75,
+        "prompt_tokens_mean": 1901.2,
+        "prompt_tokens_full_mean": 1901.2,
+        "prompt_tokens_packed_mean": 1480.0,
+        "prompt_token_drop": 0.2216,
+        "latencies_ms": {
+          "bm25": {
+            "mean": 5.517,
+            "p50": 5.433
+          },
+          "ce": {
+            "mean": 0.0,
+            "p50": 0.0
+          },
+          "dense": {
+            "mean": 21.48,
+            "p50": 22.062
+          },
+          "graph": {
+            "mean": 1.171,
+            "p50": 1.139
+          },
+          "memory": {
+            "mean": 0.0,
+            "p50": 0.0
+          },
+          "mmr": {
+            "mean": 0.156,
+            "p50": 0.142
+          },
+          "wiki": {
+            "mean": 0.0,
+            "p50": 0.0
+          }
+        },
+        "failure_counts": {
+          "bm25_miss": 5,
+          "graph_miss": 7,
+          "packer_drop": 1,
+          "dense_miss": 1
+        },
+        "loop_attempts_mean": 1.0,
+        "by_difficulty": {
+          "easy": {
+            "n": 3,
+            "recall_at_k": 0.5,
+            "ndcg_at_k": 0.4968,
+            "citation_path_hit_rate": 0.6667,
+            "prompt_tokens_mean": 1794.0,
+            "loop_attempts_mean": 1.0
+          },
+          "medium": {
+            "n": 2,
+            "recall_at_k": 0.25,
+            "ndcg_at_k": 0.1092,
+            "citation_path_hit_rate": 0.5,
+            "prompt_tokens_mean": 2059.5,
+            "loop_attempts_mean": 1.0
+          },
+          "hard": {
+            "n": 3,
+            "recall_at_k": 0.5,
+            "ndcg_at_k": 0.4355,
+            "citation_path_hit_rate": 1.0,
+            "prompt_tokens_mean": 1903.0,
+            "loop_attempts_mean": 1.0
+          }
+        }
+      },
+      "config": {
+        "retrieval": {
+          "dense_weight": 0.3,
+          "sparse_weight": 0.25,
+          "graph_weight": 0.2,
+          "wiki_weight": 0.0,
+          "memory_weight": 0.0,
+          "top_k": 30,
+          "rerank_top_k": 15,
+          "expand_neighbors": 3,
+          "expand_mode": "beam",
+          "beam_width": 6,
+          "beam_depth": 2,
+          "max_loops": 0,
+          "grade_threshold": 0.35,
+          "citation_threshold": 0.5,
+          "verify": false,
+          "deepen_neighbors": 8,
+          "cross_encoder": {
+            "enabled": false,
+            "model": "cross-encoder/ms-marco-MiniLM-L-6-v2"
+          },
+          "hyde": {
+            "enabled": false,
+            "on_retry": true
+          }
+        },
+        "embedding": {
+          "provider": "local",
+          "model": "all-MiniLM-L6-v2"
+        },
+        "llm": {
+          "max_tokens": 4096
+        },
+        "chunking": {
+          "max_chunk_size": 1500,
+          "min_chunk_size": 50,
+          "overlap_lines": 20,
+          "use_language_parsing": true
+        },
+        "context": {
+          "pack_mode": "full",
+          "prefix_files": [
+            "ARCHITECTURE.md",
+            "AGENTS.md",
+            "CLAUDE.md"
+          ],
+          "include_memory_brief": false,
+          "include_memory_search": false,
+          "memory_brief_tokens": 800,
+          "memory_dir": null,
+          "knowledge_prefix": false,
+          "knowledge_token_budget": 800,
+          "prefix_stable": false,
+          "max_tokens_multiplier": 2
+        },
+        "ccr": {
+          "first_lines": 12,
+          "last_lines": 8,
+          "omit_threshold": 8,
+          "spill_dir": ".code-harness/ccr",
+          "spill": null,
+          "expand_on": []
+        },
+        "pack_mode": "full",
+        "vector_backend": "chromadb",
+        "loop": {
+          "max_loops": 0,
+          "grade_threshold": 0.35,
+          "citation_threshold": 0.5
+        },
+        "session": {
+          "verify": false
+        },
+        "decision": {
+          "enabled": false,
+          "provider": null,
+          "uses": [
+            "loop_grade",
+            "verify"
+          ]
+        }
+      }
+    },
+    "no_mmr": {
+      "metrics": {
+        "k": 10,
+        "n": 8,
+        "recall_at_k": 0.3125,
+        "ndcg_at_k": 0.2629,
+        "citation_path_hit_rate": 0.625,
+        "citation_path_full_hit_rate": 0.625,
+        "prompt_tokens_mean": 1713.0,
+        "prompt_tokens_full_mean": 1713.0,
+        "prompt_tokens_packed_mean": 1269.1,
+        "prompt_token_drop": 0.2591,
+        "latencies_ms": {
+          "bm25": {
+            "mean": 6.809,
+            "p50": 6.995
+          },
+          "ce": {
+            "mean": 763.689,
+            "p50": 762.347
+          },
+          "dense": {
+            "mean": 25.329,
+            "p50": 24.895
+          },
+          "graph": {
+            "mean": 1.41,
+            "p50": 1.423
+          },
+          "memory": {
+            "mean": 0.0,
+            "p50": 0.0
+          },
+          "mmr": {
+            "mean": 0.0,
+            "p50": 0.0
+          },
+          "wiki": {
+            "mean": 0.0,
+            "p50": 0.0
+          }
+        },
+        "failure_counts": {
+          "bm25_miss": 5,
+          "graph_miss": 7,
+          "rerank_drop": 4,
+          "dense_miss": 1
+        },
+        "loop_attempts_mean": 1.0,
+        "by_difficulty": {
+          "easy": {
+            "n": 3,
+            "recall_at_k": 0.5,
+            "ndcg_at_k": 0.511,
+            "citation_path_hit_rate": 1.0,
+            "prompt_tokens_mean": 2343.7,
+            "loop_attempts_mean": 1.0
+          },
+          "medium": {
+            "n": 2,
+            "recall_at_k": 0.0,
+            "ndcg_at_k": 0.0,
+            "citation_path_hit_rate": 0.5,
+            "prompt_tokens_mean": 1678.5,
+            "loop_attempts_mean": 1.0
+          },
+          "hard": {
+            "n": 3,
+            "recall_at_k": 0.3333,
+            "ndcg_at_k": 0.1902,
+            "citation_path_hit_rate": 0.3333,
+            "prompt_tokens_mean": 1105.3,
+            "loop_attempts_mean": 1.0
+          }
+        }
+      },
+      "config": {
+        "retrieval": {
+          "dense_weight": 0.3,
+          "sparse_weight": 0.25,
+          "graph_weight": 0.2,
+          "wiki_weight": 0.0,
+          "memory_weight": 0.0,
+          "top_k": 30,
+          "rerank_top_k": 15,
+          "expand_neighbors": 3,
+          "expand_mode": "beam",
+          "beam_width": 6,
+          "beam_depth": 2,
+          "max_loops": 0,
+          "grade_threshold": 0.35,
+          "citation_threshold": 0.5,
+          "verify": false,
+          "deepen_neighbors": 8,
+          "cross_encoder": {
+            "enabled": true,
+            "model": "cross-encoder/ms-marco-MiniLM-L-6-v2"
+          },
+          "hyde": {
+            "enabled": false,
+            "on_retry": true
+          },
+          "mmr": false
+        },
+        "embedding": {
+          "provider": "local",
+          "model": "all-MiniLM-L6-v2"
+        },
+        "llm": {
+          "max_tokens": 4096
+        },
+        "chunking": {
+          "max_chunk_size": 1500,
+          "min_chunk_size": 50,
+          "overlap_lines": 20,
+          "use_language_parsing": true
+        },
+        "context": {
+          "pack_mode": "full",
+          "prefix_files": [
+            "ARCHITECTURE.md",
+            "AGENTS.md",
+            "CLAUDE.md"
+          ],
+          "include_memory_brief": false,
+          "include_memory_search": false,
+          "memory_brief_tokens": 800,
+          "memory_dir": null,
+          "knowledge_prefix": false,
+          "knowledge_token_budget": 800,
+          "prefix_stable": false,
+          "max_tokens_multiplier": 2
+        },
+        "ccr": {
+          "first_lines": 12,
+          "last_lines": 8,
+          "omit_threshold": 8,
+          "spill_dir": ".code-harness/ccr",
+          "spill": null,
+          "expand_on": []
+        },
+        "pack_mode": "full",
+        "vector_backend": "chromadb",
+        "loop": {
+          "max_loops": 0,
+          "grade_threshold": 0.35,
+          "citation_threshold": 0.5
+        },
+        "session": {
+          "verify": false
+        },
+        "decision": {
+          "enabled": false,
+          "provider": null,
+          "uses": [
+            "loop_grade",
+            "verify"
+          ]
+        }
+      }
+    },
+    "hyde": {
+      "metrics": {
+        "k": 10,
+        "n": 8,
+        "recall_at_k": 0.375,
+        "ndcg_at_k": 0.2851,
+        "citation_path_hit_rate": 0.625,
+        "citation_path_full_hit_rate": 0.625,
+        "prompt_tokens_mean": 1701.9,
+        "prompt_tokens_full_mean": 1701.9,
+        "prompt_tokens_packed_mean": 1268.9,
+        "prompt_token_drop": 0.2544,
+        "latencies_ms": {
+          "bm25": {
+            "mean": 6.9,
+            "p50": 6.983
+          },
+          "ce": {
+            "mean": 769.358,
+            "p50": 765.968
+          },
+          "dense": {
+            "mean": 26.995,
+            "p50": 26.331
+          },
+          "graph": {
+            "mean": 1.414,
+            "p50": 1.435
+          },
+          "memory": {
+            "mean": 0.0,
+            "p50": 0.0
+          },
+          "mmr": {
+            "mean": 0.131,
+            "p50": 0.129
+          },
+          "wiki": {
+            "mean": 0.0,
+            "p50": 0.0
+          }
+        },
+        "failure_counts": {
+          "bm25_miss": 5,
+          "graph_miss": 6,
+          "dense_miss": 3,
+          "rerank_drop": 3
+        },
+        "loop_attempts_mean": 1.0,
+        "by_difficulty": {
+          "easy": {
+            "n": 3,
+            "recall_at_k": 0.5,
+            "ndcg_at_k": 0.511,
+            "citation_path_hit_rate": 1.0,
+            "prompt_tokens_mean": 2277.3,
+            "loop_attempts_mean": 1.0
+          },
+          "medium": {
+            "n": 2,
+            "recall_at_k": 0.25,
+            "ndcg_at_k": 0.0886,
+            "citation_path_hit_rate": 0.5,
+            "prompt_tokens_mean": 1584.0,
+            "loop_attempts_mean": 1.0
+          },
+          "hard": {
+            "n": 3,
+            "recall_at_k": 0.3333,
+            "ndcg_at_k": 0.1902,
+            "citation_path_hit_rate": 0.3333,
+            "prompt_tokens_mean": 1205.0,
+            "loop_attempts_mean": 1.0
+          }
+        }
+      },
+      "config": {
+        "retrieval": {
+          "dense_weight": 0.3,
+          "sparse_weight": 0.25,
+          "graph_weight": 0.2,
+          "wiki_weight": 0.0,
+          "memory_weight": 0.0,
+          "top_k": 30,
+          "rerank_top_k": 15,
+          "expand_neighbors": 3,
+          "expand_mode": "beam",
+          "beam_width": 6,
+          "beam_depth": 2,
+          "max_loops": 0,
+          "grade_threshold": 0.35,
+          "citation_threshold": 0.5,
+          "verify": false,
+          "deepen_neighbors": 8,
+          "cross_encoder": {
+            "enabled": true,
+            "model": "cross-encoder/ms-marco-MiniLM-L-6-v2"
+          },
+          "hyde": {
+            "enabled": true,
+            "on_retry": true
+          }
+        },
+        "embedding": {
+          "provider": "local",
+          "model": "all-MiniLM-L6-v2"
+        },
+        "llm": {
+          "max_tokens": 4096
+        },
+        "chunking": {
+          "max_chunk_size": 1500,
+          "min_chunk_size": 50,
+          "overlap_lines": 20,
+          "use_language_parsing": true
+        },
+        "context": {
+          "pack_mode": "full",
+          "prefix_files": [
+            "ARCHITECTURE.md",
+            "AGENTS.md",
+            "CLAUDE.md"
+          ],
+          "include_memory_brief": false,
+          "include_memory_search": false,
+          "memory_brief_tokens": 800,
+          "memory_dir": null,
+          "knowledge_prefix": false,
+          "knowledge_token_budget": 800,
+          "prefix_stable": false,
+          "max_tokens_multiplier": 2
+        },
+        "ccr": {
+          "first_lines": 12,
+          "last_lines": 8,
+          "omit_threshold": 8,
+          "spill_dir": ".code-harness/ccr",
+          "spill": null,
+          "expand_on": []
+        },
+        "pack_mode": "full",
+        "vector_backend": "chromadb",
+        "loop": {
+          "max_loops": 0,
+          "grade_threshold": 0.35,
+          "citation_threshold": 0.5
+        },
+        "session": {
+          "verify": false
+        },
+        "decision": {
+          "enabled": false,
+          "provider": null,
+          "uses": [
+            "loop_grade",
+            "verify"
+          ]
+        }
+      }
+    },
+    "ccr_lite": {
+      "metrics": {
+        "k": 10,
+        "n": 8,
+        "recall_at_k": 0.3125,
+        "ndcg_at_k": 0.2629,
+        "citation_path_hit_rate": 0.625,
+        "citation_path_full_hit_rate": 0.625,
+        "prompt_tokens_mean": 1269.1,
+        "prompt_tokens_full_mean": 1713.0,
+        "prompt_tokens_packed_mean": 1269.1,
+        "prompt_token_drop": 0.2591,
+        "latencies_ms": {
+          "bm25": {
+            "mean": 6.894,
+            "p50": 7.411
+          },
+          "ce": {
+            "mean": 766.18,
+            "p50": 764.287
+          },
+          "dense": {
+            "mean": 23.071,
+            "p50": 22.847
+          },
+          "graph": {
+            "mean": 1.456,
+            "p50": 1.456
+          },
+          "memory": {
+            "mean": 0.0,
+            "p50": 0.0
+          },
+          "mmr": {
+            "mean": 0.13,
+            "p50": 0.119
+          },
+          "wiki": {
+            "mean": 0.0,
+            "p50": 0.0
+          }
+        },
+        "failure_counts": {
+          "bm25_miss": 5,
+          "graph_miss": 7,
+          "rerank_drop": 4,
+          "dense_miss": 1
+        },
+        "loop_attempts_mean": 1.0,
+        "by_difficulty": {
+          "easy": {
+            "n": 3,
+            "recall_at_k": 0.5,
+            "ndcg_at_k": 0.511,
+            "citation_path_hit_rate": 1.0,
+            "prompt_tokens_mean": 1459.3,
+            "loop_attempts_mean": 1.0
+          },
+          "medium": {
+            "n": 2,
+            "recall_at_k": 0.0,
+            "ndcg_at_k": 0.0,
+            "citation_path_hit_rate": 0.5,
+            "prompt_tokens_mean": 1326.0,
+            "loop_attempts_mean": 1.0
+          },
+          "hard": {
+            "n": 3,
+            "recall_at_k": 0.3333,
+            "ndcg_at_k": 0.1902,
+            "citation_path_hit_rate": 0.3333,
+            "prompt_tokens_mean": 1041.0,
+            "loop_attempts_mean": 1.0
+          }
+        }
+      },
+      "config": {
+        "retrieval": {
+          "dense_weight": 0.3,
+          "sparse_weight": 0.25,
+          "graph_weight": 0.2,
+          "wiki_weight": 0.0,
+          "memory_weight": 0.0,
+          "top_k": 30,
+          "rerank_top_k": 15,
+          "expand_neighbors": 3,
+          "expand_mode": "beam",
+          "beam_width": 6,
+          "beam_depth": 2,
+          "max_loops": 0,
+          "grade_threshold": 0.35,
+          "citation_threshold": 0.5,
+          "verify": false,
+          "deepen_neighbors": 8,
+          "cross_encoder": {
+            "enabled": true,
+            "model": "cross-encoder/ms-marco-MiniLM-L-6-v2"
+          },
+          "hyde": {
+            "enabled": false,
+            "on_retry": true
+          }
+        },
+        "embedding": {
+          "provider": "local",
+          "model": "all-MiniLM-L6-v2"
+        },
+        "llm": {
+          "max_tokens": 4096
+        },
+        "chunking": {
+          "max_chunk_size": 1500,
+          "min_chunk_size": 50,
+          "overlap_lines": 20,
+          "use_language_parsing": true
+        },
+        "context": {
+          "pack_mode": "ccr_lite",
+          "prefix_files": [
+            "ARCHITECTURE.md",
+            "AGENTS.md",
+            "CLAUDE.md"
+          ],
+          "include_memory_brief": false,
+          "include_memory_search": false,
+          "memory_brief_tokens": 800,
+          "memory_dir": null,
+          "knowledge_prefix": false,
+          "knowledge_token_budget": 800,
+          "prefix_stable": false,
+          "max_tokens_multiplier": 2
+        },
+        "ccr": {
+          "first_lines": 12,
+          "last_lines": 8,
+          "omit_threshold": 8,
+          "spill_dir": ".code-harness/ccr",
+          "spill": null,
+          "expand_on": []
+        },
+        "pack_mode": "ccr_lite",
+        "vector_backend": "chromadb",
+        "loop": {
+          "max_loops": 0,
+          "grade_threshold": 0.35,
+          "citation_threshold": 0.5
+        },
+        "session": {
+          "verify": false
+        },
+        "decision": {
+          "enabled": false,
+          "provider": null,
+          "uses": [
+            "loop_grade",
+            "verify"
+          ]
+        }
+      }
+    },
+    "no_retrieval": {
+      "metrics": {
+        "k": 10,
+        "n": 8,
+        "recall_at_k": 0.0,
+        "ndcg_at_k": 0.0,
+        "citation_path_hit_rate": 0.0,
+        "citation_path_full_hit_rate": 0.0,
+        "prompt_tokens_mean": 5.0,
+        "prompt_tokens_full_mean": 5.0,
+        "prompt_tokens_packed_mean": 5.0,
+        "prompt_token_drop": 0.0,
+        "latencies_ms": {
+          "bm25": {
+            "mean": 0.0,
+            "p50": 0.0
+          },
+          "ce": {
+            "mean": 0.0,
+            "p50": 0.0
+          },
+          "dense": {
+            "mean": 0.0,
+            "p50": 0.0
+          },
+          "graph": {
+            "mean": 0.0,
+            "p50": 0.0
+          },
+          "mmr": {
+            "mean": 0.0,
+            "p50": 0.0
+          }
+        },
+        "failure_counts": {
+          "dense_miss": 8,
+          "bm25_miss": 8,
+          "graph_miss": 8
+        },
+        "loop_attempts_mean": 1.0,
+        "by_difficulty": {
+          "easy": {
+            "n": 3,
+            "recall_at_k": 0.0,
+            "ndcg_at_k": 0.0,
+            "citation_path_hit_rate": 0.0,
+            "prompt_tokens_mean": 5.0,
+            "loop_attempts_mean": 1.0
+          },
+          "medium": {
+            "n": 2,
+            "recall_at_k": 0.0,
+            "ndcg_at_k": 0.0,
+            "citation_path_hit_rate": 0.0,
+            "prompt_tokens_mean": 5.0,
+            "loop_attempts_mean": 1.0
+          },
+          "hard": {
+            "n": 3,
+            "recall_at_k": 0.0,
+            "ndcg_at_k": 0.0,
+            "citation_path_hit_rate": 0.0,
+            "prompt_tokens_mean": 5.0,
+            "loop_attempts_mean": 1.0
+          }
+        }
+      },
+      "config": {
+        "retrieval": {
+          "dense_weight": 0.3,
+          "sparse_weight": 0.25,
+          "graph_weight": 0.2,
+          "wiki_weight": 0.0,
+          "memory_weight": 0.0,
+          "top_k": 30,
+          "rerank_top_k": 15,
+          "expand_neighbors": 3,
+          "expand_mode": "beam",
+          "beam_width": 6,
+          "beam_depth": 2,
+          "max_loops": 0,
+          "grade_threshold": 0.35,
+          "citation_threshold": 0.5,
+          "verify": false,
+          "deepen_neighbors": 8,
+          "cross_encoder": {
+            "enabled": true,
+            "model": "cross-encoder/ms-marco-MiniLM-L-6-v2"
+          },
+          "hyde": {
+            "enabled": false,
+            "on_retry": true
+          },
+          "no_retrieval": true
+        },
+        "embedding": {
+          "provider": "local",
+          "model": "all-MiniLM-L6-v2"
+        },
+        "llm": {
+          "max_tokens": 4096
+        },
+        "chunking": {
+          "max_chunk_size": 1500,
+          "min_chunk_size": 50,
+          "overlap_lines": 20,
+          "use_language_parsing": true
+        },
+        "context": {
+          "pack_mode": "full",
+          "prefix_files": [
+            "ARCHITECTURE.md",
+            "AGENTS.md",
+            "CLAUDE.md"
+          ],
+          "include_memory_brief": false,
+          "include_memory_search": false,
+          "memory_brief_tokens": 800,
+          "memory_dir": null,
+          "knowledge_prefix": false,
+          "knowledge_token_budget": 800,
+          "prefix_stable": false,
+          "max_tokens_multiplier": 2
+        },
+        "ccr": {
+          "first_lines": 12,
+          "last_lines": 8,
+          "omit_threshold": 8,
+          "spill_dir": ".code-harness/ccr",
+          "spill": null,
+          "expand_on": []
+        },
+        "pack_mode": "full",
+        "vector_backend": "chromadb",
+        "loop": {
+          "max_loops": 0,
+          "grade_threshold": 0.35,
+          "citation_threshold": 0.5
+        },
+        "session": {
+          "verify": false
+        },
+        "decision": {
+          "enabled": false,
+          "provider": null,
+          "uses": [
+            "loop_grade",
+            "verify"
+          ]
+        }
+      }
+    }
+  }
+}
