@@ -29,6 +29,7 @@ python main.py serve /path/to/your/repo
 make test           # python3 -m unittest discover -s tests -v
 make eval-ab        # python3 main.py eval-ab .  — skips cleanly (exit 0) if the turbovec extra is missing
 make eval-ab-embed  # MiniLM vs jina-embeddings-v2-base-code on Chroma — skips (exit 0) if Jina weights are missing
+make eval-ablate    # harness-on vs harness-off leave-one-out on the golden suite (eval-only)
 ```
 
 ## CI
@@ -44,7 +45,7 @@ python3 main.py index .
 python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml
 ```
 
-See [`.docs/research/eval/README.md`](.docs/research/eval/README.md) for the suite schema, metrics, the optional TurboVec A/B (`make eval-ab`), and the optional MiniLM vs Jina-code embedder A/B (`make eval-ab-embed`).
+See [`.docs/research/eval/README.md`](.docs/research/eval/README.md) for the suite schema, metrics, the optional TurboVec A/B (`make eval-ab`), the optional MiniLM vs Jina-code embedder A/B (`make eval-ab-embed`), and the harness-on vs harness-off ablation (`make eval-ablate`).
 
 ## Commands
 
@@ -349,6 +350,7 @@ python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --c
 python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --embed-model jina-embeddings-v2-base-code
 python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --query-cache
 python3 main.py eval-ab .
+python3 main.py eval-ab . --ablate
 python3 main.py eval-ab . --compare-embedders all-MiniLM-L6-v2,jina-embeddings-v2-base-code
 ```
 
@@ -356,7 +358,7 @@ Reports Recall@k, nDCG@k, citation-path hit rate, stage latency (dense / BM25 / 
 
 `--compare-backends chromadb,turbovec` prints a side-by-side Recall@k / nDCG@k table and writes `.code-harness/eval/{suite}-ab-{timestamp}.json` (override with `--compare-output` / `--compare-markdown`). `eval-ab` indexes both persist dirs and writes [`.docs/research/eval/RESULTS.md`](.docs/research/eval/RESULTS.md). If `turbovec` is the selected backend and it misses the gate (more than 5% relative drop, or the deep-dive point limits: Recall@10 −2 pts / Recall@30 −1), eval exits non-zero unless `--force-experimental`. Missing `turbovec` extra is an honest skip, not a silent FAISS swap.
 
-See [`.docs/research/eval/README.md`](.docs/research/eval/README.md) for the fixture schema, failure taxonomy (`dense_miss | bm25_miss | graph_miss | rerank_drop | packer_drop`), the experimental TurboVec recall gate, and the optional MiniLM vs Jina-code embedder A/B.
+See [`.docs/research/eval/README.md`](.docs/research/eval/README.md) for the fixture schema, failure taxonomy (`dense_miss | bm25_miss | graph_miss | rerank_drop | packer_drop`), the experimental TurboVec recall gate, the optional MiniLM vs Jina-code embedder A/B, and the harness ablation (`python main.py eval-ab . --ablate` / `make eval-ablate`). The ablation writes [`.docs/research/eval/RESULTS-ablation.md`](.docs/research/eval/RESULTS-ablation.md): full harness, each default-on stage off one at a time, HyDE and CCR-lite *on* (those are off in the default full row), and a no-retrieval baseline. Retrieval recall for no-retrieval is zero by construction. Answer-level citation is only scored when a chat-LLM key is supplied; otherwise the table says it was not run. Defaults (MiniLM, Chroma, RRF weights, `max_loops` 0, `decision.enabled` false, verify off) stay unchanged.
 
 ### Experimental TurboVec backend (recall-gated)
 

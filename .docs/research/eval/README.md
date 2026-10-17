@@ -17,7 +17,7 @@ python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml
 python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --dry-run
 ```
 
-CI does not run `make eval-ab` or `make eval-ab-embed`. Those targets are optional A/B recipes and skip cleanly (exit 0) if the `turbovec` extra or Jina-code weights are missing.
+CI does not run `make eval-ab`, `make eval-ab-embed`, or `make eval-ablate`. The first two skip cleanly (exit 0) if the `turbovec` extra or Jina-code weights are missing. Ablation is eval-only and needs a local MiniLM + Chroma index of this repo.
 
 The last run is written to `.code-harness/eval/{suite}-{timestamp}.json` (gitignored). Override with `--output path.json`. `--k` overrides the suite cutoff (default 10).
 
@@ -70,6 +70,31 @@ python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --lo
 ```
 
 `--loop` (or `--max-loops N`) enables the bounded corrective retrieve loop. Default `max_loops=0` is one-shot. Reports include `metrics.by_difficulty` and per-case `loop` traces (`attempts`, `grade`, `stop_reason`).
+
+### Harness-on vs harness-off ablation
+
+Leave-one-out of the default retrieve+pack stack on this same fixture (inspired by the with-vs-without harness contrast in [arXiv 2610.02858](https://arxiv.org/abs/2610.02858)):
+
+```bash
+python3 main.py eval-ab . --ablate
+# or
+make eval-ablate
+# equivalent: index once, then score without rebuilding
+python3 main.py index .
+python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --ablate --skip-index
+```
+
+Variants:
+
+| variant | What changes |
+|---------|----------------|
+| `full` | Default harness (dense + BM25 + graph expand + CE + MMR; HyDE off; pack `full`) |
+| `no_dense` / `no_bm25` / `no_graph` / `no_rerank` / `no_mmr` | That stage off |
+| `hyde` | Local HyDE template **on** (default is off, so leave-one-out would be a no-op) |
+| `ccr_lite` | CCR-lite packing **on** (default pack is `full`) |
+| `no_retrieval` | Empty hits. Recall@k / nDCG@k / citation-path are zero |
+
+Each row reports Recall@k, nDCG@k, citation-path hit rate, stage latency (dense / BM25 / graph / CE / MMR), `prompt_tokens_full` vs packed, and failure taxonomy counts. Writes [RESULTS-ablation.md](RESULTS-ablation.md) / `RESULTS-ablation.json`. Eval stays retrieval-only: if no chat-LLM key is set, the table states that answer-level citation (full vs no-retrieval) was not run. The default query path is not changed.
 
 ### Optional verify stage (`--verify`)
 
