@@ -446,7 +446,7 @@ Query → [optional loop] retrieve → grade → (rewrite | HyDE | deepen | proc
                                      → LLM → Answer → citation check (maybe re-retrieve)
 ```
 
-The corrective loop is **off by default** (`retrieval.max_loops: 0`) so one-shot latency is unchanged. Enable with `--loop` (one extra retrieve) or `--max-loops N` (0–2 extra). Identifier-like queries short-circuit to BM25-only. Query `--verify` adds an independent LLM citation check (off by default). Chat/session `--verify` also enables the default-fail completion gate (`session.verify`). Opt-in **harness-record validity** (`--validity`, `verify.validity`, `CODEHARNESS_VERIFY_VALIDITY=1`; default **off**) flags a cited `path:symbol` that is not in the index, or a claimed relation (`X calls Y`, `A inherits B`, `tested by`) that contradicts the knowledge graph. Deterministic; no LLM. Flags land in query output, `/verify`, the audit log (`verify.validity`), and eval `invalid-citation` rate.
+The corrective loop is **off by default** (`retrieval.max_loops: 0`) so one-shot latency is unchanged. Enable with `--loop` (one extra retrieve) or `--max-loops N` (0–2 extra). Identifier-like queries short-circuit to BM25-only. A **stall** is a retry whose top-k hit set Jaccard-overlaps the previous attempt at ≥ `retrieval.stall_overlap` (default **0.8**). When the loop is on, `retrieval.stop_on_stall` (default **true**) early-stops; it has no effect at `max_loops: 0`. Override with `--no-stop-on-stall`. Stall count / rate / escape rate (a stall followed by a changed, better-graded attempt) land in the eval summary, `/cost`, and the audit log (`loop.stall`). Query `--verify` adds an independent LLM citation check (off by default). Chat/session `--verify` also enables the default-fail completion gate (`session.verify`). Opt-in **harness-record validity** (`--validity`, `verify.validity`, `CODEHARNESS_VERIFY_VALIDITY=1`; default **off**) flags a cited `path:symbol` that is not in the index, or a claimed relation (`X calls Y`, `A inherits B`, `tested by`) that contradicts the knowledge graph. Deterministic; no LLM. Flags land in query output, `/verify`, the audit log (`verify.validity`), and eval `invalid-citation` rate.
 
 ### Retrieval Pipeline
 
@@ -495,6 +495,8 @@ Key settings:
     "cross_encoder": { "enabled": true, "model": "cross-encoder/ms-marco-MiniLM-L-6-v2" },
     "hyde": { "enabled": false, "on_retry": true },
     "max_loops": 0,
+    "stop_on_stall": true,
+    "stall_overlap": 0.8,
     "grade_threshold": 0.35,
     "citation_threshold": 0.5
   },

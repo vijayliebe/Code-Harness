@@ -321,6 +321,10 @@ def run_eval(
                 "action": outcome.action,
                 "mode": outcome.mode,
                 "queries": [t.get("query") for t in traces],
+                "stall_count": int(getattr(outcome, "stall_count", 0) or 0),
+                "stall_rate": getattr(outcome, "stall_rate", 0.0),
+                "escape_count": int(getattr(outcome, "escape_count", 0) or 0),
+                "escape_rate": getattr(outcome, "escape_rate", 0.0),
             },
             "cached": bool(getattr(outcome, "cached", False)),
             "trace": {
@@ -422,6 +426,17 @@ def _aggregate(cases: Sequence[Dict[str, Any]], k: int) -> Dict[str, Any]:
             failure_counts[label] = failure_counts.get(label, 0) + 1
 
     attempts = [float((c.get("loop") or {}).get("attempts") or 1) for c in cases]
+    stall_counts = [int((c.get("loop") or {}).get("stall_count") or 0) for c in cases]
+    stall_rates = [
+        c.get("loop", {}).get("stall_rate")
+        for c in cases
+        if (c.get("loop") or {}).get("stall_rate") is not None
+    ]
+    escape_rates = [
+        c.get("loop", {}).get("escape_rate")
+        for c in cases
+        if (c.get("loop") or {}).get("escape_rate") is not None
+    ]
 
     def _subset_metrics(subset: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
         sub_recalls = [c["recall_at_k"] for c in subset if c["recall_at_k"] is not None]
@@ -458,6 +473,9 @@ def _aggregate(cases: Sequence[Dict[str, Any]], k: int) -> Dict[str, Any]:
         "latencies_ms": latencies,
         "failure_counts": failure_counts,
         "loop_attempts_mean": None if not attempts else round(mean(attempts), 3),
+        "stall_count": sum(stall_counts),
+        "stall_rate": None if not stall_rates else round(mean(stall_rates), 4),
+        "escape_rate": None if not escape_rates else round(mean(escape_rates), 4),
         "by_difficulty": by_difficulty,
     }
     verify_rows = [
@@ -528,6 +546,12 @@ def print_summary(report: Dict[str, Any]) -> None:
             print("  by difficulty: " + "  |  ".join(parts))
     if metrics.get("loop_attempts_mean") is not None:
         print(f"  loop attempts mean: {metrics.get('loop_attempts_mean')}")
+    if metrics.get("stall_count") or metrics.get("stall_rate"):
+        print(
+            f"  stall: count={metrics.get('stall_count', 0)} "
+            f"rate={metrics.get('stall_rate')} "
+            f"escape={metrics.get('escape_rate')}"
+        )
     if metrics.get("verify_pass_rate") is not None:
         print(
             f"  verify pass rate: {metrics.get('verify_pass_rate')} "

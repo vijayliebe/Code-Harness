@@ -556,6 +556,7 @@ def cmd_interactive(args):
                 full_tokens=int(report.prompt_tokens_full or report.prompt_tokens or 0),
                 completion_tokens=completion,
                 loop_attempts=int(getattr(outcome, "attempts", 1) or 1),
+                stall_count=int(getattr(outcome, "stall_count", 0) or 0),
                 pack_mode=report.pack_mode,
                 paths=list(report.packed_paths or []),
                 tool_name="retrieve",
@@ -1450,6 +1451,15 @@ def _add_loop_flags(parser, include_verify: bool = False):
             "(verify.validity; default off). Env: CODEHARNESS_VERIFY_VALIDITY=1"
         ),
     )
+    parser.add_argument(
+        "--no-stop-on-stall",
+        action="store_true",
+        help=(
+            "Keep retrying after a stalled retrieve "
+            "(retrieval.stop_on_stall is true when the loop is on; "
+            "no effect when max_loops is 0)"
+        ),
+    )
     if include_verify:
         parser.add_argument(
             "--verify",
@@ -1470,6 +1480,8 @@ def _apply_loop_args(config, args):
     config.retrieval["max_loops"] = max(0, min(max_loops, 2))
     if getattr(args, "verify", False):
         config.retrieval["verify"] = True
+    if getattr(args, "no_stop_on_stall", False):
+        config.retrieval["stop_on_stall"] = False
     return config
 
 
@@ -1497,7 +1509,9 @@ def _print_loop_debug(outcome):
     print(
         f"  attempts={outcome.attempts}  grade={outcome.grade:.3f}  "
         f"coverage={outcome.coverage:.3f}  stop={outcome.stop_reason}  "
-        f"mode={outcome.mode}"
+        f"mode={outcome.mode}  stalls={getattr(outcome, 'stall_count', 0)}  "
+        f"stall_rate={getattr(outcome, 'stall_rate', 0.0)}  "
+        f"escape_rate={getattr(outcome, 'escape_rate', 0.0)}"
     )
     for trace in outcome.traces or []:
         print(

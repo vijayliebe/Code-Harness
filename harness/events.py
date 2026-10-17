@@ -115,6 +115,7 @@ class SessionEvent:
     full_tokens: int = 0
     completion_tokens: int = 0
     loop_attempts: int = 0
+    stall_count: int = 0
     pack_mode: str = ""
     replace_ids: List[str] = field(default_factory=list)
     replace_generation: int = 0
@@ -536,6 +537,7 @@ def migrate_legacy_events(rows: Iterable[Dict[str, Any]]) -> List[SessionEvent]:
                 full_tokens=int(row.get("full_tokens") or 0),
                 completion_tokens=int(row.get("completion_tokens") or 0),
                 loop_attempts=int(row.get("loop_attempts") or 0),
+                stall_count=int(row.get("stall_count") or 0),
                 pack_mode=row.get("pack_mode") or "",
             )
             events.append(asst)

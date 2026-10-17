@@ -115,6 +115,7 @@ class SessionTurn:
     full_tokens: int = 0
     completion_tokens: int = 0
     loop_attempts: int = 0
+    stall_count: int = 0
     pack_mode: str = "full"
     paths: List[str] = field(default_factory=list)
     tool_name: str = ""
@@ -131,6 +132,7 @@ class SessionCost:
     full_tokens: int = 0
     completion_tokens: int = 0
     loop_attempts: int = 0
+    stall_count: int = 0
     approx_usd: Optional[float] = None
     tool_result_tokens_freed: int = 0
     tool_results_cleared: int = 0
@@ -326,6 +328,7 @@ class Session:
         self._full_tokens = 0
         self._completion_tokens = 0
         self._loop_attempts = 0
+        self._stall_count = 0
         self._tool_result_tokens_freed = 0
         self._tool_results_cleared = 0
         if self.event_session:
@@ -437,6 +440,7 @@ class Session:
         self._full_tokens = 0
         self._completion_tokens = 0
         self._loop_attempts = 0
+        self._stall_count = 0
         if self._log is None:
             return
         for event in self._log.events:
@@ -446,6 +450,7 @@ class Session:
                 self._full_tokens += int(event.full_tokens or 0)
                 self._completion_tokens += int(event.completion_tokens or 0)
                 self._loop_attempts += int(event.loop_attempts or 0)
+                self._stall_count += int(getattr(event, "stall_count", 0) or 0)
             if event.type == "clear":
                 self._tool_result_tokens_freed += int(event.tokens_freed or 0)
                 self._tool_results_cleared += len(event.cleared_ids or event.placeholders or {})
@@ -527,6 +532,7 @@ class Session:
             self._full_tokens += int(turn.full_tokens or 0)
             self._completion_tokens += int(turn.completion_tokens or 0)
             self._loop_attempts += int(turn.loop_attempts or 0)
+            self._stall_count += int(getattr(turn, "stall_count", 0) or 0)
         if self.event_session and self._log is not None:
             self._append_turn_events(turn)
             self._refresh_derived()
@@ -543,6 +549,7 @@ class Session:
                     "full_tokens": turn.full_tokens,
                     "completion_tokens": turn.completion_tokens,
                     "loop_attempts": turn.loop_attempts,
+                    "stall_count": int(getattr(turn, "stall_count", 0) or 0),
                     "pack_mode": turn.pack_mode,
                     "paths": list(turn.paths or []),
                     "tool_name": turn.tool_name,
@@ -601,6 +608,7 @@ class Session:
                     full_tokens=turn.full_tokens,
                     completion_tokens=turn.completion_tokens,
                     loop_attempts=turn.loop_attempts,
+                    stall_count=int(getattr(turn, "stall_count", 0) or 0),
                     pack_mode=turn.pack_mode,
                 )
             )
@@ -642,6 +650,7 @@ class Session:
             full_tokens=self._full_tokens,
             completion_tokens=self._completion_tokens,
             loop_attempts=self._loop_attempts,
+            stall_count=self._stall_count,
             approx_usd=usd,
             tool_result_tokens_freed=self._tool_result_tokens_freed,
             tool_results_cleared=self._tool_results_cleared,
@@ -672,6 +681,7 @@ class Session:
             f"  prompt tokens (full):   {cost.full_tokens}\n"
             f"  completion tokens:      {cost.completion_tokens}\n"
             f"  loop attempts:          {cost.loop_attempts}\n"
+            f"  stalls:                 {cost.stall_count}\n"
             f"{cache_line}"
             f"{clear_line}"
             f"  {usd_line}"

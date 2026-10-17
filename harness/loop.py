@@ -2,6 +2,11 @@
 
 Opt-in: ``retrieval.max_loops=0`` (default) is the existing one-shot hybrid path.
 When ``max_loops`` > 0 the loop may take at most two extra retrieve rounds.
+
+A **stall** is a retry whose top-k hit set does not meaningfully change versus
+the previous attempt: Jaccard overlap of chunk ids ≥ ``stall_overlap``
+(default **0.8**). ``stop_on_stall`` (default True) early-stops when the
+loop is on; it has no effect on the one-shot path (``max_loops=0``).
 """
 
 from __future__ import annotations
@@ -16,6 +21,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 from .metrics import citation_path_hit_rate, normalize_path
 
 MAX_EXTRA_LOOPS = 2
+STALL_OVERLAP = 0.8
 
 EXPLAIN_WORDS = frozenset({"explain", "why", "how", "compare", "design", "tradeoff"})
 PROPER_STOP = frozenset({
@@ -117,6 +123,68 @@ def _mostly_identifiers(query: str, tokens: Sequence[str]) -> bool:
 
 def _chunk_of(item: Any) -> Any:
     return getattr(item, "chunk", item)
+
+
+def topk_hit_ids(results: Sequence[Any], top_k: int) -> List[str]:
+    """Chunk ids in the current effective top-k (packer-facing hit set)."""
+    ids: List[str] = []
+    limit = max(0, int(top_k or 0))
+    for item in list(results or [])[:limit]:
+        chunk = _chunk_of(item)
+        cid = getattr(chunk, "id", None)
+        if cid:
+            ids.append(str(cid))
+    return ids
+
+
+def hitset_jaccard(left: Sequence[str], right: Sequence[str]) -> float:
+    a, b = set(left or []), set(right or [])
+    if not a and not b:
+        return 1.0
+    union = a | b
+    if not union:
+        return 1.0
+    return len(a & b) / float(len(union))
+
+
+def is_retrieval_stall(
+    prev_ids: Optional[Sequence[str]],
+    curr_ids: Sequence[str],
+    threshold: float = STALL_OVERLAP,
+) -> bool:
+    """Retry whose top-k set overlaps the previous attempt at/above threshold."""
+    if prev_ids is None:
+        return False
+    return hitset_jaccard(prev_ids, curr_ids) >= float(threshold)
+
+
+def _maybe_audit_stall(
+    *,
+    config=None,
+    query: str,
+    attempt: int,
+    overlap: float,
+    stall_count: int,
+    stopped: bool,
+    threshold: float = STALL_OVERLAP,
+) -> None:
+    try:
+        from .audit import append_audit
+
+        append_audit(
+            action="loop.stall",
+            config=config,
+            query=query or None,
+            extra={
+                "attempt": attempt,
+                "overlap": round(float(overlap), 4),
+                "threshold": float(threshold),
+                "stall_count": stall_count,
+                "stopped": bool(stopped),
+            },
+        )
+    except Exception:
+        return
 
 
 def _infer_ce_max(results: Sequence[Any], ce_max: Optional[float] = None) -> float:
@@ -370,11 +438,18 @@ class LoopConfig:
     verify: bool = False
     hyde_on_retry: bool = True
     deepen_neighbors: int = 8
+    stop_on_stall: bool = True
+    stall_overlap: float = STALL_OVERLAP
 
     @classmethod
     def from_mapping(cls, retrieval: Optional[Dict[str, Any]] = None) -> "LoopConfig":
         data = retrieval or {}
         hyde = data.get("hyde") or {}
+        overlap = data.get("stall_overlap", STALL_OVERLAP)
+        try:
+            overlap_f = float(overlap)
+        except (TypeError, ValueError):
+            overlap_f = STALL_OVERLAP
         return cls(
             max_loops=min(max(int(data.get("max_loops") or 0), 0), MAX_EXTRA_LOOPS),
             grade_threshold=float(data.get("grade_threshold", 0.35)),
@@ -382,6 +457,8 @@ class LoopConfig:
             verify=bool(data.get("verify", False)),
             hyde_on_retry=bool(hyde.get("on_retry", True)),
             deepen_neighbors=int(data.get("deepen_neighbors") or 8),
+            stop_on_stall=bool(data.get("stop_on_stall", True)),
+            stall_overlap=min(max(overlap_f, 0.0), 1.0),
         )
 
 
@@ -400,6 +477,10 @@ class LoopOutcome:
     answer: Optional[str] = None
     verify: Optional[Dict[str, Any]] = None
     cached: bool = False
+    stall_count: int = 0
+    stall_rate: float = 0.0
+    escape_count: int = 0
+    escape_rate: float = 0.0
 
 
 def call_retrieve(retriever, query: str, top_k: int, debug: bool = True, **opts):
@@ -466,6 +547,8 @@ def _trace_record(
     raw_trace: Dict[str, Any],
     grade: float,
     action: str,
+    stalled: bool = False,
+    overlap: Optional[float] = None,
 ) -> Dict[str, Any]:
     latencies = dict((raw_trace or {}).get("latencies_ms") or {})
     if packed is not None and getattr(packed, "mmr_latency_ms", None) is not None:
@@ -482,6 +565,8 @@ def _trace_record(
         "packed_ids": list(getattr(packed, "packed_chunk_ids", []) or []),
         "grade": grade,
         "action": action,
+        "stalled": bool(stalled),
+        "overlap": None if overlap is None else round(float(overlap), 4),
         "ms": {
             "dense": latencies.get("dense"),
             "bm25": latencies.get("bm25"),
@@ -565,6 +650,12 @@ class QueryLoop:
         next_action = "stop"
         answer = None
         verify_payload = None
+        stall_count = 0
+        escape_count = 0
+        prev_ids: Optional[List[str]] = None
+        pending_stall_grade: Optional[float] = None
+        last_overlap: Optional[float] = None
+        last_stalled = False
 
         for attempt in range(1, max_extra + 2):
             hyde = False
@@ -638,6 +729,25 @@ class QueryLoop:
             if decided and decided.get("grade") is not None:
                 grade = float(decided["grade"])
                 grade_for_stop = grade
+            curr_ids = topk_hit_ids(results, top_k)
+            last_overlap = (
+                None if prev_ids is None else hitset_jaccard(prev_ids, curr_ids)
+            )
+            last_stalled = is_retrieval_stall(
+                prev_ids, curr_ids, self.config.stall_overlap
+            )
+            if (
+                pending_stall_grade is not None
+                and not last_stalled
+                and grade > pending_stall_grade
+            ):
+                escape_count += 1
+                pending_stall_grade = None
+            elif last_stalled:
+                stall_count += 1
+                pending_stall_grade = grade
+            elif pending_stall_grade is not None:
+                pending_stall_grade = None
             stop, reason = should_stop(
                 grade_for_stop,
                 coverage_for_stop,
@@ -677,6 +787,21 @@ class QueryLoop:
                 if next_action == "hyde" and (used_hyde or not self.config.hyde_on_retry):
                     next_action = "rewrite"
                 action = next_action
+            if last_stalled and self.config.stop_on_stall and max_extra > 0:
+                stop = True
+                next_action = "stop"
+                stop_reason = "stall"
+                action = "stop"
+            if last_stalled:
+                _maybe_audit_stall(
+                    config=getattr(self.retriever, "config", None),
+                    query=used_query,
+                    attempt=attempt,
+                    overlap=last_overlap if last_overlap is not None else 1.0,
+                    stall_count=stall_count,
+                    stopped=stop and stop_reason == "stall",
+                    threshold=self.config.stall_overlap,
+                )
             traces.append(_trace_record(
                 query=used_query,
                 mode=retrieve_mode,
@@ -686,7 +811,10 @@ class QueryLoop:
                 raw_trace=raw_trace if isinstance(raw_trace, dict) else {},
                 grade=grade,
                 action=action,
+                stalled=last_stalled,
+                overlap=last_overlap,
             ))
+            prev_ids = curr_ids
             if stop:
                 break
 
@@ -730,6 +858,35 @@ class QueryLoop:
                 )
                 packed = self.context_builder.build_context_report(query, results)
                 grade = heuristic_grade(query, results)
+                curr_ids = topk_hit_ids(results, top_k)
+                last_overlap = (
+                    None if prev_ids is None else hitset_jaccard(prev_ids, curr_ids)
+                )
+                last_stalled = is_retrieval_stall(
+                    prev_ids, curr_ids, self.config.stall_overlap
+                )
+                if (
+                    pending_stall_grade is not None
+                    and not last_stalled
+                    and grade > pending_stall_grade
+                ):
+                    escape_count += 1
+                    pending_stall_grade = None
+                elif last_stalled:
+                    stall_count += 1
+                    pending_stall_grade = grade
+                if last_stalled:
+                    _maybe_audit_stall(
+                        config=getattr(self.retriever, "config", None),
+                        query=effective,
+                        attempt=len(traces) + 1,
+                        overlap=last_overlap if last_overlap is not None else 1.0,
+                        stall_count=stall_count,
+                        stopped=bool(self.config.stop_on_stall and max_extra > 0),
+                        threshold=self.config.stall_overlap,
+                    )
+                    if self.config.stop_on_stall and max_extra > 0:
+                        stop_reason = "stall"
                 traces.append(_trace_record(
                     query=effective,
                     mode=retrieve_mode,
@@ -739,7 +896,10 @@ class QueryLoop:
                     raw_trace=raw_trace if isinstance(raw_trace, dict) else {},
                     grade=grade,
                     action="stop",
+                    stalled=last_stalled,
+                    overlap=last_overlap,
                 ))
+                prev_ids = curr_ids
                 answer = generate(system, packed.context, query)
                 coverage = citation_coverage(
                     answer,
@@ -756,10 +916,16 @@ class QueryLoop:
             else:
                 verify_payload = None
 
+        attempts = len(traces) or 1
+        extras = max(0, attempts - 1)
+        stall_rate = 0.0 if extras <= 0 else round(stall_count / float(extras), 4)
+        escape_rate = (
+            0.0 if stall_count <= 0 else round(escape_count / float(stall_count), 4)
+        )
         return LoopOutcome(
             results=results,
             packed=packed,
-            attempts=len(traces) or 1,
+            attempts=attempts,
             grade=grade,
             coverage=coverage,
             action=action,
@@ -769,4 +935,8 @@ class QueryLoop:
             mode=first_mode if max_extra == 0 else detected,
             answer=answer,
             verify=verify_payload,
+            stall_count=stall_count,
+            stall_rate=stall_rate,
+            escape_count=escape_count,
+            escape_rate=escape_rate,
         )

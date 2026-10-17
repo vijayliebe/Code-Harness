@@ -287,6 +287,38 @@ def render_ablation_markdown(
             )
         )
 
+    stall_rows = [
+        (variant.id, rows.get(variant.id) or {})
+        for variant in variants
+        if (rows.get(variant.id) or {}).get("stall_count")
+        or (rows.get(variant.id) or {}).get("stall_rate")
+        or ((rows.get(variant.id) or {}).get("loop_attempts_mean") or 1) > 1
+    ]
+    if stall_rows:
+        lines.extend(
+            [
+                "",
+                "## Stall (corrective loop)",
+                "",
+                "A stall is a retry whose top-k hit set Jaccard-overlaps the previous "
+                "attempt at ≥ 0.8. Escape = a stall followed by a changed, better-graded "
+                "attempt. `stop_on_stall` is on when the loop is on.",
+                "",
+                "| variant | loop attempts | stalls | stall rate | escape rate |",
+                "|---------|---------------|--------|------------|-------------|",
+            ]
+        )
+        for vid, row in stall_rows:
+            lines.append(
+                "| {vid} | {att} | {st} | {sr} | {er} |".format(
+                    vid=vid,
+                    att=_fmt_tokens(row.get("loop_attempts_mean")),
+                    st=row.get("stall_count") if row.get("stall_count") is not None else "n/a",
+                    sr=_fmt_score(row.get("stall_rate")),
+                    er=_fmt_score(row.get("escape_rate")),
+                )
+            )
+
     lines.extend(
         [
             "",

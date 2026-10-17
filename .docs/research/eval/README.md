@@ -69,7 +69,7 @@ python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --pa
 python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --loop
 ```
 
-`--loop` (or `--max-loops N`) enables the bounded corrective retrieve loop. Default `max_loops=0` is one-shot. Reports include `metrics.by_difficulty` and per-case `loop` traces (`attempts`, `grade`, `stop_reason`).
+`--loop` (or `--max-loops N`) enables the bounded corrective retrieve loop. Default `max_loops=0` is one-shot. Reports include `metrics.by_difficulty` and per-case `loop` traces (`attempts`, `grade`, `stop_reason`). A **stall** is a retry whose top-k hit set Jaccard-overlaps the previous attempt at ≥ 0.8 (`retrieval.stall_overlap`). When the loop is on, `retrieval.stop_on_stall` (default true) early-stops; no effect at `max_loops=0`. Summary also reports stall count / rate and escape rate (stall followed by a changed, better-graded attempt). A live `--loop` pass on the golden suite is recorded in [RESULTS-loop-stall.md](RESULTS-loop-stall.md). The 9-way ablation table was not re-run with `--loop` (cross-encoder cost); use `python3 main.py eval-ab . --ablate --loop --skip-index` to add stall columns.
 
 ### Harness-on vs harness-off ablation
 

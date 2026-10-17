@@ -82,6 +82,9 @@ class TestAblationVariants(unittest.TestCase):
         self.assertFalse(DEFAULT_CONFIG["decision"]["enabled"])
         self.assertFalse(DEFAULT_CONFIG["session"]["verify"])
         self.assertFalse(DEFAULT_CONFIG["verify"]["validity"])
+        self.assertTrue(DEFAULT_CONFIG["retrieval"]["stop_on_stall"])
+        self.assertEqual(DEFAULT_CONFIG["retrieval"]["stall_overlap"], 0.8)
+        self.assertEqual(DEFAULT_CONFIG["retrieval"]["max_loops"], 0)
 
     def test_full_is_a_clone_not_a_mutation(self):
         src = Config()

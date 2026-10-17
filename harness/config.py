@@ -144,6 +144,8 @@ DEFAULT_CONFIG = {
         "beam_width": 6,
         "beam_depth": 2,
         "max_loops": 0,
+        "stop_on_stall": True,
+        "stall_overlap": 0.8,
         "grade_threshold": 0.35,
         "citation_threshold": 0.5,
         "verify": False,
