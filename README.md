@@ -1,26 +1,49 @@
 # Code Harness
 
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
 Vectorize, index, and query any code repository with AI. Provides optimal context to AI models via hybrid retrieval (semantic + lexical + knowledge graph + cross-encoder reranking).
 
 ## Quick Start
 
+Python **3.9+** (CI uses 3.12). On Debian/Ubuntu, `python3 -m venv` needs the `python3-venv` package (`sudo apt install python3-venv` or `python3.12-venv`). After the venv is active, `python` and `python3` are the same interpreter; examples later in this file use `python`.
+
 ```bash
-# Install
+git clone https://github.com/vijayliebe/Code-Harness.git
+cd Code-Harness
+
+python3 -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+
 pip install -r requirements.txt
 
-# Index a repository
-python main.py index /path/to/your/repo
+# Index this repo. First run downloads all-MiniLM-L6-v2 from Hugging Face.
+# No LLM key. Defaults: local MiniLM, Chroma, decision model off,
+# max_loops 0, verify off, HyDE is a free template (not an LLM call).
+python3 main.py index .
 
-# Query it
-python main.py query /path/to/your/repo -q "how does authentication work?"
+# Retrieval only — prints packed context. First query also downloads
+# cross-encoder/ms-marco-MiniLM-L-6-v2. A query *without* --no-llm calls
+# OpenAI gpt-4o and exits if OPENAI_API_KEY is unset.
+python3 main.py query . --no-llm -q "how does the chunker work?"
 
-# Interactive session (aliases: chat, session, repl)
-python main.py chat /path/to/your/repo
-python main.py chat /path/to/your/repo --profile sage
+make test           # python3 -m unittest discover -s tests -v
+```
+
+No LLM key: `index`, `query --no-llm`, `eval`, `doctor`, `wiki generate`, and `make test` work. For a generated answer, copy [`.env.example`](.env.example) to `.env` and set `OPENAI_API_KEY` (or another provider; see [LLM Providers](#llm-providers)), then drop `--no-llm`. `main.py` loads `.env` via `python-dotenv`.
+
+`tree-sitter` and `tree-sitter-languages` are optional and are **not** in `requirements.txt`. Indexing uses the regex / `ast` fallback when they are missing. Hugging Face may print an unauthenticated rate-limit warning; `HF_TOKEN` is not required.
+
+To index another repo: `python3 main.py index /path/to/your/repo` then `python3 main.py query /path/to/your/repo --no-llm -q "…"`.
+
+```bash
+# Interactive session (aliases: chat, session, repl) — still retrieves without a key
+python3 main.py chat .
+python3 main.py chat . --profile sage
 
 # Local health check + localhost retrieve / MCP
-python main.py doctor /path/to/your/repo
-python main.py serve /path/to/your/repo
+python3 main.py doctor .
+python3 main.py serve .
 ```
 
 ## Testing
@@ -731,6 +754,7 @@ External research informing performance, accuracy, and token-cost improvements i
 ```
 code-harness/
 ├── main.py                        CLI entry point
+├── LICENSE                        Apache License 2.0
 ├── requirements.txt
 ├── README.md
 ├── clean_db.py                    Standalone DB cleaner
@@ -774,3 +798,7 @@ code-harness/
     ├── knowledge-graph.md         Graph schema and usage
     └── research/                  External research (INDEX + SYNTHESIS + source notes + deep/)
 ```
+
+## License
+
+Apache License 2.0. Copyright 2026 Vijay Kumar. See [LICENSE](LICENSE).
