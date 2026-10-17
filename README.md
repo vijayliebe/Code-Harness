@@ -446,7 +446,7 @@ Query → [optional loop] retrieve → grade → (rewrite | HyDE | deepen | proc
                                      → LLM → Answer → citation check (maybe re-retrieve)
 ```
 
-The corrective loop is **off by default** (`retrieval.max_loops: 0`) so one-shot latency is unchanged. Enable with `--loop` (one extra retrieve) or `--max-loops N` (0–2 extra). Identifier-like queries short-circuit to BM25-only. Query `--verify` adds an independent LLM citation check (off by default). Chat/session `--verify` also enables the default-fail completion gate (`session.verify`).
+The corrective loop is **off by default** (`retrieval.max_loops: 0`) so one-shot latency is unchanged. Enable with `--loop` (one extra retrieve) or `--max-loops N` (0–2 extra). Identifier-like queries short-circuit to BM25-only. Query `--verify` adds an independent LLM citation check (off by default). Chat/session `--verify` also enables the default-fail completion gate (`session.verify`). Opt-in **harness-record validity** (`--validity`, `verify.validity`, `CODEHARNESS_VERIFY_VALIDITY=1`; default **off**) flags a cited `path:symbol` that is not in the index, or a claimed relation (`X calls Y`, `A inherits B`, `tested by`) that contradicts the knowledge graph. Deterministic; no LLM. Flags land in query output, `/verify`, the audit log (`verify.validity`), and eval `invalid-citation` rate.
 
 ### Retrieval Pipeline
 
@@ -579,6 +579,7 @@ Global flags:
 | `--query-cache` | Opt-in retrieve/pack cache for `query` / `chat` / `eval` (default off). Env: `CODEHARNESS_QUERY_CACHE=1`. `--no-query-cache` disables. Serve stays default-on (`--no-cache`). |
 | `--clear-tool-results` | Opt-in session retrieve/tool dump clearing (default off). Env: `CODEHARNESS_CLEAR_TOOL_RESULTS=1`. Knobs: `--clear-tool-keep`, `--clear-tool-token-trigger`. |
 | `--verify` | Query: independent citation check. Chat/session/eval: also the default-fail completion gate (`session.verify`). Env: `CODEHARNESS_SESSION_VERIFY=1`. Override: `--force-done` / `/done --force`. |
+| `--validity` | Opt-in harness-record validity (`verify.validity`, default off). Env: `CODEHARNESS_VERIFY_VALIDITY=1`. Flags missing `path:symbol` citations and contradicted KG edges. |
 | `--event-session` | Opt-in append-only session events + `derive_messages` (default off). Env: `CODEHARNESS_EVENT_SESSION=1`. Implies prefix-stable packing. `--no-event-session` disables. Enables `/search` and a co-located FTS5 sidecar. |
 | `session search` | FTS over a typed event log (`session search "…"` / `session-search -q … --session <jsonl>`). Requires `--event-session` file; legacy transcripts refused. No extra config knob. |
 | `--prefix-stable` | Freeze system/tool/knowledge prefix bytes (default off; implied by `--event-session`). Env: `CODEHARNESS_PREFIX_STABLE=1`. |

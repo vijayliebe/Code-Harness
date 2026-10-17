@@ -261,6 +261,7 @@ def cmd_query(args):
         supported = outcome.verify.get("supported")
         missing = outcome.verify.get("missing_paths") or []
         print(f"[*] Verify: supported={supported} missing={missing}")
+    _maybe_print_validity(config, response, retriever, query)
 
 
 def cmd_interactive(args):
@@ -340,6 +341,7 @@ def cmd_interactive(args):
         force_done=bool(session_cfg.get("force_done")),
         event_session=bool(session_cfg.get("event_session")),
     )
+    session.bind_harness(retriever, kg)
     query_cache = _build_query_cache(args, config, print)
     session.query_cache = query_cache
     if session.event_session:
@@ -540,6 +542,10 @@ def cmd_interactive(args):
                 print(answer)
             if outcome.verify:
                 print(f"[*] Verify: supported={outcome.verify.get('supported')}")
+        if answer:
+            _maybe_print_validity(config, answer, retriever, query)
+            if getattr(session, "validity_enabled", False):
+                session.run_validity(answer, query=query)
         completion = context_builder.estimate_tokens(answer or "")
         session.record_turn(
             SessionTurn(
@@ -1435,6 +1441,15 @@ def _add_loop_flags(parser, include_verify: bool = False):
         metavar="N",
         help="Extra retrieve rounds (0-2). Default 0 preserves one-shot retrieval",
     )
+    parser.add_argument(
+        "--validity",
+        action="store_true",
+        help=(
+            "Opt-in harness-record validity: flag cited path:symbol missing "
+            "from the index or claimed KG relations that contradict the graph "
+            "(verify.validity; default off). Env: CODEHARNESS_VERIFY_VALIDITY=1"
+        ),
+    )
     if include_verify:
         parser.add_argument(
             "--verify",
@@ -1456,6 +1471,23 @@ def _apply_loop_args(config, args):
     if getattr(args, "verify", False):
         config.retrieval["verify"] = True
     return config
+
+
+def _maybe_print_validity(config, answer, retriever, query=""):
+    from harness.verify import run_harness_validity, validity_enabled
+
+    if not validity_enabled(config=config):
+        return None
+    report = run_harness_validity(
+        answer or "",
+        config=config,
+        retriever=retriever,
+        query=query,
+    )
+    if report.skipped:
+        return report
+    print(f"[*] {report.format()}")
+    return report
 
 
 def _print_loop_debug(outcome):

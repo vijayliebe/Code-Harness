@@ -117,6 +117,10 @@ python main.py eval . --suite .docs/research/eval/agent-completion.example.yaml 
 
 Reports then include per-case `verify` and `metrics.verify_pass_rate` (only over non-skipped agent-completion fixtures). Default **off**.
 
+### Optional validity stage (`--validity`)
+
+A separate opt-in (`verify.validity`, default **off**) checks an answer — fixture `answer` when present, otherwise a generated answer — against index/entity records and the knowledge graph. Missing `path:symbol` citations and contradicted claimed edges (`calls` / `inherits` / `tested_by`) are flagged. Eval then reports `metrics.invalid_citation_rate`. Retrieval-only fixtures with no answer contribute `citation_count=0`. The default query path is unchanged.
+
 ## Experimental backend A/B
 
 Routine recipe (indexes both persist dirs, compares, writes the committed table):

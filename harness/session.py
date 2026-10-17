@@ -31,6 +31,8 @@ from .verify import (
     VerifyResult,
     force_done_enabled,
     looks_like_done_claim,
+    run_harness_validity,
+    validity_enabled,
     verify_gate_enabled,
 )
 
@@ -70,7 +72,8 @@ HELP_TEXT = """Commands:
   /wiki                    Toggle chat-over-wiki (ask the living wiki)
   /wiki on|off             Enable or disable wiki mode
   /wiki <page>             Show a generated wiki page
-  /verify                  Independent completion-criteria check (default-fail)
+  /verify                  Independent completion-criteria check (default-fail);
+                           with verify.validity, also check last-answer citations
   /done                    Accept completion only if the verify gate is green
   /done --force            Override the verify gate (explicit)
   /llm on|off              Enable/disable LLM responses
@@ -290,6 +293,10 @@ class Session:
         if verify is None:
             verify = verify_gate_enabled(config=config)
         self.verify_enabled = bool(verify)
+        self.validity_enabled = validity_enabled(config=config)
+        self._validity_records = None
+        self._validity_graph = None
+        self.last_validity = None
         if force_done is None:
             force_done = force_done_enabled(config=config)
         specs = verify_criteria
@@ -983,18 +990,47 @@ class Session:
             kept_turns=self.turn_count(),
         )
 
+    def bind_harness(self, retriever=None, knowledge_graph=None) -> None:
+        """Attach index/KG records for opt-in validity checks."""
+        from .verify import entity_records_from_harness, graph_from_harness
+
+        self._validity_records = entity_records_from_harness(retriever, knowledge_graph)
+        self._validity_graph = graph_from_harness(retriever, knowledge_graph)
+
+    def last_assistant_text(self) -> str:
+        for turn in reversed(self.turns):
+            if turn.role == "assistant":
+                return turn.text or ""
+        return ""
+
+    def run_validity(self, answer: Optional[str] = None, query: str = ""):
+        report = run_harness_validity(
+            answer if answer is not None else self.last_assistant_text(),
+            config=self._config,
+            records=self._validity_records,
+            graph=self._validity_graph,
+            query=query,
+            enabled=self.validity_enabled,
+        )
+        self.last_validity = report
+        return report
+
     def run_verify(self, evidence: Optional[Dict] = None, llm=None, decider=None) -> VerifyResult:
         if decider is None and self._config is not None:
             from .decision import build_decision_client
 
             decider = build_decision_client(self._config)
         result = self.gate.run_verify(evidence=evidence, llm=llm, decider=decider)
+        extra = result.to_dict()
+        if self.validity_enabled:
+            validity = self.run_validity()
+            extra["validity"] = validity.to_dict()
         if self.event_session and self._log is not None:
             from .events import make_event
 
-            self._log.append(make_event("verify", extra=result.to_dict()))
+            self._log.append(make_event("verify", extra=extra))
         elif self.session_dir:
-            self._append_jsonl({"event": "verify", **result.to_dict()})
+            self._append_jsonl({"event": "verify", **extra})
         return result
 
     def claim_done(self, text: str = "", *, force: bool = False) -> CompletionDecision:
@@ -1024,14 +1060,19 @@ class Session:
         return decision.message or "verify gate: not done"
 
     def format_verify(self) -> str:
+        parts: List[str] = []
         if not self.verify_enabled:
-            return (
+            parts.append(
                 "verify gate is off (default). "
                 "Pass --verify / CODEHARNESS_SESSION_VERIFY=1 / session.verify"
             )
-        if self.gate.last_result is not None:
-            return self.gate.last_result.message or self.gate.format_checklist()
-        return self.gate.format_checklist()
+        elif self.gate.last_result is not None:
+            parts.append(self.gate.last_result.message or self.gate.format_checklist())
+        else:
+            parts.append(self.gate.format_checklist())
+        if self.validity_enabled and self.last_validity is not None:
+            parts.append(self.last_validity.format())
+        return "\n".join(parts)
 
     def set_profile(self, name: str) -> str:
         key = (name or "").strip().lower()

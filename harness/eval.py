@@ -42,6 +42,7 @@ class EvalFixture:
     must_cite_paths: List[str] = field(default_factory=list)
     difficulty: str = "medium"
     completion_criteria: List[Dict[str, Any]] = field(default_factory=list)
+    answer: str = ""
 
 
 def load_suite(path: str) -> Tuple[List[EvalFixture], Dict[str, Any]]:
@@ -51,7 +52,7 @@ def load_suite(path: str) -> Tuple[List[EvalFixture], Dict[str, Any]]:
       - a list of fixture objects
       - a mapping `{suite, k, fixtures: [...]}`
     Each fixture: `{id, query, relevant_chunk_ids[], must_cite_paths[],
-    difficulty, optional completion_criteria[]}`.
+    difficulty, optional completion_criteria[], optional answer}`.
     """
     if not os.path.isfile(path):
         raise FileNotFoundError(f"Eval suite not found: {path}")
@@ -103,6 +104,7 @@ def _parse_fixture(item: Any, idx: int) -> EvalFixture:
         must_cite_paths=[normalize_path(str(x)) for x in (item.get("must_cite_paths") or [])],
         difficulty=difficulty,
         completion_criteria=criteria,
+        answer=str(item.get("answer") or ""),
     )
 
 
@@ -212,6 +214,17 @@ def run_eval(
     if verify is None:
         verify = bool((getattr(eval_config, "session", None) or {}).get("verify"))
     verify = bool(verify)
+    from .verify import (
+        graph_from_harness,
+        entity_records_from_harness,
+        maybe_audit_validity,
+        run_harness_validity,
+        validity_enabled,
+    )
+
+    validity_on = validity_enabled(config=eval_config)
+    validity_records = entity_records_from_harness(retriever) if validity_on else []
+    validity_graph = graph_from_harness(retriever) if validity_on else None
 
     for fixture in fixtures:
         if cache is not None and eval_config is not None:
@@ -347,6 +360,19 @@ def run_eval(
                 evidence=evidence,
             )
             case["verify"] = verify_result.to_dict()
+        if validity_on:
+            answer_text = (outcome.answer or "") or (fixture.answer or "")
+            validity_report = run_harness_validity(
+                answer_text,
+                config=eval_config,
+                records=validity_records,
+                graph=validity_graph,
+                query=fixture.query,
+                enabled=True,
+                audit=False,
+            )
+            case["validity"] = validity_report.to_dict()
+            maybe_audit_validity(validity_report, config=eval_config, query=fixture.query)
         cases.append(case)
 
     metrics = _aggregate(cases, k)
@@ -445,6 +471,24 @@ def _aggregate(cases: Sequence[Dict[str, Any]], k: int) -> Dict[str, Any]:
             mean([1.0 if row.get("passed") else 0.0 for row in verify_rows]),
             4,
         )
+    validity_rows = [
+        c.get("validity")
+        for c in cases
+        if isinstance(c.get("validity"), dict) and c["validity"].get("ran")
+    ]
+    if validity_rows:
+        rates = [
+            row.get("invalid_citation_rate")
+            for row in validity_rows
+            if row.get("invalid_citation_rate") is not None
+        ]
+        metrics["validity_n"] = len(validity_rows)
+        metrics["invalid_citation_rate"] = (
+            None if not rates else round(mean(rates), 4)
+        )
+        metrics["validity_flag_count"] = sum(
+            int(row.get("flag_count") or 0) for row in validity_rows
+        )
     return metrics
 
 
@@ -488,6 +532,12 @@ def print_summary(report: Dict[str, Any]) -> None:
         print(
             f"  verify pass rate: {metrics.get('verify_pass_rate')} "
             f"(n={metrics.get('verify_n', 0)})"
+        )
+    if metrics.get("invalid_citation_rate") is not None:
+        print(
+            f"  invalid-citation rate: {metrics.get('invalid_citation_rate')} "
+            f"(n={metrics.get('validity_n', 0)}, "
+            f"flags={metrics.get('validity_flag_count', 0)})"
         )
     qc = metrics.get("query_cache") or {}
     if qc.get("enabled"):
