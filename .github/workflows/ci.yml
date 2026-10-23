@@ -27,4 +27,4 @@ jobs:
         run: python3 main.py index .
 
       - name: Golden retrieval eval
-        run: python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml
+        run: python3 main.py eval . --suite .docs/research/eval/code-harness-v2.fixture.yaml

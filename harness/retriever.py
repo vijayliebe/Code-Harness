@@ -44,6 +44,13 @@ def is_memory_chunk(chunk) -> bool:
 _cross_encoder_cache = {}
 
 
+def _score_desc_id(result) -> tuple:
+    """Stable rank key: higher score first, then chunk id for ties."""
+    chunk = getattr(result, "chunk", None)
+    cid = getattr(chunk, "id", "") if chunk is not None else ""
+    return (-float(getattr(result, "score", 0.0) or 0.0), cid or "")
+
+
 class Retriever:
     def __init__(self, config: Config, embedder: Embedder,
                  vector_store: VectorStore, knowledge_graph: KnowledgeGraph,
@@ -305,7 +312,7 @@ class Retriever:
             reranked = []
         latencies_ms["ce"] = (time.perf_counter() - started) * 1000.0
 
-        fused.sort(key=lambda r: r.score, reverse=True)
+        fused.sort(key=_score_desc_id)
         top = fused[:k]
         try:
             from .wiki_chat import prefer_wiki_results, wiki_mode_enabled
@@ -356,7 +363,7 @@ class Retriever:
 
         for r, score in zip(results, scores):
             r.score = float(score)
-        results.sort(key=lambda r: r.score, reverse=True)
+        results.sort(key=_score_desc_id)
         return results
 
     def _bm25_search(self, query: str, top_k: int = 20) -> List[RetrievalResult]:
@@ -376,7 +383,7 @@ class Retriever:
                     source="sparse",
                 ))
 
-        results.sort(key=lambda r: r.score, reverse=True)
+        results.sort(key=_score_desc_id)
         return results[:top_k]
 
     def _wiki_search(self, query: str, top_k: int = 20) -> List[RetrievalResult]:
@@ -395,7 +402,7 @@ class Retriever:
                 continue
             score = min(0.9, 0.25 + (overlap / max(len(query_tokens), 1)) * 0.65)
             results.append(RetrievalResult(chunk=chunk, score=score, source="wiki"))
-        results.sort(key=lambda r: r.score, reverse=True)
+        results.sort(key=_score_desc_id)
         return results[:top_k]
 
     def _memory_search(self, query: str, top_k: int = 20) -> List[RetrievalResult]:
@@ -490,7 +497,7 @@ class Retriever:
                     chunk=chunk, score=score, source="graph"
                 ))
 
-        results.sort(key=lambda r: r.score, reverse=True)
+        results.sort(key=_score_desc_id)
         return results[:self.top_k]
 
     @staticmethod
@@ -509,7 +516,7 @@ class Retriever:
                 chunk_map[chunk_id] = result
 
         fused = []
-        for chunk_id, score in sorted(scores.items(), key=lambda x: x[1], reverse=True):
+        for chunk_id, score in sorted(scores.items(), key=lambda x: (-x[1], x[0])):
             result = chunk_map[chunk_id]
             fused.append(RetrievalResult(
                 chunk=result.chunk,

@@ -1,0 +1,521 @@
+# Golden retrieval suite v2 for this repository (40–50 queries).
+#
+# The original 8 fixtures from code-harness.fixture.yaml are the first
+# eight rows, unchanged, so old Recall/nDCG numbers stay comparable.
+#
+# Extra field `category` is optional. load_suite ignores unknown keys on
+# older harnesses; this file still scores. Categories used here:
+#   symbol | nl | cross-file | cli | docs | hard | ticket
+#
+# Precondition: index first (local embeddings; no LLM key):
+#   python3 main.py index .
+# Then:
+#   python3 main.py eval . --suite .docs/research/eval/code-harness-v2.fixture.yaml
+# Dry-run (no index):
+#   python3 main.py eval . --suite .docs/research/eval/code-harness-v2.fixture.yaml --dry-run
+#
+# relevant_chunk_ids use stable parser entity ids. Chunk ids are
+# `{entity_id}:{uuid}` and change on every re-index.
+
+suite: code-harness-v2
+k: 10
+fixtures:
+  # --- original 8 (subset; keep ids/queries/labels byte-stable) ---
+  - id: q-context-builder
+    query: How does ContextBuilder assemble MMR context?
+    category: nl
+    relevant_chunk_ids:
+      - class:harness/context_builder.py:ContextBuilder
+      - method:harness/context_builder.py:ContextBuilder.build_context
+    must_cite_paths:
+      - harness/context_builder.py
+    difficulty: easy
+
+  - id: q-who-calls-index-chunks
+    query: Who calls Retriever index_chunks?
+    category: hard
+    relevant_chunk_ids:
+      - method:harness/retriever.py:Retriever.index_chunks
+    must_cite_paths:
+      - harness/retriever.py
+    difficulty: hard
+
+  - id: q-parser-discover
+    query: How does CodeParser discover and parse repository files?
+    category: nl
+    relevant_chunk_ids:
+      - class:harness/parser.py:CodeParser
+      - func:harness/parser.py:discover_files
+    must_cite_paths:
+      - harness/parser.py
+    difficulty: easy
+
+  - id: q-chunker
+    query: How does CodeChunker split entities into chunks?
+    category: nl
+    relevant_chunk_ids:
+      - class:harness/chunker.py:CodeChunker
+      - method:harness/chunker.py:CodeChunker.chunk_entities
+    must_cite_paths:
+      - harness/chunker.py
+    difficulty: easy
+
+  - id: q-cli-query
+    query: Where is the query CLI command defined in main.py?
+    category: cli
+    relevant_chunk_ids:
+      - func:main.py:cmd_query
+    must_cite_paths:
+      - main.py
+    difficulty: medium
+
+  - id: q-rrf-fusion
+    query: How does reciprocal rank fusion combine dense and BM25 results?
+    category: nl
+    relevant_chunk_ids:
+      - method:harness/retriever.py:Retriever._reciprocal_rank_fusion
+      - method:harness/retriever.py:Retriever.retrieve
+    must_cite_paths:
+      - harness/retriever.py
+    difficulty: medium
+
+  - id: q-who-calls-build-context
+    query: Who calls ContextBuilder.build_context?
+    category: hard
+    relevant_chunk_ids:
+      - method:harness/context_builder.py:ContextBuilder.build_context
+      - class:harness/context_builder.py:ContextBuilder
+    must_cite_paths:
+      - harness/context_builder.py
+    difficulty: hard
+
+  - id: q-what-exposes-query
+    query: What CLI commands are exposed in main.py?
+    category: hard
+    relevant_chunk_ids:
+      - func:main.py:cmd_query
+      - file:main.py
+    must_cite_paths:
+      - main.py
+    difficulty: hard
+
+  # --- exact symbol / identifier lookups ---
+  - id: q-symbol-queryloop
+    query: QueryLoop
+    category: symbol
+    relevant_chunk_ids:
+      - class:harness/loop.py:QueryLoop
+    must_cite_paths:
+      - harness/loop.py
+    difficulty: easy
+
+  - id: q-symbol-redact-text
+    query: redact_text
+    category: symbol
+    relevant_chunk_ids:
+      - func:harness/redact.py:redact_text
+    must_cite_paths:
+      - harness/redact.py
+    difficulty: easy
+
+  - id: q-symbol-match-gold-id
+    query: match_gold_id
+    category: symbol
+    relevant_chunk_ids:
+      - func:harness/metrics.py:match_gold_id
+    must_cite_paths:
+      - harness/metrics.py
+    difficulty: easy
+
+  - id: q-symbol-turbovec-store
+    query: TurboVecStore
+    category: symbol
+    relevant_chunk_ids:
+      - class:harness/turbovec_store.py:TurboVecStore
+    must_cite_paths:
+      - harness/turbovec_store.py
+    difficulty: easy
+
+  - id: q-symbol-completion-gate
+    query: CompletionGate
+    category: symbol
+    relevant_chunk_ids:
+      - class:harness/verify.py:CompletionGate
+    must_cite_paths:
+      - harness/verify.py
+    difficulty: easy
+
+  - id: q-symbol-chroma-store
+    query: ChromaVectorStore
+    category: symbol
+    relevant_chunk_ids:
+      - class:harness/vector_store.py:ChromaVectorStore
+    must_cite_paths:
+      - harness/vector_store.py
+    difficulty: easy
+
+  - id: q-symbol-event-log
+    query: EventLog
+    category: symbol
+    relevant_chunk_ids:
+      - class:harness/events.py:EventLog
+    must_cite_paths:
+      - harness/events.py
+    difficulty: easy
+
+  # --- natural-language "how does X work" ---
+  - id: q-nl-hyde-template
+    query: How does HyDE expand a query without calling an LLM?
+    category: nl
+    relevant_chunk_ids:
+      - method:harness/embedder.py:Embedder._generate_hypothetical
+      - method:harness/embedder.py:Embedder.embed_query
+    must_cite_paths:
+      - harness/embedder.py
+    difficulty: medium
+
+  - id: q-nl-query-cache
+    query: How does the retrieve and pack query cache key a lookup?
+    category: nl
+    relevant_chunk_ids:
+      - class:harness/query_cache.py:QueryCache
+      - func:harness/query_cache.py:normalize_query
+    must_cite_paths:
+      - harness/query_cache.py
+    difficulty: medium
+
+  - id: q-nl-secret-redaction
+    query: How does secret redaction work on outbound text?
+    category: nl
+    relevant_chunk_ids:
+      - func:harness/redact.py:redact_text
+      - func:harness/redact.py:redact_and_audit
+    must_cite_paths:
+      - harness/redact.py
+    difficulty: easy
+
+  - id: q-nl-wiki-generate
+    query: How does wiki generate pages from the knowledge graph?
+    category: nl
+    relevant_chunk_ids:
+      - func:harness/wiki.py:generate_wiki
+      - func:harness/wiki.py:generate_from_repo
+    must_cite_paths:
+      - harness/wiki.py
+    difficulty: medium
+
+  - id: q-nl-doctor
+    query: How does doctor check local index and embedding health?
+    category: nl
+    relevant_chunk_ids:
+      - func:harness/doctor.py:run_doctor
+      - class:harness/doctor.py:DoctorReport
+    must_cite_paths:
+      - harness/doctor.py
+    difficulty: easy
+
+  - id: q-nl-ccr-pack
+    query: How does pack_chunk compress a chunk to first and last lines?
+    category: nl
+    relevant_chunk_ids:
+      - func:harness/ccr.py:pack_chunk
+      - class:harness/ccr.py:CCRCache
+    must_cite_paths:
+      - harness/ccr.py
+    difficulty: medium
+
+  # --- cross-file flows ---
+  - id: q-flow-retrieve-pack
+    query: How does a query go from retrieve through cross-encoder rerank to packed context?
+    category: cross-file
+    relevant_chunk_ids:
+      - method:harness/retriever.py:Retriever.retrieve
+      - method:harness/retriever.py:Retriever._cross_encoder_rerank
+      - method:harness/context_builder.py:ContextBuilder.build_context
+    must_cite_paths:
+      - harness/retriever.py
+      - harness/context_builder.py
+    difficulty: hard
+
+  - id: q-flow-index-pipeline
+    query: How does index discover files, parse entities, chunk them, embed, and store vectors?
+    category: cross-file
+    relevant_chunk_ids:
+      - func:main.py:cmd_index
+      - class:harness/parser.py:CodeParser
+      - class:harness/chunker.py:CodeChunker
+      - method:harness/embedder.py:Embedder.embed
+    must_cite_paths:
+      - main.py
+      - harness/parser.py
+      - harness/chunker.py
+      - harness/embedder.py
+      - harness/vector_store.py
+    difficulty: hard
+
+  - id: q-flow-eval-score
+    query: How does eval load a golden suite and score Recall at k?
+    category: cross-file
+    relevant_chunk_ids:
+      - func:harness/eval.py:load_suite
+      - func:harness/eval.py:run_eval
+      - func:harness/metrics.py:recall_at_k
+    must_cite_paths:
+      - harness/eval.py
+      - harness/metrics.py
+    difficulty: medium
+
+  - id: q-flow-loop-grade
+    query: How does the corrective query loop grade a retrieve and decide to retry?
+    category: cross-file
+    relevant_chunk_ids:
+      - class:harness/loop.py:QueryLoop
+      - func:harness/decision.py:decide_loop_grade
+    must_cite_paths:
+      - harness/loop.py
+      - harness/decision.py
+    difficulty: hard
+
+  - id: q-flow-serve-mcp
+    query: How does the localhost serve retrieve endpoint pack context and redact the response?
+    category: cross-file
+    relevant_chunk_ids:
+      - class:harness/serve.py:RetrieveService
+      - func:harness/redact.py:redact_and_audit
+    must_cite_paths:
+      - harness/serve.py
+      - harness/redact.py
+    difficulty: hard
+
+  - id: q-flow-memory-extract
+    query: How does memory extract write typed entries from a session into MemoryStore?
+    category: cross-file
+    relevant_chunk_ids:
+      - func:harness/memory_extract.py:extract_session
+      - class:harness/memory.py:MemoryStore
+    must_cite_paths:
+      - harness/memory_extract.py
+      - harness/memory.py
+    difficulty: medium
+
+  # --- config / CLI ---
+  - id: q-cli-eval
+    query: Where is the eval CLI command defined in main.py?
+    category: cli
+    relevant_chunk_ids:
+      - func:main.py:cmd_eval
+    must_cite_paths:
+      - main.py
+    difficulty: easy
+
+  - id: q-cli-index
+    query: Where is the index CLI command defined in main.py?
+    category: cli
+    relevant_chunk_ids:
+      - func:main.py:cmd_index
+    must_cite_paths:
+      - main.py
+    difficulty: easy
+
+  - id: q-cli-serve
+    query: Where is the serve CLI command defined in main.py?
+    category: cli
+    relevant_chunk_ids:
+      - func:main.py:cmd_serve
+    must_cite_paths:
+      - main.py
+    difficulty: easy
+
+  - id: q-config-defaults
+    query: Where are the default retrieval weights, top_k, and cross-encoder settings defined?
+    category: cli
+    relevant_chunk_ids:
+      - class:harness/config.py:Config
+    must_cite_paths:
+      - harness/config.py
+    difficulty: medium
+
+  # --- docs (true answer is the doc, not a roadmap note) ---
+  - id: q-docs-quickstart
+    query: How do I clone this repo, create a venv, and index it for the first time?
+    category: docs
+    relevant_chunk_ids:
+      - file:README.md
+    must_cite_paths:
+      - README.md
+    difficulty: easy
+
+  - id: q-docs-eval-recipe
+    query: What is the canonical command to score the committed retrieval golden suite?
+    category: docs
+    relevant_chunk_ids:
+      - file:README.md
+      - file:.docs/research/eval/README.md
+    must_cite_paths:
+      - README.md
+      - .docs/research/eval/README.md
+    difficulty: medium
+
+  - id: q-docs-env-keys
+    query: Which environment variables set OPENAI_API_KEY and the optional decision model?
+    category: docs
+    relevant_chunk_ids:
+      - file:.env.example
+    must_cite_paths:
+      - .env.example
+    difficulty: easy
+
+  - id: q-docs-license
+    query: What license does Code-Harness use?
+    category: docs
+    relevant_chunk_ids:
+      - file:LICENSE
+    must_cite_paths:
+      - LICENSE
+    difficulty: easy
+
+  # --- negative / hard queries with near-miss distractors ---
+  - id: q-hard-hyde-not-llm
+    query: How does HyDE call the chat LLM to write a hypothetical document before embedding?
+    category: hard
+    relevant_chunk_ids:
+      - method:harness/embedder.py:Embedder._generate_hypothetical
+      - method:harness/embedder.py:Embedder.embed_query
+    must_cite_paths:
+      - harness/embedder.py
+    difficulty: hard
+
+  - id: q-hard-turbovec-default
+    query: Where is TurboVec set as the default dense vector store?
+    category: hard
+    relevant_chunk_ids:
+      - class:harness/config.py:Config
+    must_cite_paths:
+      - harness/config.py
+    difficulty: hard
+
+  - id: q-hard-jina-not-default
+    query: Where is the Jina embeddings HTTP API used as the default local embedder?
+    category: hard
+    relevant_chunk_ids:
+      - class:harness/embedder.py:Embedder
+      - class:harness/config.py:Config
+    must_cite_paths:
+      - harness/embedder.py
+      - harness/config.py
+    difficulty: hard
+
+  - id: q-hard-no-langgraph
+    query: Where does the query loop use LangGraph to orchestrate retrieve retries?
+    category: hard
+    relevant_chunk_ids:
+      - class:harness/loop.py:QueryLoop
+    must_cite_paths:
+      - harness/loop.py
+    difficulty: hard
+
+  - id: q-hard-verify-not-recall
+    query: How does the default-fail verify gate compute Recall@k for the golden retrieval suite?
+    category: hard
+    relevant_chunk_ids:
+      - func:harness/eval.py:run_eval
+      - func:harness/metrics.py:recall_at_k
+    must_cite_paths:
+      - harness/eval.py
+      - harness/metrics.py
+    difficulty: hard
+
+  - id: q-hard-cache-not-chroma
+    query: How does Chroma persist the interactive query cache between eval runs?
+    category: hard
+    relevant_chunk_ids:
+      - class:harness/query_cache.py:QueryCache
+    must_cite_paths:
+      - harness/query_cache.py
+    difficulty: hard
+
+  # --- ticket-style (Jira-like body; labels are the files that would change) ---
+  - id: q-ticket-rerank-crash
+    query: >
+      ABC-101: Cross-encoder rerank crashes when fused results are empty or
+      the CE model fails to load. Guard _cross_encoder_rerank so a missing
+      model or empty candidate list returns the original fused ranking
+      instead of raising.
+    category: ticket
+    relevant_chunk_ids:
+      - method:harness/retriever.py:Retriever._cross_encoder_rerank
+    must_cite_paths:
+      - harness/retriever.py
+    difficulty: hard
+
+  - id: q-ticket-packer-omit
+    query: >
+      ABC-102: CCR packer reports negative omitted line counts when first
+      and last spans overlap on short chunks. pack_chunk should never emit
+      "(-1 lines omitted)".
+    category: ticket
+    relevant_chunk_ids:
+      - func:harness/ccr.py:pack_chunk
+    must_cite_paths:
+      - harness/ccr.py
+    difficulty: medium
+
+  - id: q-ticket-loop-oneshot
+    query: >
+      ABC-103: Corrective retrieve loop spends extra rounds when max_loops
+      is 0. QueryLoop.run must keep the default path one retrieve plus pack.
+    category: ticket
+    relevant_chunk_ids:
+      - class:harness/loop.py:QueryLoop
+    must_cite_paths:
+      - harness/loop.py
+    difficulty: hard
+
+  - id: q-ticket-redact-leak
+    query: >
+      ABC-104: Packed LLM context leaked an OpenAI sk- key. redact_text
+      must catch sk- tokens and PEM private keys before context leaves
+      the machine.
+    category: ticket
+    relevant_chunk_ids:
+      - func:harness/redact.py:redact_text
+    must_cite_paths:
+      - harness/redact.py
+    difficulty: medium
+
+  - id: q-ticket-bm25-persist
+    query: >
+      ABC-105: After restart, BM25 index is empty even though Chroma has
+      chunks. try_load_bm25 should restore the pickle next to the persist
+      directory.
+    category: ticket
+    relevant_chunk_ids:
+      - method:harness/retriever.py:Retriever.try_load_bm25
+      - method:harness/retriever.py:Retriever.index_chunks
+    must_cite_paths:
+      - harness/retriever.py
+    difficulty: medium
+
+  - id: q-ticket-eval-uuid
+    query: >
+      ABC-106: Golden eval Recall@k is 0 after every re-index because
+      fixtures gold the chunk UUID suffix. match_gold_id must treat entity
+      ids as stable and ignore the trailing uuid.
+    category: ticket
+    relevant_chunk_ids:
+      - func:harness/metrics.py:match_gold_id
+    must_cite_paths:
+      - harness/metrics.py
+    difficulty: medium
+
+  - id: q-ticket-serve-bind
+    query: >
+      ABC-107: serve bound 0.0.0.0 without auth. Default HTTP bind must
+      stay 127.0.0.1 and require --allow-public for all-interfaces.
+    category: ticket
+    relevant_chunk_ids:
+      - func:harness/serve.py:resolve_bind_host
+      - class:harness/serve.py:BindError
+    must_cite_paths:
+      - harness/serve.py
+    difficulty: medium

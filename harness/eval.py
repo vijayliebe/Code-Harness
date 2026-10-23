@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -31,7 +32,40 @@ __all__ = [
     "write_report",
     "print_summary",
     "default_report_path",
+    "seed_eval_determinism",
 ]
+
+
+EVAL_SEED = 0
+
+
+def seed_eval_determinism(seed: int = EVAL_SEED) -> None:
+    """Pin cheap local RNGs so repeat evals share one noise band.
+
+    Does not make Chroma HNSW exact. ``PYTHONHASHSEED`` is set only when
+    unset — an already-started interpreter cannot rehash.
+    """
+    os.environ.setdefault("PYTHONHASHSEED", str(int(seed)))
+    random.seed(seed)
+    try:
+        import numpy as np
+
+        np.random.seed(int(seed))
+    except Exception:
+        pass
+    try:
+        import torch
+
+        torch.manual_seed(int(seed))
+        if hasattr(torch, "use_deterministic_algorithms"):
+            try:
+                torch.use_deterministic_algorithms(True, warn_only=True)
+            except TypeError:
+                pass
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(int(seed))
+    except Exception:
+        pass
 
 
 @dataclass
@@ -43,6 +77,7 @@ class EvalFixture:
     difficulty: str = "medium"
     completion_criteria: List[Dict[str, Any]] = field(default_factory=list)
     answer: str = ""
+    category: str = ""
 
 
 def load_suite(path: str) -> Tuple[List[EvalFixture], Dict[str, Any]]:
@@ -52,7 +87,7 @@ def load_suite(path: str) -> Tuple[List[EvalFixture], Dict[str, Any]]:
       - a list of fixture objects
       - a mapping `{suite, k, fixtures: [...]}`
     Each fixture: `{id, query, relevant_chunk_ids[], must_cite_paths[],
-    difficulty, optional completion_criteria[], optional answer}`.
+    difficulty, optional completion_criteria[], optional answer, optional category}`.
     """
     if not os.path.isfile(path):
         raise FileNotFoundError(f"Eval suite not found: {path}")
@@ -105,6 +140,7 @@ def _parse_fixture(item: Any, idx: int) -> EvalFixture:
         difficulty=difficulty,
         completion_criteria=criteria,
         answer=str(item.get("answer") or ""),
+        category=str(item.get("category") or "").strip(),
     )
 
 
@@ -200,6 +236,7 @@ def run_eval(
     from .loop import LoopConfig, QueryLoop
     from .query_cache import run_with_query_cache
 
+    seed_eval_determinism()
     cases: List[Dict[str, Any]] = []
     ce_enabled = bool(getattr(retriever, "ce_enabled", False))
     from .decision import build_decision_client
@@ -295,6 +332,7 @@ def run_eval(
             "id": fixture.id,
             "query": fixture.query,
             "difficulty": fixture.difficulty,
+            "category": fixture.category or "",
             "recall_at_k": recall,
             "ndcg_at_k": ndcg,
             "citation_path_hit_rate": cite,
@@ -459,6 +497,17 @@ def _aggregate(cases: Sequence[Dict[str, Any]], k: int) -> Dict[str, Any]:
         if subset:
             by_difficulty[difficulty] = _subset_metrics(subset)
 
+    by_category: Dict[str, Any] = {}
+    seen_cats = []
+    for case in cases:
+        cat = (case.get("category") or "").strip()
+        if cat and cat not in seen_cats:
+            seen_cats.append(cat)
+    for cat in seen_cats:
+        subset = [c for c in cases if (c.get("category") or "").strip() == cat]
+        if subset:
+            by_category[cat] = _subset_metrics(subset)
+
     metrics = {
         "k": k,
         "n": len(cases),
@@ -477,6 +526,7 @@ def _aggregate(cases: Sequence[Dict[str, Any]], k: int) -> Dict[str, Any]:
         "stall_rate": None if not stall_rates else round(mean(stall_rates), 4),
         "escape_rate": None if not escape_rates else round(mean(escape_rates), 4),
         "by_difficulty": by_difficulty,
+        "by_category": by_category,
     }
     verify_rows = [
         c.get("verify")
@@ -544,6 +594,16 @@ def print_summary(report: Dict[str, Any]) -> None:
             )
         if parts:
             print("  by difficulty: " + "  |  ".join(parts))
+    by_cat = metrics.get("by_category") or {}
+    if by_cat:
+        parts = []
+        for name, row in by_cat.items():
+            parts.append(
+                f"{name}: R={row.get('recall_at_k')} cite={row.get('citation_path_hit_rate')} "
+                f"n={row.get('n')}"
+            )
+        if parts:
+            print("  by category: " + "  |  ".join(parts))
     if metrics.get("loop_attempts_mean") is not None:
         print(f"  loop attempts mean: {metrics.get('loop_attempts_mean')}")
     if metrics.get("stall_count") or metrics.get("stall_rate"):
