@@ -455,7 +455,9 @@ class ContextBuilder:
 
             r.score = max(0, r.score + boost)
 
-        results.sort(key=lambda r: r.score, reverse=True)
+        results.sort(
+            key=lambda r: (-float(r.score or 0.0), getattr(r.chunk, "id", "") or "")
+        )
         return self._diversity_rerank(results)
 
     @staticmethod

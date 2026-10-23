@@ -64,8 +64,10 @@ Same commands CI uses (local embeddings; no LLM key):
 
 ```bash
 python3 main.py index .
-python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml
+python3 main.py eval . --suite .docs/research/eval/code-harness-v2.fixture.yaml
 ```
+
+The v2 suite keeps the original 8 fixtures as a subset so old numbers stay comparable. The 8-query file remains at `.docs/research/eval/code-harness.fixture.yaml` for historical A/B tables. Merge-decision numbers: [RESULTS-golden-v2.md](.docs/research/eval/RESULTS-golden-v2.md).
 
 See [`.docs/research/eval/README.md`](.docs/research/eval/README.md) for the suite schema, metrics, the optional TurboVec A/B (`make eval-ab`), and the optional MiniLM vs Jina-code embedder A/B (`make eval-ab-embed`).
 

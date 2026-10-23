@@ -10,11 +10,14 @@ Canonical recipe (same path [CI](../../../.github/workflows/ci.yml) uses on PRs 
 # 1. Index this repo once (local embeddings; no LLM key required)
 python3 main.py index .
 
-# 2. Score the committed golden suite
+# 2. Score the committed golden suite (v2, 40–50 queries)
+python3 main.py eval . --suite .docs/research/eval/code-harness-v2.fixture.yaml
+
+# Historical 8-query subset (old A/B tables)
 python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml
 
 # Validate suite shape without an index
-python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --dry-run
+python3 main.py eval . --suite .docs/research/eval/code-harness-v2.fixture.yaml --dry-run
 ```
 
 CI does not run `make eval-ab` or `make eval-ab-embed`. Those targets are optional A/B recipes and skip cleanly (exit 0) if the `turbovec` extra or Jina-code weights are missing.
@@ -41,6 +44,8 @@ fixtures:
 ```
 
 `relevant_chunk_ids` may be full chunk ids or parser entity ids (`class:path:Name`, `func:path:name`, or treesitter `method:path:Class.name`). `func:path:name` also matches `method:path:Class.name`. Chunk UUIDs change on re-index; entity ids do not. If chunk ids are omitted, Recall@k / nDCG@k fall back to `must_cite_paths`.
+
+Optional `category` (`symbol` / `nl` / `cross-file` / `cli` / `docs` / `hard` / `ticket`) is ignored by older harnesses and is used for per-category breakdowns on v2. Eval pins `random` / NumPy / Torch seeds at the start of `run_eval`; Chroma HNSW can still move a bit.
 
 ## Metrics
 
