@@ -7,6 +7,10 @@ coverage) over an LLM judge.
 
 Default is **off** (``--verify`` / ``CODEHARNESS_SESSION_VERIFY=1`` /
 ``session.verify``). Citation ``retrieval.verify`` is a different hook.
+
+Opt-in harness-record validity (``verify.validity``, default off) flags
+``path:symbol`` citations missing from the index and claimed relations
+that contradict the knowledge graph. Deterministic; no LLM.
 """
 
 from __future__ import annotations
@@ -188,7 +192,32 @@ def apply_verify_config(config, args=None, environ=None):
         session = config.session
     session["verify"] = verify_gate_enabled(args, environ=environ, config=config)
     session["force_done"] = force_done_enabled(args, environ=environ, config=config)
+    verify_cfg = getattr(config, "verify", None)
+    if verify_cfg is None:
+        config.verify = {}
+        verify_cfg = config.verify
+    verify_cfg["validity"] = validity_enabled(args, environ=environ, config=config)
     return config
+
+
+def validity_enabled(args=None, environ=None, config=None) -> bool:
+    """Harness-record validity check. Default off. Env ``0`` wins."""
+    env = environ if environ is not None else os.environ
+    raw = str(env.get("CODEHARNESS_VERIFY_VALIDITY") or "").strip().lower()
+    if raw in _FALSEY:
+        return False
+    if args is not None and getattr(args, "validity", False):
+        return True
+    if raw in _TRUTHY:
+        return True
+    if config is not None:
+        verify_cfg = getattr(config, "verify", None) or {}
+        if "validity" in verify_cfg:
+            return bool(verify_cfg.get("validity"))
+        session = getattr(config, "session", None) or {}
+        if "validity" in session:
+            return bool(session.get("validity"))
+    return False
 
 
 def parse_criterion(raw: Any) -> Criterion:
@@ -513,3 +542,368 @@ def run_fixture_verify(
         )
     gate = CompletionGate(enabled=True, criteria=specs, cwd=cwd)
     return gate.run_verify(role=VERIFIER_ROLE, evidence=evidence)
+
+
+# ---------------------------------------------------------------------------
+# Opt-in harness-record validity (path:symbol + claimed KG relations)
+# ---------------------------------------------------------------------------
+
+_CITED_REF = re.compile(
+    r"(?<![A-Za-z0-9_/])("
+    r"[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*\."
+    r"(?:py|js|ts|tsx|jsx|go|rs|java|rb|md)"
+    r")(?::([A-Za-z_][A-Za-z0-9_.]*))?"
+)
+_CALLS = re.compile(
+    r"`?([A-Za-z_][A-Za-z0-9_.]*)`?\s+calls\s+`?([A-Za-z_][A-Za-z0-9_.]*)`?",
+    re.IGNORECASE,
+)
+_INHERITS = re.compile(
+    r"`?([A-Za-z_][A-Za-z0-9_.]*)`?\s+inherits\s+`?([A-Za-z_][A-Za-z0-9_.]*)`?",
+    re.IGNORECASE,
+)
+_TESTED_BY = re.compile(
+    r"`?([A-Za-z_][A-Za-z0-9_.]*)`?\s+(?:is\s+)?tested by\s+`?([A-Za-z_][A-Za-z0-9_.]*)`?",
+    re.IGNORECASE,
+)
+_RELATION_TYPES = frozenset({"calls", "inherits", "tested_by"})
+
+
+def _norm_path(path: str) -> str:
+    text = (path or "").replace("\\", "/").strip()
+    while text.startswith("./"):
+        text = text[2:]
+    return text
+
+
+@dataclass
+class EntityRecord:
+    id: str
+    name: str
+    file_path: str
+    type: str = ""
+
+
+@dataclass
+class ValidityFlag:
+    kind: str
+    citation: str
+    detail: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"kind": self.kind, "citation": self.citation, "detail": self.detail}
+
+
+@dataclass
+class ValidityReport:
+    ran: bool
+    skipped: bool = False
+    flags: List[ValidityFlag] = field(default_factory=list)
+    citation_count: int = 0
+    reason: str = ""
+
+    @property
+    def invalid_citation_rate(self) -> Optional[float]:
+        if not self.ran or self.skipped:
+            return None
+        if self.citation_count <= 0:
+            return 0.0
+        missing = sum(1 for f in self.flags if f.kind in ("missing_symbol", "missing_path"))
+        return round(missing / float(self.citation_count), 4)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "ran": bool(self.ran),
+            "skipped": bool(self.skipped),
+            "reason": self.reason,
+            "citation_count": self.citation_count,
+            "flag_count": len(self.flags),
+            "invalid_citation_rate": self.invalid_citation_rate,
+            "flags": [f.to_dict() for f in self.flags],
+        }
+
+    def format(self) -> str:
+        if self.skipped or not self.ran:
+            return self.reason or "validity: skipped"
+        if not self.flags:
+            return f"validity: ok (citations={self.citation_count})"
+        lines = [
+            f"validity: {len(self.flags)} flag(s) "
+            f"(citations={self.citation_count}, invalid-citation={self.invalid_citation_rate})"
+        ]
+        for flag in self.flags:
+            extra = f" — {flag.detail}" if flag.detail else ""
+            lines.append(f"  [{flag.kind}] {flag.citation}{extra}")
+        return "\n".join(lines)
+
+
+def extract_cited_refs(text: str) -> List[Dict[str, str]]:
+    found: List[Dict[str, str]] = []
+    seen = set()
+    for match in _CITED_REF.finditer(text or ""):
+        path = _norm_path(match.group(1))
+        symbol = match.group(2) or ""
+        raw = f"{path}:{symbol}" if symbol else path
+        if raw in seen:
+            continue
+        seen.add(raw)
+        found.append({"path": path, "symbol": symbol, "raw": raw})
+    return found
+
+
+def extract_claimed_relations(text: str) -> List[Dict[str, str]]:
+    claims: List[Dict[str, str]] = []
+    seen = set()
+
+    def _add(src: str, rel: str, dst: str, raw: str) -> None:
+        key = (src, rel, dst)
+        if key in seen:
+            return
+        seen.add(key)
+        claims.append({"src": src, "rel": rel, "dst": dst, "raw": raw.strip()})
+
+    blob = text or ""
+    for match in _CALLS.finditer(blob):
+        _add(match.group(1), "calls", match.group(2), match.group(0))
+    for match in _INHERITS.finditer(blob):
+        _add(match.group(1), "inherits", match.group(2), match.group(0))
+    for match in _TESTED_BY.finditer(blob):
+        _add(match.group(1), "tested_by", match.group(2), match.group(0))
+    return claims
+
+
+def records_from_mapping(raw: Any) -> List[EntityRecord]:
+    """Accept entity objects, KG nodes, or {id,name,file_path} mappings."""
+    out: List[EntityRecord] = []
+    if raw is None:
+        return out
+    if hasattr(raw, "graph") and hasattr(raw.graph, "nodes"):
+        raw = (
+            {"id": nid, **(data or {})}
+            for nid, data in raw.graph.nodes(data=True)
+        )
+    elif hasattr(raw, "nodes"):
+        raw = ({"id": nid, **(data or {})} for nid, data in raw.nodes(data=True))
+    for item in raw or []:
+        if isinstance(item, EntityRecord):
+            out.append(item)
+            continue
+        if not isinstance(item, dict):
+            cid = getattr(item, "id", None) or getattr(item, "entity_id", "") or ""
+            name = getattr(item, "name", None) or getattr(item, "entity_name", "") or ""
+            path = getattr(item, "file_path", "") or ""
+            etype = getattr(item, "type", None) or getattr(item, "entity_type", "") or ""
+            if hasattr(etype, "value"):
+                etype = etype.value
+            out.append(EntityRecord(id=str(cid), name=str(name), file_path=str(path), type=str(etype)))
+            continue
+        cid = item.get("id") or item.get("entity_id") or ""
+        name = item.get("name") or item.get("entity_name") or ""
+        path = item.get("file_path") or ""
+        etype = item.get("type") or item.get("entity_type") or ""
+        out.append(EntityRecord(id=str(cid), name=str(name), file_path=_norm_path(str(path)), type=str(etype)))
+    return out
+
+
+def _name_key(name: str) -> str:
+    return (name or "").strip().split(".")[-1].lower()
+
+
+def _record_matches_ref(record: EntityRecord, path: str, symbol: str) -> bool:
+    rec_path = _norm_path(record.file_path)
+    if path and rec_path:
+        if rec_path != path and not rec_path.endswith("/" + path) and not path.endswith("/" + rec_path):
+            return False
+    elif path and not rec_path:
+        return False
+    if not symbol:
+        return True
+    rec_name = (record.name or "").strip()
+    if rec_name == symbol or rec_name.endswith("." + symbol):
+        return True
+    if _name_key(rec_name) == _name_key(symbol):
+        return True
+    rid = record.id or ""
+    if rid.endswith(":" + symbol) or f":{path}:{symbol}" in rid:
+        return True
+    return False
+
+
+def resolve_records(path: str, symbol: str, records: Sequence[EntityRecord]) -> List[EntityRecord]:
+    return [rec for rec in records if _record_matches_ref(rec, path, symbol)]
+
+
+def resolve_name(name: str, records: Sequence[EntityRecord]) -> List[EntityRecord]:
+    key = _name_key(name)
+    if not key:
+        return []
+    hits = [rec for rec in records if _name_key(rec.name) == key or (rec.name or "") == name]
+    if hits:
+        return hits
+    return [rec for rec in records if rec.id.endswith(":" + name) or rec.id.endswith("." + name)]
+
+
+def _iter_graph_edges(graph) -> List[tuple]:
+    edges: List[tuple] = []
+    if graph is None:
+        return edges
+    if isinstance(graph, (list, tuple)):
+        for item in graph:
+            if isinstance(item, (list, tuple)) and len(item) >= 3:
+                edges.append((str(item[0]), str(item[1]), str(item[2])))
+            elif isinstance(item, dict):
+                edges.append((
+                    str(item.get("source") or item.get("src") or ""),
+                    str(item.get("relationship") or item.get("rel") or ""),
+                    str(item.get("target") or item.get("dst") or ""),
+                ))
+        return edges
+    if hasattr(graph, "edges"):
+        try:
+            for src, dst, data in graph.edges(data=True):
+                rel = ""
+                if isinstance(data, dict):
+                    rel = data.get("relationship") or data.get("rel") or ""
+                edges.append((str(src), str(rel), str(dst)))
+        except TypeError:
+            for src, dst in graph.edges():
+                edges.append((str(src), "", str(dst)))
+    return edges
+
+
+def graph_has_edge(graph, src_ids: Sequence[str], rel: str, dst_ids: Sequence[str]) -> bool:
+    wanted = {(sid, rel, did) for sid in src_ids for did in dst_ids}
+    for src, edge_rel, dst in _iter_graph_edges(graph):
+        if (src, edge_rel, dst) in wanted:
+            return True
+        if edge_rel == rel and src in src_ids and dst in dst_ids:
+            return True
+    return False
+
+
+def check_answer_validity(
+    answer: str,
+    *,
+    records: Optional[Sequence[Any]] = None,
+    graph=None,
+    enabled: bool = True,
+) -> ValidityReport:
+    """Deterministic citation / KG-claim check. No LLM."""
+    if not enabled:
+        return ValidityReport(ran=False, skipped=True, reason="validity_off")
+    recs = records_from_mapping(records)
+    refs = extract_cited_refs(answer or "")
+    claims = extract_claimed_relations(answer or "")
+    flags: List[ValidityFlag] = []
+    for ref in refs:
+        path, symbol, raw = ref["path"], ref["symbol"], ref["raw"]
+        hits = resolve_records(path, symbol, recs)
+        if hits:
+            continue
+        if symbol:
+            flags.append(ValidityFlag(
+                kind="missing_symbol",
+                citation=raw,
+                detail=f"{raw} is not in the index/entity records",
+            ))
+        else:
+            flags.append(ValidityFlag(
+                kind="missing_path",
+                citation=raw,
+                detail=f"{raw} is not in the index/entity records",
+            ))
+    for claim in claims:
+        src_hits = resolve_name(claim["src"], recs)
+        dst_hits = resolve_name(claim["dst"], recs)
+        if not src_hits or not dst_hits:
+            continue
+        if graph_has_edge(
+            graph,
+            [h.id for h in src_hits],
+            claim["rel"],
+            [h.id for h in dst_hits],
+        ):
+            continue
+        flags.append(ValidityFlag(
+            kind="contradicted_edge",
+            citation=claim["raw"],
+            detail=(
+                f"claimed {claim['src']} {claim['rel']} {claim['dst']} "
+                f"is not an edge in the knowledge graph"
+            ),
+        ))
+    return ValidityReport(
+        ran=True,
+        flags=flags,
+        citation_count=len(refs),
+        reason="ok" if not flags else "flags",
+    )
+
+
+def entity_records_from_harness(retriever=None, knowledge_graph=None) -> List[EntityRecord]:
+    """Collect entity records from a loaded KG and/or retriever chunk index."""
+    items: List[Any] = []
+    kg = knowledge_graph or getattr(retriever, "knowledge_graph", None)
+    if kg is not None and hasattr(kg, "graph"):
+        for nid, data in kg.graph.nodes(data=True):
+            row = {"id": nid, **(data or {})}
+            items.append(row)
+    for attr in ("_all_chunks", "_bm25_chunks"):
+        chunks = getattr(retriever, attr, None) if retriever is not None else None
+        if chunks:
+            items.extend(chunks)
+            break
+    return records_from_mapping(items)
+
+
+def graph_from_harness(retriever=None, knowledge_graph=None):
+    kg = knowledge_graph or getattr(retriever, "knowledge_graph", None)
+    return getattr(kg, "graph", None) if kg is not None else None
+
+
+def maybe_audit_validity(report: ValidityReport, *, config=None, query: str = "") -> None:
+    if report.skipped or not report.ran:
+        return
+    try:
+        from .audit import append_audit
+
+        append_audit(
+            action="verify.validity",
+            config=config,
+            query=query or None,
+            extra={
+                "flag_count": len(report.flags),
+                "citation_count": report.citation_count,
+                "invalid_citation_rate": report.invalid_citation_rate,
+                "flags": [f.to_dict() for f in report.flags],
+            },
+        )
+    except Exception:
+        return
+
+
+def run_harness_validity(
+    answer: str,
+    *,
+    config=None,
+    retriever=None,
+    knowledge_graph=None,
+    records=None,
+    graph=None,
+    query: str = "",
+    enabled=None,
+    audit: bool = True,
+) -> ValidityReport:
+    """Run the opt-in record/KG check and optionally append an audit row."""
+    if enabled is None:
+        enabled = validity_enabled(config=config)
+    if not enabled:
+        return ValidityReport(ran=False, skipped=True, reason="validity_off")
+    recs = records if records is not None else entity_records_from_harness(
+        retriever, knowledge_graph
+    )
+    g = graph if graph is not None else graph_from_harness(retriever, knowledge_graph)
+    report = check_answer_validity(answer or "", records=recs, graph=g, enabled=True)
+    if audit:
+        maybe_audit_validity(report, config=config, query=query)
+    return report

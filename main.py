@@ -261,6 +261,7 @@ def cmd_query(args):
         supported = outcome.verify.get("supported")
         missing = outcome.verify.get("missing_paths") or []
         print(f"[*] Verify: supported={supported} missing={missing}")
+    _maybe_print_validity(config, response, retriever, query)
 
 
 def cmd_interactive(args):
@@ -340,6 +341,7 @@ def cmd_interactive(args):
         force_done=bool(session_cfg.get("force_done")),
         event_session=bool(session_cfg.get("event_session")),
     )
+    session.bind_harness(retriever, kg)
     query_cache = _build_query_cache(args, config, print)
     session.query_cache = query_cache
     if session.event_session:
@@ -540,6 +542,10 @@ def cmd_interactive(args):
                 print(answer)
             if outcome.verify:
                 print(f"[*] Verify: supported={outcome.verify.get('supported')}")
+        if answer:
+            _maybe_print_validity(config, answer, retriever, query)
+            if getattr(session, "validity_enabled", False):
+                session.run_validity(answer, query=query)
         completion = context_builder.estimate_tokens(answer or "")
         session.record_turn(
             SessionTurn(
@@ -550,6 +556,7 @@ def cmd_interactive(args):
                 full_tokens=int(report.prompt_tokens_full or report.prompt_tokens or 0),
                 completion_tokens=completion,
                 loop_attempts=int(getattr(outcome, "attempts", 1) or 1),
+                stall_count=int(getattr(outcome, "stall_count", 0) or 0),
                 pack_mode=report.pack_mode,
                 paths=list(report.packed_paths or []),
                 tool_name="retrieve",
@@ -1435,6 +1442,24 @@ def _add_loop_flags(parser, include_verify: bool = False):
         metavar="N",
         help="Extra retrieve rounds (0-2). Default 0 preserves one-shot retrieval",
     )
+    parser.add_argument(
+        "--validity",
+        action="store_true",
+        help=(
+            "Opt-in harness-record validity: flag cited path:symbol missing "
+            "from the index or claimed KG relations that contradict the graph "
+            "(verify.validity; default off). Env: CODEHARNESS_VERIFY_VALIDITY=1"
+        ),
+    )
+    parser.add_argument(
+        "--no-stop-on-stall",
+        action="store_true",
+        help=(
+            "Keep retrying after a stalled retrieve "
+            "(retrieval.stop_on_stall is true when the loop is on; "
+            "no effect when max_loops is 0)"
+        ),
+    )
     if include_verify:
         parser.add_argument(
             "--verify",
@@ -1455,7 +1480,26 @@ def _apply_loop_args(config, args):
     config.retrieval["max_loops"] = max(0, min(max_loops, 2))
     if getattr(args, "verify", False):
         config.retrieval["verify"] = True
+    if getattr(args, "no_stop_on_stall", False):
+        config.retrieval["stop_on_stall"] = False
     return config
+
+
+def _maybe_print_validity(config, answer, retriever, query=""):
+    from harness.verify import run_harness_validity, validity_enabled
+
+    if not validity_enabled(config=config):
+        return None
+    report = run_harness_validity(
+        answer or "",
+        config=config,
+        retriever=retriever,
+        query=query,
+    )
+    if report.skipped:
+        return report
+    print(f"[*] {report.format()}")
+    return report
 
 
 def _print_loop_debug(outcome):
@@ -1465,7 +1509,9 @@ def _print_loop_debug(outcome):
     print(
         f"  attempts={outcome.attempts}  grade={outcome.grade:.3f}  "
         f"coverage={outcome.coverage:.3f}  stop={outcome.stop_reason}  "
-        f"mode={outcome.mode}"
+        f"mode={outcome.mode}  stalls={getattr(outcome, 'stall_count', 0)}  "
+        f"stall_rate={getattr(outcome, 'stall_rate', 0.0)}  "
+        f"escape_rate={getattr(outcome, 'escape_rate', 0.0)}"
     )
     for trace in outcome.traces or []:
         print(
@@ -1531,13 +1577,19 @@ def _run_eval_backend(config, fixtures, meta, suite_path, repo_name, k, loop_con
     print(f"[*] Loading index for: {os.path.abspath(config.repo_path)} (repo: {repo_name})")
     kg = KnowledgeGraph(config, repo_name=repo_name)
     kg.load()
-    retriever = Retriever(config, embedder, vs, kg, repo_name=repo_name)
-    if retriever.try_load_bm25():
-        print("[*] BM25 index loaded from disk")
+    if (config.retrieval or {}).get("no_retrieval"):
+        from harness.eval_ablate import EmptyRetriever
+
+        retriever = EmptyRetriever()
+        print("[*] Ablation: no-retrieval baseline (empty hit set)")
     else:
-        chunks = vs.get_all(repo_name=repo_name)
-        retriever.index_chunks(chunks, persist=False)
-        print("[*] BM25 index rebuilt from vector store")
+        retriever = Retriever(config, embedder, vs, kg, repo_name=repo_name)
+        if retriever.try_load_bm25():
+            print("[*] BM25 index loaded from disk")
+        else:
+            chunks = vs.get_all(repo_name=repo_name)
+            retriever.index_chunks(chunks, persist=False)
+            print("[*] BM25 index rebuilt from vector store")
     context_builder = ContextBuilder(config)
     report = run_eval(
         fixtures=fixtures,
@@ -1614,6 +1666,9 @@ def cmd_eval(args):
             print(f"  - {fixture.id} [{fixture.difficulty}] {fixture.query}")
         print("[+] Dry-run OK (suite valid; no retrieval)")
         return
+
+    if getattr(args, "ablate", False):
+        return _cmd_eval_ablate(args, fixtures, meta, suite_path)
 
     config = _load_config(args)
     config.repo_path = args.repo or "."
@@ -1774,6 +1829,102 @@ def cmd_eval(args):
             sys.exit(code)
 
 
+def _cmd_eval_ablate(args, fixtures=None, meta=None, suite_path=None):
+    """Eval-only harness-on vs harness-off table. Does not change query defaults."""
+    from harness.eval import load_suite
+    from harness.eval_ablate import (
+        COMMITTED_ABLATION_JSON,
+        COMMITTED_ABLATION_MD,
+        DEFAULT_SUITE,
+        llm_key_available,
+        run_ablation,
+    )
+    from harness.loop import LoopConfig
+
+    suite_path = suite_path or getattr(args, "suite", None) or DEFAULT_SUITE
+    if fixtures is None or meta is None:
+        try:
+            fixtures, meta = load_suite(suite_path)
+        except (OSError, ValueError) as exc:
+            print(f"[!] Failed to load suite: {exc}")
+            sys.exit(1)
+
+    config = _load_config(args)
+    config.repo_path = args.repo or "."
+    repo_name = _derive_repo_name(args)
+    loop_config = LoopConfig.from_mapping(config.retrieval)
+    k = args.k or (meta or {}).get("k") or config.retrieval.get("top_k", 10)
+    k = int(k)
+    md_path = (
+        getattr(args, "markdown", None)
+        or getattr(args, "compare_markdown", None)
+        or COMMITTED_ABLATION_MD
+    )
+    json_path = (
+        getattr(args, "json", None)
+        or getattr(args, "compare_output", None)
+        or COMMITTED_ABLATION_JSON
+    )
+    if md_path in (None, ".docs/research/eval/RESULTS.md"):
+        md_path = COMMITTED_ABLATION_MD
+    if json_path in (None, ".docs/research/eval/RESULTS.json"):
+        json_path = COMMITTED_ABLATION_JSON
+
+    if not getattr(args, "skip_index", False):
+        print("[*] Indexing fixture corpus for ablation (chromadb / MiniLM)")
+        index_args = argparse.Namespace(**vars(args))
+        index_args.repo = args.repo or "."
+        if not getattr(index_args, "vector_backend", None):
+            index_args.vector_backend = "chromadb"
+        if not hasattr(index_args, "save_config"):
+            index_args.save_config = None
+        cmd_index(index_args)
+
+    answer_level = {
+        "ran": False,
+        "reason": (
+            "No chat-LLM key in the environment. "
+            "Answer-level comparison was not run."
+        ),
+    }
+    if llm_key_available(config=config):
+        answer_level = {
+            "ran": False,
+            "reason": (
+                "An LLM key is present, but this ablation stays retrieval-only "
+                "(no answer generation). Answer-level citation comparison was not run."
+            ),
+        }
+
+    def eval_one(cfg, variant):
+        report, err = _run_eval_backend(
+            cfg,
+            fixtures,
+            meta,
+            suite_path,
+            repo_name,
+            k,
+            LoopConfig.from_mapping(cfg.retrieval),
+        )
+        if err:
+            raise RuntimeError(f"ablation variant {variant.id}: {err}")
+        return report
+
+    print(f"[*] Ablation suite: {(meta or {}).get('suite')} ({len(fixtures)} fixtures) k={k}")
+    code = run_ablation(
+        repo=args.repo or ".",
+        suite=suite_path,
+        markdown_path=md_path,
+        json_path=json_path,
+        eval_one=eval_one,
+        config=config,
+        k=k,
+        answer_level=answer_level,
+    )
+    if code:
+        sys.exit(code)
+
+
 def cmd_eval_ab(args):
     """Index fixture corpus into both stores (when available) and persist the A/B table."""
     from harness.embedder import (
@@ -1792,6 +1943,9 @@ def cmd_eval_ab(args):
         run_fixture_ab,
     )
     from harness.vector_eval import parse_backend_list, probe_backend, selected_backend_name
+
+    if getattr(args, "ablate", False):
+        return _cmd_eval_ablate(args)
 
     config = _load_config(args)
     config.repo_path = args.repo or "."
@@ -2246,6 +2400,7 @@ Examples:
   %(prog)s eval . --suite .docs/research/eval/code-harness.fixture.yaml
   %(prog)s eval . --suite .docs/research/eval/code-harness.fixture.yaml --loop
   %(prog)s eval-ab .                                            # Chroma vs TurboVec fixture A/B
+  %(prog)s eval-ab . --ablate                                   # Harness-on vs harness-off ablation
   %(prog)s eval-ab . --compare-embedders all-MiniLM-L6-v2,jina-embeddings-v2-base-code
   %(prog)s eval . --suite .docs/research/eval/code-harness.fixture.yaml --embed-model jina-embeddings-v2-base-code
   %(prog)s query . --no-llm --pack-mode ccr_lite -q "how does the chunker work?"
@@ -2438,6 +2593,29 @@ Examples:
         default=None,
         help="Context pack mode used for citation/token columns (default: full)",
     )
+    ev.add_argument(
+        "--ablate",
+        action="store_true",
+        help=(
+            "Eval-only harness-on vs harness-off table "
+            "(leave-one-out retrieve/pack + no-retrieval baseline)"
+        ),
+    )
+    ev.add_argument(
+        "--skip-index",
+        action="store_true",
+        help="With --ablate, score the existing index only (do not rebuild)",
+    )
+    ev.add_argument(
+        "--markdown",
+        default=None,
+        help="Ablation markdown path (default: .docs/research/eval/RESULTS-ablation.md)",
+    )
+    ev.add_argument(
+        "--json",
+        default=None,
+        help="Ablation JSON path (default: .docs/research/eval/RESULTS-ablation.json)",
+    )
     _add_loop_flags(ev, include_verify=False)
     ev.add_argument(
         "--verify",
@@ -2526,6 +2704,14 @@ Examples:
         choices=["full", "ccr_lite"],
         default=None,
         help="Context pack mode used for citation/token columns (default: full)",
+    )
+    ev_ab.add_argument(
+        "--ablate",
+        action="store_true",
+        help=(
+            "Harness-on vs harness-off ablation of the fixture suite "
+            "(writes .docs/research/eval/RESULTS-ablation.md)"
+        ),
     )
     _add_loop_flags(ev_ab, include_verify=False)
     ev_ab.set_defaults(func=cmd_eval_ab)

@@ -31,6 +31,8 @@ from .verify import (
     VerifyResult,
     force_done_enabled,
     looks_like_done_claim,
+    run_harness_validity,
+    validity_enabled,
     verify_gate_enabled,
 )
 
@@ -70,7 +72,8 @@ HELP_TEXT = """Commands:
   /wiki                    Toggle chat-over-wiki (ask the living wiki)
   /wiki on|off             Enable or disable wiki mode
   /wiki <page>             Show a generated wiki page
-  /verify                  Independent completion-criteria check (default-fail)
+  /verify                  Independent completion-criteria check (default-fail);
+                           with verify.validity, also check last-answer citations
   /done                    Accept completion only if the verify gate is green
   /done --force            Override the verify gate (explicit)
   /llm on|off              Enable/disable LLM responses
@@ -112,6 +115,7 @@ class SessionTurn:
     full_tokens: int = 0
     completion_tokens: int = 0
     loop_attempts: int = 0
+    stall_count: int = 0
     pack_mode: str = "full"
     paths: List[str] = field(default_factory=list)
     tool_name: str = ""
@@ -128,6 +132,7 @@ class SessionCost:
     full_tokens: int = 0
     completion_tokens: int = 0
     loop_attempts: int = 0
+    stall_count: int = 0
     approx_usd: Optional[float] = None
     tool_result_tokens_freed: int = 0
     tool_results_cleared: int = 0
@@ -290,6 +295,10 @@ class Session:
         if verify is None:
             verify = verify_gate_enabled(config=config)
         self.verify_enabled = bool(verify)
+        self.validity_enabled = validity_enabled(config=config)
+        self._validity_records = None
+        self._validity_graph = None
+        self.last_validity = None
         if force_done is None:
             force_done = force_done_enabled(config=config)
         specs = verify_criteria
@@ -319,6 +328,7 @@ class Session:
         self._full_tokens = 0
         self._completion_tokens = 0
         self._loop_attempts = 0
+        self._stall_count = 0
         self._tool_result_tokens_freed = 0
         self._tool_results_cleared = 0
         if self.event_session:
@@ -430,6 +440,7 @@ class Session:
         self._full_tokens = 0
         self._completion_tokens = 0
         self._loop_attempts = 0
+        self._stall_count = 0
         if self._log is None:
             return
         for event in self._log.events:
@@ -439,6 +450,7 @@ class Session:
                 self._full_tokens += int(event.full_tokens or 0)
                 self._completion_tokens += int(event.completion_tokens or 0)
                 self._loop_attempts += int(event.loop_attempts or 0)
+                self._stall_count += int(getattr(event, "stall_count", 0) or 0)
             if event.type == "clear":
                 self._tool_result_tokens_freed += int(event.tokens_freed or 0)
                 self._tool_results_cleared += len(event.cleared_ids or event.placeholders or {})
@@ -520,6 +532,7 @@ class Session:
             self._full_tokens += int(turn.full_tokens or 0)
             self._completion_tokens += int(turn.completion_tokens or 0)
             self._loop_attempts += int(turn.loop_attempts or 0)
+            self._stall_count += int(getattr(turn, "stall_count", 0) or 0)
         if self.event_session and self._log is not None:
             self._append_turn_events(turn)
             self._refresh_derived()
@@ -536,6 +549,7 @@ class Session:
                     "full_tokens": turn.full_tokens,
                     "completion_tokens": turn.completion_tokens,
                     "loop_attempts": turn.loop_attempts,
+                    "stall_count": int(getattr(turn, "stall_count", 0) or 0),
                     "pack_mode": turn.pack_mode,
                     "paths": list(turn.paths or []),
                     "tool_name": turn.tool_name,
@@ -594,6 +608,7 @@ class Session:
                     full_tokens=turn.full_tokens,
                     completion_tokens=turn.completion_tokens,
                     loop_attempts=turn.loop_attempts,
+                    stall_count=int(getattr(turn, "stall_count", 0) or 0),
                     pack_mode=turn.pack_mode,
                 )
             )
@@ -635,6 +650,7 @@ class Session:
             full_tokens=self._full_tokens,
             completion_tokens=self._completion_tokens,
             loop_attempts=self._loop_attempts,
+            stall_count=self._stall_count,
             approx_usd=usd,
             tool_result_tokens_freed=self._tool_result_tokens_freed,
             tool_results_cleared=self._tool_results_cleared,
@@ -665,6 +681,7 @@ class Session:
             f"  prompt tokens (full):   {cost.full_tokens}\n"
             f"  completion tokens:      {cost.completion_tokens}\n"
             f"  loop attempts:          {cost.loop_attempts}\n"
+            f"  stalls:                 {cost.stall_count}\n"
             f"{cache_line}"
             f"{clear_line}"
             f"  {usd_line}"
@@ -983,18 +1000,47 @@ class Session:
             kept_turns=self.turn_count(),
         )
 
+    def bind_harness(self, retriever=None, knowledge_graph=None) -> None:
+        """Attach index/KG records for opt-in validity checks."""
+        from .verify import entity_records_from_harness, graph_from_harness
+
+        self._validity_records = entity_records_from_harness(retriever, knowledge_graph)
+        self._validity_graph = graph_from_harness(retriever, knowledge_graph)
+
+    def last_assistant_text(self) -> str:
+        for turn in reversed(self.turns):
+            if turn.role == "assistant":
+                return turn.text or ""
+        return ""
+
+    def run_validity(self, answer: Optional[str] = None, query: str = ""):
+        report = run_harness_validity(
+            answer if answer is not None else self.last_assistant_text(),
+            config=self._config,
+            records=self._validity_records,
+            graph=self._validity_graph,
+            query=query,
+            enabled=self.validity_enabled,
+        )
+        self.last_validity = report
+        return report
+
     def run_verify(self, evidence: Optional[Dict] = None, llm=None, decider=None) -> VerifyResult:
         if decider is None and self._config is not None:
             from .decision import build_decision_client
 
             decider = build_decision_client(self._config)
         result = self.gate.run_verify(evidence=evidence, llm=llm, decider=decider)
+        extra = result.to_dict()
+        if self.validity_enabled:
+            validity = self.run_validity()
+            extra["validity"] = validity.to_dict()
         if self.event_session and self._log is not None:
             from .events import make_event
 
-            self._log.append(make_event("verify", extra=result.to_dict()))
+            self._log.append(make_event("verify", extra=extra))
         elif self.session_dir:
-            self._append_jsonl({"event": "verify", **result.to_dict()})
+            self._append_jsonl({"event": "verify", **extra})
         return result
 
     def claim_done(self, text: str = "", *, force: bool = False) -> CompletionDecision:
@@ -1024,14 +1070,19 @@ class Session:
         return decision.message or "verify gate: not done"
 
     def format_verify(self) -> str:
+        parts: List[str] = []
         if not self.verify_enabled:
-            return (
+            parts.append(
                 "verify gate is off (default). "
                 "Pass --verify / CODEHARNESS_SESSION_VERIFY=1 / session.verify"
             )
-        if self.gate.last_result is not None:
-            return self.gate.last_result.message or self.gate.format_checklist()
-        return self.gate.format_checklist()
+        elif self.gate.last_result is not None:
+            parts.append(self.gate.last_result.message or self.gate.format_checklist())
+        else:
+            parts.append(self.gate.format_checklist())
+        if self.validity_enabled and self.last_validity is not None:
+            parts.append(self.last_validity.format())
+        return "\n".join(parts)
 
     def set_profile(self, name: str) -> str:
         key = (name or "").strip().lower()

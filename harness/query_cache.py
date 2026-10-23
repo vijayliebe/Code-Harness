@@ -309,6 +309,10 @@ def serialize_outcome(outcome) -> Dict[str, Any]:
         "traces": [_ser_trace(trace) for trace in (getattr(outcome, "traces", None) or [])],
         "query_effective": getattr(outcome, "query_effective", "") or "",
         "mode": getattr(outcome, "mode", "hybrid") or "hybrid",
+        "stall_count": int(getattr(outcome, "stall_count", 0) or 0),
+        "stall_rate": getattr(outcome, "stall_rate", 0.0),
+        "escape_count": int(getattr(outcome, "escape_count", 0) or 0),
+        "escape_rate": getattr(outcome, "escape_rate", 0.0),
     }
 
 
@@ -330,6 +334,10 @@ def deserialize_outcome(payload: Dict[str, Any]):
         answer=None,
         verify=None,
         cached=True,
+        stall_count=int(payload.get("stall_count") or 0),
+        stall_rate=float(payload.get("stall_rate") or 0.0),
+        escape_count=int(payload.get("escape_count") or 0),
+        escape_rate=float(payload.get("escape_rate") or 0.0),
     )
 
 

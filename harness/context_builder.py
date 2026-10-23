@@ -135,7 +135,8 @@ class ContextBuilder:
         )
         deduplicated = self._deduplicate(results)
         started = time.perf_counter()
-        scored = self._rerank(query, deduplicated)
+        mmr_on = bool((getattr(self.config, "retrieval", None) or {}).get("mmr", True))
+        scored = self._rerank(query, deduplicated, diversity=mmr_on)
         try:
             from .wiki_chat import prefer_wiki_results, wiki_mode_enabled
 
@@ -143,7 +144,7 @@ class ContextBuilder:
                 scored = prefer_wiki_results(scored)
         except Exception:
             pass
-        mmr_ms = (time.perf_counter() - started) * 1000.0
+        mmr_ms = (time.perf_counter() - started) * 1000.0 if mmr_on else 0.0
         scored = self._drop_prefixed_memory(scored, memory_brief, knowledge_prefix)
         packed_full: List[RetrievalResult] = []
         packed_lite: List[RetrievalResult] = []
@@ -415,7 +416,12 @@ class ContextBuilder:
             unique.append(r)
         return unique
 
-    def _rerank(self, query: str, results: List[RetrievalResult]) -> List[RetrievalResult]:
+    def _rerank(
+        self,
+        query: str,
+        results: List[RetrievalResult],
+        diversity: bool = True,
+    ) -> List[RetrievalResult]:
         query_lower = query.lower()
         query_terms = set(query_lower.split())
 
@@ -456,6 +462,8 @@ class ContextBuilder:
             r.score = max(0, r.score + boost)
 
         results.sort(key=lambda r: r.score, reverse=True)
+        if not diversity:
+            return results
         return self._diversity_rerank(results)
 
     @staticmethod

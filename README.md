@@ -52,6 +52,7 @@ python3 main.py serve .
 make test           # python3 -m unittest discover -s tests -v
 make eval-ab        # python3 main.py eval-ab .  — skips cleanly (exit 0) if the turbovec extra is missing
 make eval-ab-embed  # MiniLM vs jina-embeddings-v2-base-code on Chroma — skips (exit 0) if Jina weights are missing
+make eval-ablate    # harness-on vs harness-off leave-one-out on the golden suite (eval-only)
 ```
 
 ## CI
@@ -67,7 +68,7 @@ python3 main.py index .
 python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml
 ```
 
-See [`.docs/research/eval/README.md`](.docs/research/eval/README.md) for the suite schema, metrics, the optional TurboVec A/B (`make eval-ab`), and the optional MiniLM vs Jina-code embedder A/B (`make eval-ab-embed`).
+See [`.docs/research/eval/README.md`](.docs/research/eval/README.md) for the suite schema, metrics, the optional TurboVec A/B (`make eval-ab`), the optional MiniLM vs Jina-code embedder A/B (`make eval-ab-embed`), and the harness-on vs harness-off ablation (`make eval-ablate`).
 
 ## Commands
 
@@ -372,6 +373,7 @@ python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --c
 python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --embed-model jina-embeddings-v2-base-code
 python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --query-cache
 python3 main.py eval-ab .
+python3 main.py eval-ab . --ablate
 python3 main.py eval-ab . --compare-embedders all-MiniLM-L6-v2,jina-embeddings-v2-base-code
 ```
 
@@ -379,7 +381,7 @@ Reports Recall@k, nDCG@k, citation-path hit rate, stage latency (dense / BM25 / 
 
 `--compare-backends chromadb,turbovec` prints a side-by-side Recall@k / nDCG@k table and writes `.code-harness/eval/{suite}-ab-{timestamp}.json` (override with `--compare-output` / `--compare-markdown`). `eval-ab` indexes both persist dirs and writes [`.docs/research/eval/RESULTS.md`](.docs/research/eval/RESULTS.md). If `turbovec` is the selected backend and it misses the gate (more than 5% relative drop, or the deep-dive point limits: Recall@10 −2 pts / Recall@30 −1), eval exits non-zero unless `--force-experimental`. Missing `turbovec` extra is an honest skip, not a silent FAISS swap.
 
-See [`.docs/research/eval/README.md`](.docs/research/eval/README.md) for the fixture schema, failure taxonomy (`dense_miss | bm25_miss | graph_miss | rerank_drop | packer_drop`), the experimental TurboVec recall gate, and the optional MiniLM vs Jina-code embedder A/B.
+See [`.docs/research/eval/README.md`](.docs/research/eval/README.md) for the fixture schema, failure taxonomy (`dense_miss | bm25_miss | graph_miss | rerank_drop | packer_drop`), the experimental TurboVec recall gate, the optional MiniLM vs Jina-code embedder A/B, and the harness ablation (`python main.py eval-ab . --ablate` / `make eval-ablate`). The ablation writes [`.docs/research/eval/RESULTS-ablation.md`](.docs/research/eval/RESULTS-ablation.md): full harness, each default-on stage off one at a time, HyDE and CCR-lite *on* (those are off in the default full row), and a no-retrieval baseline. Retrieval recall for no-retrieval is zero by construction. Answer-level citation is only scored when a chat-LLM key is supplied; otherwise the table says it was not run. Defaults (MiniLM, Chroma, RRF weights, `max_loops` 0, `decision.enabled` false, verify off) stay unchanged.
 
 ### Experimental TurboVec backend (recall-gated)
 
@@ -467,7 +469,7 @@ Query → [optional loop] retrieve → grade → (rewrite | HyDE | deepen | proc
                                      → LLM → Answer → citation check (maybe re-retrieve)
 ```
 
-The corrective loop is **off by default** (`retrieval.max_loops: 0`) so one-shot latency is unchanged. Enable with `--loop` (one extra retrieve) or `--max-loops N` (0–2 extra). Identifier-like queries short-circuit to BM25-only. Query `--verify` adds an independent LLM citation check (off by default). Chat/session `--verify` also enables the default-fail completion gate (`session.verify`).
+The corrective loop is **off by default** (`retrieval.max_loops: 0`) so one-shot latency is unchanged. Enable with `--loop` (one extra retrieve) or `--max-loops N` (0–2 extra). Identifier-like queries short-circuit to BM25-only. A **stall** is a retry whose top-k hit set Jaccard-overlaps the previous attempt at ≥ `retrieval.stall_overlap` (default **0.8**). When the loop is on, `retrieval.stop_on_stall` (default **true**) early-stops; it has no effect at `max_loops: 0`. Override with `--no-stop-on-stall`. Stall count / rate / escape rate (a stall followed by a changed, better-graded attempt) land in the eval summary, `/cost`, and the audit log (`loop.stall`). Query `--verify` adds an independent LLM citation check (off by default). Chat/session `--verify` also enables the default-fail completion gate (`session.verify`). Opt-in **harness-record validity** (`--validity`, `verify.validity`, `CODEHARNESS_VERIFY_VALIDITY=1`; default **off**) flags a cited `path:symbol` that is not in the index, or a claimed relation (`X calls Y`, `A inherits B`, `tested by`) that contradicts the knowledge graph. Deterministic; no LLM. Flags land in query output, `/verify`, the audit log (`verify.validity`), and eval `invalid-citation` rate.
 
 ### Retrieval Pipeline
 
@@ -516,6 +518,8 @@ Key settings:
     "cross_encoder": { "enabled": true, "model": "cross-encoder/ms-marco-MiniLM-L-6-v2" },
     "hyde": { "enabled": false, "on_retry": true },
     "max_loops": 0,
+    "stop_on_stall": true,
+    "stall_overlap": 0.8,
     "grade_threshold": 0.35,
     "citation_threshold": 0.5
   },
@@ -600,6 +604,7 @@ Global flags:
 | `--query-cache` | Opt-in retrieve/pack cache for `query` / `chat` / `eval` (default off). Env: `CODEHARNESS_QUERY_CACHE=1`. `--no-query-cache` disables. Serve stays default-on (`--no-cache`). |
 | `--clear-tool-results` | Opt-in session retrieve/tool dump clearing (default off). Env: `CODEHARNESS_CLEAR_TOOL_RESULTS=1`. Knobs: `--clear-tool-keep`, `--clear-tool-token-trigger`. |
 | `--verify` | Query: independent citation check. Chat/session/eval: also the default-fail completion gate (`session.verify`). Env: `CODEHARNESS_SESSION_VERIFY=1`. Override: `--force-done` / `/done --force`. |
+| `--validity` | Opt-in harness-record validity (`verify.validity`, default off). Env: `CODEHARNESS_VERIFY_VALIDITY=1`. Flags missing `path:symbol` citations and contradicted KG edges. |
 | `--event-session` | Opt-in append-only session events + `derive_messages` (default off). Env: `CODEHARNESS_EVENT_SESSION=1`. Implies prefix-stable packing. `--no-event-session` disables. Enables `/search` and a co-located FTS5 sidecar. |
 | `session search` | FTS over a typed event log (`session search "…"` / `session-search -q … --session <jsonl>`). Requires `--event-session` file; legacy transcripts refused. No extra config knob. |
 | `--prefix-stable` | Freeze system/tool/knowledge prefix bytes (default off; implied by `--event-session`). Env: `CODEHARNESS_PREFIX_STABLE=1`. |

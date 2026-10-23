@@ -125,6 +125,12 @@ DEFAULT_CONFIG = {
         "retrieve": True,
     },
 
+    # Opt-in harness-record checks. Off by default; does not change --verify
+    # completion-gate or retrieval citation behavior unless validity is on.
+    "verify": {
+        "validity": False,
+    },
+
     "retrieval": {
         "dense_weight": 0.3,
         "sparse_weight": 0.25,
@@ -138,6 +144,8 @@ DEFAULT_CONFIG = {
         "beam_width": 6,
         "beam_depth": 2,
         "max_loops": 0,
+        "stop_on_stall": True,
+        "stall_overlap": 0.8,
         "grade_threshold": 0.35,
         "citation_threshold": 0.5,
         "verify": False,
@@ -211,6 +219,7 @@ class Config:
     serve: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["serve"]))
     query_cache: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["query_cache"]))
     prestep: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["prestep"]))
+    verify: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["verify"]))
     repo_path: str = "."
     verbose: bool = False
 
@@ -268,6 +277,7 @@ class Config:
             "serve": self.serve,
             "query_cache": self.query_cache,
             "prestep": self.prestep,
+            "verify": self.verify,
             "repo_path": self.repo_path,
             "verbose": self.verbose,
         }

@@ -57,6 +57,10 @@ class Retriever:
         self.dense_weight = ret_cfg.get("dense_weight", 0.3)
         self.sparse_weight = ret_cfg.get("sparse_weight", 0.25)
         self.graph_weight = ret_cfg.get("graph_weight", 0.2)
+        # Ablation-only skips. Absent keys keep the default hybrid path.
+        self.dense_enabled = ret_cfg.get("dense_enabled", True)
+        self.sparse_enabled = ret_cfg.get("sparse_enabled", True)
+        self.graph_enabled = ret_cfg.get("graph_enabled", True)
         self.wiki_weight = float(ret_cfg.get("wiki_weight", 0.0) or 0.0)
         self.memory_weight = float(ret_cfg.get("memory_weight", 0.0) or 0.0)
         try:
@@ -163,7 +167,10 @@ class Retriever:
         if mode == "bm25":
             try:
                 started = time.perf_counter()
-                sparse_results = self._bm25_search(query, top_k=k * 3) if self._bm25_index else []
+                if self.sparse_enabled and self._bm25_index:
+                    sparse_results = self._bm25_search(query, top_k=k * 3)
+                else:
+                    sparse_results = []
                 latencies_ms["bm25"] = (time.perf_counter() - started) * 1000.0
                 latencies_ms["dense"] = 0.0
                 latencies_ms["graph"] = 0.0
@@ -189,14 +196,20 @@ class Retriever:
         old_neighbors = self.expand_neighbors
         self.expand_neighbors = neighbor_override
         try:
+            dense_results: List[RetrievalResult] = []
+            sparse_results: List[RetrievalResult] = []
+            graph_results: List[RetrievalResult] = []
             started = time.perf_counter()
-            query_embedding = self.embedder.embed_query(query, expand=True)
+            query_embedding = None
+            if self.dense_enabled:
+                query_embedding = self.embedder.embed_query(query, expand=True)
 
             use_allowlist = bool(getattr(self.vector_store, "supports_allowlist", False))
-            if use_allowlist:
+            if use_allowlist and self.dense_enabled:
                 embed_ms = (time.perf_counter() - started) * 1000.0
                 started_sparse = time.perf_counter()
-                sparse_results = self._bm25_search(query, top_k=max(k * 3, 200)) if self._bm25_index else []
+                if self.sparse_enabled and self._bm25_index:
+                    sparse_results = self._bm25_search(query, top_k=max(k * 3, 200))
                 latencies_ms["bm25"] = (time.perf_counter() - started_sparse) * 1000.0
                 allowlist = [r.chunk.id for r in sparse_results[:200] if getattr(r.chunk, "id", None)]
                 allow_arg = allowlist if len(allowlist) >= 20 else None
@@ -209,23 +222,32 @@ class Retriever:
                 )
                 latencies_ms["dense"] = embed_ms + (time.perf_counter() - started_dense) * 1000.0
             else:
-                dense_results = self.vector_store.search(
-                    query_embedding, top_k=k * 2, repo_name=self.repo_name or None
-                )
-                latencies_ms["dense"] = (time.perf_counter() - started) * 1000.0
+                if self.dense_enabled:
+                    dense_results = self.vector_store.search(
+                        query_embedding, top_k=k * 2, repo_name=self.repo_name or None
+                    )
+                    latencies_ms["dense"] = (time.perf_counter() - started) * 1000.0
+                else:
+                    latencies_ms["dense"] = 0.0
 
                 started = time.perf_counter()
-                sparse_results = self._bm25_search(query, top_k=k * 3) if self._bm25_index else []
-                latencies_ms["bm25"] = (time.perf_counter() - started) * 1000.0
+                if self.sparse_enabled and self._bm25_index:
+                    sparse_results = self._bm25_search(query, top_k=k * 3)
+                latencies_ms["bm25"] = (
+                    (time.perf_counter() - started) * 1000.0 if self.sparse_enabled else 0.0
+                )
 
-            started = time.perf_counter()
-            graph_results = self._graph_search(
-                query,
-                dense_results + sparse_results,
-                entity_id_map,
-                deepen=deepen,
-            )
-            latencies_ms["graph"] = (time.perf_counter() - started) * 1000.0
+            if self.graph_enabled and self.expand_neighbors > 0:
+                started = time.perf_counter()
+                graph_results = self._graph_search(
+                    query,
+                    dense_results + sparse_results,
+                    entity_id_map,
+                    deepen=deepen,
+                )
+                latencies_ms["graph"] = (time.perf_counter() - started) * 1000.0
+            else:
+                latencies_ms["graph"] = 0.0
         finally:
             self.expand_neighbors = old_neighbors
             if prev_hyde is not None:

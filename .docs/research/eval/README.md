@@ -17,7 +17,7 @@ python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml
 python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --dry-run
 ```
 
-CI does not run `make eval-ab` or `make eval-ab-embed`. Those targets are optional A/B recipes and skip cleanly (exit 0) if the `turbovec` extra or Jina-code weights are missing.
+CI does not run `make eval-ab`, `make eval-ab-embed`, or `make eval-ablate`. The first two skip cleanly (exit 0) if the `turbovec` extra or Jina-code weights are missing. Ablation is eval-only and needs a local MiniLM + Chroma index of this repo.
 
 The last run is written to `.code-harness/eval/{suite}-{timestamp}.json` (gitignored). Override with `--output path.json`. `--k` overrides the suite cutoff (default 10).
 
@@ -69,7 +69,32 @@ python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --pa
 python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --loop
 ```
 
-`--loop` (or `--max-loops N`) enables the bounded corrective retrieve loop. Default `max_loops=0` is one-shot. Reports include `metrics.by_difficulty` and per-case `loop` traces (`attempts`, `grade`, `stop_reason`).
+`--loop` (or `--max-loops N`) enables the bounded corrective retrieve loop. Default `max_loops=0` is one-shot. Reports include `metrics.by_difficulty` and per-case `loop` traces (`attempts`, `grade`, `stop_reason`). A **stall** is a retry whose top-k hit set Jaccard-overlaps the previous attempt at ≥ 0.8 (`retrieval.stall_overlap`). When the loop is on, `retrieval.stop_on_stall` (default true) early-stops; no effect at `max_loops=0`. Summary also reports stall count / rate and escape rate (stall followed by a changed, better-graded attempt). A live `--loop` pass on the golden suite is recorded in [RESULTS-loop-stall.md](RESULTS-loop-stall.md). The 9-way ablation table was not re-run with `--loop` (cross-encoder cost); use `python3 main.py eval-ab . --ablate --loop --skip-index` to add stall columns.
+
+### Harness-on vs harness-off ablation
+
+Leave-one-out of the default retrieve+pack stack on this same fixture (inspired by the with-vs-without harness contrast in [arXiv 2610.02858](https://arxiv.org/abs/2610.02858)):
+
+```bash
+python3 main.py eval-ab . --ablate
+# or
+make eval-ablate
+# equivalent: index once, then score without rebuilding
+python3 main.py index .
+python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --ablate --skip-index
+```
+
+Variants:
+
+| variant | What changes |
+|---------|----------------|
+| `full` | Default harness (dense + BM25 + graph expand + CE + MMR; HyDE off; pack `full`) |
+| `no_dense` / `no_bm25` / `no_graph` / `no_rerank` / `no_mmr` | That stage off |
+| `hyde` | Local HyDE template **on** (default is off, so leave-one-out would be a no-op) |
+| `ccr_lite` | CCR-lite packing **on** (default pack is `full`) |
+| `no_retrieval` | Empty hits. Recall@k / nDCG@k / citation-path are zero |
+
+Each row reports Recall@k, nDCG@k, citation-path hit rate, stage latency (dense / BM25 / graph / CE / MMR), `prompt_tokens_full` vs packed, and failure taxonomy counts. Writes [RESULTS-ablation.md](RESULTS-ablation.md) / `RESULTS-ablation.json`. Eval stays retrieval-only: if no chat-LLM key is set, the table states that answer-level citation (full vs no-retrieval) was not run. The default query path is not changed.
 
 ### Optional verify stage (`--verify`)
 
@@ -91,6 +116,10 @@ python main.py eval . --suite .docs/research/eval/agent-completion.example.yaml 
 ```
 
 Reports then include per-case `verify` and `metrics.verify_pass_rate` (only over non-skipped agent-completion fixtures). Default **off**.
+
+### Optional validity stage (`--validity`)
+
+A separate opt-in (`verify.validity`, default **off**) checks an answer — fixture `answer` when present, otherwise a generated answer — against index/entity records and the knowledge graph. Missing `path:symbol` citations and contradicted claimed edges (`calls` / `inherits` / `tested_by`) are flagged. Eval then reports `metrics.invalid_citation_rate`. Retrieval-only fixtures with no answer contribute `citation_count=0`. The default query path is unchanged.
 
 ## Experimental backend A/B
 
