@@ -4,6 +4,7 @@ Scored on this repo with `.docs/research/eval/code-harness.fixture.yaml`, plus a
 
 | Field | Value |
 |-------|--------|
+| SHA | `6fb42b749db1c723de7a7301aa7c5bd97f7564c7` |
 | Branch | `feature/external-context-x0-x1` (stacked on `feature/retrieval-quick-wins` / `96aab77`) |
 | Embedder | `all-MiniLM-L6-v2` (local) |
 | Vector | Chroma (default), 4372 chunks — same persist dir as the R1–R5 shipped index |
