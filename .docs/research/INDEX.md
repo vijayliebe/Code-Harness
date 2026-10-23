@@ -1,6 +1,6 @@
 # Code-Harness External Research — INDEX
 
-Research date: **2026-09-24** (Europe/Dublin / IST); Claude Code card added **2026-09-25**; DeepSeek harness card added **2026-09-25**.  
+Research date: **2026-09-24** (Europe/Dublin / IST); Claude Code card added **2026-09-25**; DeepSeek harness card added **2026-09-25**; Onyx card added **2026-10-23**.  
 Target project: [vijayliebe/Code-Harness](https://github.com/vijayliebe/Code-Harness) — Python hybrid code-RAG CLI (tree-sitter → chunk → ChromaDB + BM25 + KG → RRF / cross-encoder / MMR → LLM).
 
 **Status legend:** Resolved = primary URL identified with workable detail. Partial = best-effort match with ambiguity noted. Unresolved = no credible primary source.
@@ -32,11 +32,12 @@ Target project: [vijayliebe/Code-Harness](https://github.com/vijayliebe/Code-Har
 | 23 | Google Code Wiki | [google-code-wiki.md](google-code-wiki.md) | Resolved | https://codewiki.google/ · Google Developers Blog | Living AI wiki + diagrams + grounded chat — inspiration for `wiki generate`. | **High** |
 | 24 | Claude Code harness | [claude-code-harness.md](claude-code-harness.md) | Resolved | https://docs.anthropic.com/en/docs/claude-code | Tool-result clearing + default-fail independent verify gate (criteria start false; separate read-only evaluator). | **High** |
 | 25 | DeepSeek harness | [deepseek-harness.md](deepseek-harness.md) | Resolved | https://github.com/deepseek-ai/deepseek-harness | Thin loop + event-sourced Session + `deriveMessages` + prefix/KV discipline. Steal seams; do not vendor Cordis. | **High** |
+| 26 | Onyx | [onyx/README.md](onyx/README.md) | Resolved | https://github.com/onyx-dot-app/onyx | Enterprise knowledge platform; steal the retrieval harness (enrichment, weighted RRF, per-doc cap) and the connector contract for Jira/Confluence/Slack. No Figma; no ticket→code linking. | **High** |
 
 \* Ambiguity documented in the item file (alternate candidates listed).
 
 ## Counts
-- **Resolved:** 24  
+- **Resolved:** 25  
 - **Partial:** 1 (`jitro`)  
 - **Unresolved:** 0  
 
@@ -45,12 +46,13 @@ Target project: [vijayliebe/Code-Harness](https://github.com/vijayliebe/Code-Har
 - [deep/README.md](deep/README.md) — HIGH-source design notes
 - [deep/INTEGRATION_PLAN.md](deep/INTEGRATION_PLAN.md) — sequenced PRs (`eval metrics → CCR-lite packer → query loop → KG enrichment`) — **spine shipped**; remaining work in the fusion pack
 - [fusion/README.md](fusion/README.md) — steal matrix + gap audit + thesis (path to best-of-kind, not a claim it is achieved)
+- [onyx/README.md](onyx/README.md) — steal matrix + external-context connector proposal (#26)
 
 ### Fusion pack (post-spine)
 
 | File | What |
 |------|------|
-| [fusion/STEAL_MATRIX.md](fusion/STEAL_MATRIX.md) | All 25 INDEX rows: steal / module / `done`·`partial`·`gap`·`reject` / P0–P3 |
+| [fusion/STEAL_MATRIX.md](fusion/STEAL_MATRIX.md) | INDEX rows (through #25 in the matrix; #26 Onyx is later): steal / module / `done`·`partial`·`gap`·`reject` / P0–P3 |
 | [fusion/GAP_AUDIT.md](fusion/GAP_AUDIT.md) | Open gaps only (G6+); fusion 1–5 and polish shipped |
 | [fusion/FUSION_THESIS.md](fusion/FUSION_THESIS.md) | Differentiators + non-goals + eval/token/latency scorecard |
 | [fusion/notes/](fusion/notes/) | Mini-deepens for thin Medium / weak-primary cards |

@@ -177,7 +177,7 @@ This file’s 90-day table is **historical first-pass intent**. Execution order 
 ---
 
 ## File map
-All first-pass write-ups live beside this file; start at [INDEX.md](INDEX.md). HIGH-source design notes and the sequenced PR plan are under [deep/](deep/README.md).
+All first-pass write-ups live beside this file; start at [INDEX.md](INDEX.md). HIGH-source design notes and the sequenced PR plan are under [deep/](deep/README.md). Later card: [onyx/README.md](onyx/README.md) (#26).
 
 **Fusion backlog (steal matrix, next-5 PRs, scorecard):** [fusion/README.md](fusion/README.md) — [STEAL_MATRIX.md](fusion/STEAL_MATRIX.md) · [GAP_AUDIT.md](fusion/GAP_AUDIT.md) · [FUSION_THESIS.md](fusion/FUSION_THESIS.md).
 
