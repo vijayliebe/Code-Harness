@@ -61,6 +61,8 @@ Failure labels (same vocabulary as `--debug` source misses):
 
 `packer_drop` is recorded when a gold item was retrieved but omitted from the assembled context (token-budget truncation in `full`; CCR-lite keeps MMR ids in headers and uses the same label only if a survivor is dropped).
 
+After MMR, `context.per_file_chunk_cap` (default **3**, `0` = unlimited, CLI `--per-file-chunk-cap` / `CODEHARNESS_PER_FILE_CHUNK_CAP`) drops extra hits from the same file before the token-budget cut. Ranking is unchanged; packed tokens typically go down.
+
 Default pack mode is `full`. Compare token columns without changing ranking:
 
 ```bash

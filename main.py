@@ -1392,6 +1392,13 @@ def _add_pack_flags(parser):
         help="Context pack mode (default: full; override config/CODEHARNESS_PACK_MODE)",
     )
     parser.add_argument(
+        "--per-file-chunk-cap",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Max chunks per file before the token budget (default 3; 0 = unlimited)",
+    )
+    parser.add_argument(
         "--expand-chunk",
         action="append",
         dest="expand_chunks",
@@ -2246,6 +2253,14 @@ def _load_config(args) -> Config:
         config.context["pack_mode"] = env_mode
     if getattr(args, "pack_mode", None):
         config.context["pack_mode"] = args.pack_mode
+    if getattr(args, "per_file_chunk_cap", None) is not None:
+        config.context["per_file_chunk_cap"] = int(args.per_file_chunk_cap)
+    env_cap = os.environ.get("CODEHARNESS_PER_FILE_CHUNK_CAP", "").strip()
+    if env_cap and getattr(args, "per_file_chunk_cap", None) is None:
+        try:
+            config.context["per_file_chunk_cap"] = int(env_cap)
+        except ValueError:
+            pass
     if getattr(args, "spill_ccr", False):
         config.ccr["spill"] = True
     env_brief = os.environ.get("CODEHARNESS_MEMORY_BRIEF", "").strip().lower()
@@ -2594,6 +2609,13 @@ Examples:
         help="Context pack mode used for citation/token columns (default: full)",
     )
     ev.add_argument(
+        "--per-file-chunk-cap",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Max chunks per file before the token budget (default 3; 0 = unlimited)",
+    )
+    ev.add_argument(
         "--ablate",
         action="store_true",
         help=(
@@ -2704,6 +2726,13 @@ Examples:
         choices=["full", "ccr_lite"],
         default=None,
         help="Context pack mode used for citation/token columns (default: full)",
+    )
+    ev_ab.add_argument(
+        "--per-file-chunk-cap",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Max chunks per file before the token budget (default 3; 0 = unlimited)",
     )
     ev_ab.add_argument(
         "--ablate",

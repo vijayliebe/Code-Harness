@@ -69,6 +69,9 @@ DEFAULT_CONFIG = {
         "knowledge_token_budget": 800,
         "prefix_stable": False,
         "max_tokens_multiplier": 2,
+        # Applied after MMR, before the token-budget cut. 0 = unlimited.
+        # Default 3: ranking unchanged; packed tokens slightly down.
+        "per_file_chunk_cap": 3,
     },
     "ccr": {
         "first_lines": 12,

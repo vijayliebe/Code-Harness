@@ -212,6 +212,7 @@ build_context(query, results)
   ├── deduplicate(): remove overlapping line ranges, keep higher-scored
   ├── rerank(): boost for term overlap, entity type, docstrings
   ├── diversity_rerank(): MMR with lambda=0.3
+  ├── cap_per_file(): keep at most context.per_file_chunk_cap (default 3) chunks per file
   └── assemble_context(): full text (default) or CCR-lite signatures + key spans
 build_context_report(...) → context + prompt_tokens + packed ids/paths + MMR ms
                            + prompt_tokens_full / prompt_tokens_packed + prefix_hash
@@ -226,7 +227,7 @@ Ranking (dense / BM25 / graph / CE / MMR) is unchanged. Expand via `python main.
 
 After assembly, `ContextBuilder` runs `harness/redact.py` (default on) so packed/LLM text never carries common secrets. Hits append fingerprints to `.code-harness/audit/audit.jsonl` (`python main.py audit show --last 20`). Disable only with `--no-redact` / `CODEHARNESS_REDACT=0`. `LLMInterface.prepare_outbound` and serve/MCP `redact_and_audit` share that helper.
 
-MMR diversity: `MMR_score = relevance - lambda * max(similarity_to_selected)` prevents the same file from dominating the context window.
+MMR diversity: `MMR_score = relevance - lambda * max(similarity_to_selected)` prevents the same file from dominating the context window. After MMR, `context.per_file_chunk_cap` (default **3**, `0` = unlimited) drops extra hits from the same file before the token-budget cut. Ranking is unchanged; packed tokens go down when one file would otherwise flood the window.
 
 Context output format:
 ```

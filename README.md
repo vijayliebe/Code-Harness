@@ -104,6 +104,7 @@ Hybrid retrieval: dense vector search (semantic), BM25 keyword index (exact name
 | `--cross-repo` | Search across all indexed repositories |
 | `--debug` | Show per-source retrieval breakdown (dense/BM25/graph/cross-encoder) |
 | `--pack-mode` | `full` (default) or `ccr_lite` — pack signatures + key spans after MMR |
+| `--per-file-chunk-cap N` | Max chunks per file before the token budget (default **3**; `0` = unlimited) |
 | `--expand-chunk ID` | Inject a cached original chunk into the prompt (repeatable) |
 
 ### `chat` / `session` / `interactive` — Multi-turn REPL
@@ -526,6 +527,7 @@ Key settings:
   "context": {
     "pack_mode": "full",
     "max_tokens_multiplier": 2,
+    "per_file_chunk_cap": 3,
     "include_memory_brief": false,
     "include_memory_search": false,
     "knowledge_prefix": false,

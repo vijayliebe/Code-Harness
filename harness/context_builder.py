@@ -146,6 +146,7 @@ class ContextBuilder:
             pass
         mmr_ms = (time.perf_counter() - started) * 1000.0 if mmr_on else 0.0
         scored = self._drop_prefixed_memory(scored, memory_brief, knowledge_prefix)
+        scored = self._cap_per_file(scored)
         packed_full: List[RetrievalResult] = []
         packed_lite: List[RetrievalResult] = []
         full_context = self._assemble_context(
@@ -392,6 +393,27 @@ class ContextBuilder:
             ]
             if any(key and str(key) in blob for key in keys if key):
                 continue
+            kept.append(result)
+        return kept
+
+    def _cap_per_file(self, results: List[RetrievalResult]) -> List[RetrievalResult]:
+        """Keep at most N chunks per file, in current (MMR) order, before the budget cut."""
+        context_cfg = getattr(self.config, "context", None) or {}
+        raw = context_cfg.get("per_file_chunk_cap")
+        try:
+            cap = int(raw) if raw is not None else 0
+        except (TypeError, ValueError):
+            cap = 0
+        if cap <= 0 or not results:
+            return results
+        kept: List[RetrievalResult] = []
+        counts: Dict[str, int] = {}
+        for result in results:
+            path = result.chunk.file_path or ""
+            n = counts.get(path, 0)
+            if n >= cap:
+                continue
+            counts[path] = n + 1
             kept.append(result)
         return kept
 
