@@ -58,6 +58,9 @@ def _retriever(chunks, dense, *, wiki_weight=0.0, wiki_mode=False):
     cfg.retrieval["wiki_weight"] = wiki_weight
     cfg.retrieval["cross_encoder"] = {"enabled": False}
     cfg.retrieval["expand_neighbors"] = 0
+    cfg.retrieval["multi_query"]["enabled"] = False
+    cfg.retrieval["expansion"]["enabled"] = False
+    cfg.context["per_file_chunk_cap"] = 0
     if wiki_mode:
         apply_wiki_mode(cfg, True)
     kg = KnowledgeGraph(cfg, repo_name="fixture")

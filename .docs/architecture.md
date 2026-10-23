@@ -115,6 +115,7 @@ Key design:
 - Embeddings L2-normalized for cosine similarity
 - `embed_query()` supports HyDE query expansion (disabled by default): concatenates a **free template string** (no LLM / not the decision model) with the query before embedding
 - `_expand_query()` prepends "code that" to non-code queries for better alignment
+- Optional `indexing.enrich_index_text` (off by default) embeds / BM25-indexes `path + symbol + signature + content` via `harness/index_text.py`. Packed context still uses `chunk.content`. Requires a re-index.
 - All HTTP API calls wrapped with `retry_with_backoff(3 retries, exponential backoff)`
 
 ### 4. Vector Store (`harness/vector_store.py`)

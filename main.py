@@ -79,7 +79,15 @@ def cmd_index(args):
 
     print(f"[*] Generating embeddings ({config.embedding['model']})...")
     embedder = Embedder(config)
-    texts = [c.content for c in chunks]
+    from harness.index_text import chunk_index_text, enrich_index_text_enabled
+
+    enrich_on = enrich_index_text_enabled(config)
+    if enrich_on:
+        print("[*] Index text: path + symbol + signature + content "
+              "(display/pack stay plain chunk.content). Re-index if you toggle this.")
+        texts = [chunk_index_text(c, config) for c in chunks]
+    else:
+        texts = [c.content for c in chunks]
     embeddings = embedder.embed(texts)
     print(f"[*] Generated {len(embeddings)} embeddings (dim={len(embeddings[0]) if embeddings else 0})")
 
@@ -1458,6 +1466,83 @@ def _apply_loop_args(config, args):
     return config
 
 
+def _apply_retrieval_quick_win_args(config, args):
+    """CLI / env overlays for R1–R5. Defaults stay off until eval says otherwise."""
+    env_enrich = os.environ.get("CODEHARNESS_ENRICH_INDEX_TEXT", "").strip().lower()
+    if env_enrich in ("1", "true", "yes", "on") or getattr(args, "enrich_index_text", False):
+        config.indexing["enrich_index_text"] = True
+    if getattr(args, "no_enrich_index_text", False):
+        config.indexing["enrich_index_text"] = False
+
+    if getattr(args, "per_file_chunk_cap", None) is not None:
+        config.context["per_file_chunk_cap"] = int(args.per_file_chunk_cap)
+    env_cap = os.environ.get("CODEHARNESS_PER_FILE_CHUNK_CAP", "").strip()
+    if env_cap and getattr(args, "per_file_chunk_cap", None) is None:
+        try:
+            config.context["per_file_chunk_cap"] = int(env_cap)
+        except ValueError:
+            pass
+
+    mq = dict(config.retrieval.get("multi_query") or {})
+    env_mq = os.environ.get("CODEHARNESS_MULTI_QUERY", "").strip().lower()
+    if env_mq in ("1", "true", "yes", "on") or getattr(args, "multi_query", False):
+        mq["enabled"] = True
+    if getattr(args, "no_multi_query", False):
+        mq["enabled"] = False
+    config.retrieval["multi_query"] = mq
+
+    exp = dict(config.retrieval.get("expansion") or {})
+    env_exp = os.environ.get("CODEHARNESS_EXPANSION", "").strip().lower()
+    if env_exp in ("1", "true", "yes", "on") or getattr(args, "context_expansion", False):
+        exp["enabled"] = True
+    if getattr(args, "no_context_expansion", False):
+        exp["enabled"] = False
+    config.retrieval["expansion"] = exp
+    return config
+
+
+def _add_retrieval_quick_win_flags(parser, *, index: bool = False):
+    parser.add_argument(
+        "--enrich-index-text",
+        action="store_true",
+        help="Index path+symbol+signature+content for dense/BM25 (requires re-index)",
+    )
+    parser.add_argument(
+        "--no-enrich-index-text",
+        action="store_true",
+        help="Disable index-text enrichment for this run",
+    )
+    if index:
+        return
+    parser.add_argument(
+        "--per-file-chunk-cap",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Max chunks per file before the token budget (0 = unlimited)",
+    )
+    parser.add_argument(
+        "--multi-query",
+        action="store_true",
+        help="Weighted RRF of original + identifier + HyDE-template queries (no LLM)",
+    )
+    parser.add_argument(
+        "--no-multi-query",
+        action="store_true",
+        help="Disable multi-query retrieval for this run",
+    )
+    parser.add_argument(
+        "--context-expansion",
+        action="store_true",
+        help="Heuristic drop/chunk/neighbours/file expansion before packing",
+    )
+    parser.add_argument(
+        "--no-context-expansion",
+        action="store_true",
+        help="Disable per-result context expansion for this run",
+    )
+
+
 def _print_loop_debug(outcome):
     print("\n" + "=" * 70)
     print("  QUERY LOOP TRACE")
@@ -2109,6 +2194,7 @@ def _load_config(args) -> Config:
         config.context["knowledge_prefix"] = True
     if getattr(args, "include_knowledge_prefix", False):
         config.context["knowledge_prefix"] = True
+    _apply_retrieval_quick_win_args(config, args)
     env_wiki = os.environ.get("CODEHARNESS_WIKI_MODE", "").strip().lower()
     wiki_on = env_wiki in ("1", "true", "yes", "on") or getattr(args, "wiki", False)
     if wiki_on or (getattr(config, "chat", None) or {}).get("wiki_mode"):
@@ -2272,6 +2358,7 @@ Examples:
         default=None,
         help="Dense backend: chromadb (default) or turbovec (experimental). Rebuild required on switch.",
     )
+    _add_retrieval_quick_win_flags(idx, index=True)
     idx.set_defaults(func=cmd_index)
 
     q = subparsers.add_parser("query", help="Query the indexed repository")
@@ -2289,6 +2376,7 @@ Examples:
     _add_redact_flag(q)
     _add_query_cache_flags(q)
     _add_retrieve_prestep_flags(q)
+    _add_retrieval_quick_win_flags(q)
     q.set_defaults(func=cmd_query)
 
     int_p = subparsers.add_parser(
@@ -2448,6 +2536,7 @@ Examples:
         ),
     )
     _add_query_cache_flags(ev)
+    _add_retrieval_quick_win_flags(ev)
     ev.set_defaults(func=cmd_eval)
 
     from harness.eval_ab import (
@@ -2528,6 +2617,7 @@ Examples:
         help="Context pack mode used for citation/token columns (default: full)",
     )
     _add_loop_flags(ev_ab, include_verify=False)
+    _add_retrieval_quick_win_flags(ev_ab)
     ev_ab.set_defaults(func=cmd_eval_ab)
 
     rc = subparsers.add_parser(

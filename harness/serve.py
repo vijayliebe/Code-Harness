@@ -17,6 +17,11 @@ from typing import Any, Dict, List, Optional, TextIO
 from urllib.parse import urlparse
 
 from .config import Config
+from .mcp_filters import (
+    error_envelope,
+    list_filters,
+    validate_retrieve_args,
+)
 from .query_cache import QueryCache, index_fingerprint, make_cache_key
 from .redact import redact_and_audit, redaction_enabled
 
@@ -40,9 +45,22 @@ MCP_TOOLS = (
                 "include_memory_brief": {"type": "boolean"},
                 "include_memory_search": {"type": "boolean"},
                 "include_knowledge_prefix": {"type": "boolean"},
+                "skip_query_expansion": {
+                    "type": "boolean",
+                    "description": "Skip identifier / HyDE multi-query and embedder expand.",
+                },
+                "skip_expansion": {
+                    "type": "boolean",
+                    "description": "Alias for skip_query_expansion.",
+                },
             },
             "required": ["query"],
         },
+    },
+    {
+        "name": "list_filters",
+        "description": "List valid retrieve filters and allowed values.",
+        "inputSchema": {"type": "object", "properties": {}},
     },
     {
         "name": "retrieve_chunk",
@@ -159,9 +177,19 @@ class RetrieveService:
 
     def retrieve(self, request: Dict[str, Any]) -> Dict[str, Any]:
         req = request or {}
-        query = (req.get("query") or req.get("q") or "").strip()
+        # Accept the short alias used by some HTTP clients, then validate.
+        if "q" in req and "query" not in req:
+            req = dict(req)
+            req["query"] = req.pop("q")
+        elif "q" in req:
+            req = dict(req)
+            req.pop("q", None)
+        error, req = validate_retrieve_args(req)
+        if error:
+            return error
+        query = (req.get("query") or "").strip()
         if not query:
-            raise ValueError("query is required")
+            return error_envelope("query is required")
         top_k = req.get("top_k")
         if top_k is not None:
             top_k = int(top_k)
@@ -181,6 +209,11 @@ class RetrieveService:
                 )
         if req.get("include_knowledge_prefix"):
             self.config.context["knowledge_prefix"] = True
+        skip_expansion = bool(req.get("skip_query_expansion"))
+        prev_skip = None
+        if self.retriever is not None and skip_expansion:
+            prev_skip = getattr(self.retriever, "skip_expansion", False)
+            self.retriever.skip_expansion = True
 
         cache_key = self._cache_key(query, top_k) if self.cache is not None else None
         if cache_key:
@@ -189,10 +222,14 @@ class RetrieveService:
                 self.cache.hits += 1
                 payload = dict(hit)
                 payload["cached"] = True
+                if self.retriever is not None and prev_skip is not None:
+                    self.retriever.skip_expansion = prev_skip
                 return self._redact_payload(payload, query)
             self.cache.misses += 1
 
         if self.retriever is None:
+            if prev_skip is not None and self.retriever is not None:
+                self.retriever.skip_expansion = prev_skip
             raise RuntimeError("retrieve service has no retriever")
 
         from .context_builder import ContextBuilder
@@ -203,17 +240,21 @@ class RetrieveService:
         # Always pack through the shared helper so HTTP stays on the same
         # retrieve+pack path as query/chat. Serve keeps its own payload cache
         # (do not pass ctx.cache) so the JSON contract is unchanged.
-        packed = run_retrieve_pack(
-            PreStepContext(
-                query=query,
-                top_k=k,
-                config=self.config,
-                retriever=self.retriever,
-                context_builder=builder,
-                repo_name=self.repo_name,
-                repo_path=self.repo_path,
+        try:
+            packed = run_retrieve_pack(
+                PreStepContext(
+                    query=query,
+                    top_k=k,
+                    config=self.config,
+                    retriever=self.retriever,
+                    context_builder=builder,
+                    repo_name=self.repo_name,
+                    repo_path=self.repo_path,
+                )
             )
-        )
+        finally:
+            if self.retriever is not None and prev_skip is not None:
+                self.retriever.skip_expansion = prev_skip
         outcome = packed.outcome
         results = list(packed.results or [])
         report = packed.packed or builder.build_context_report(query, results)
@@ -294,7 +335,7 @@ def handle_mcp(message: Dict[str, Any], service: Optional[RetrieveService] = Non
             req_id,
             {
                 "protocolVersion": "2024-11-05",
-                "capabilities": {"tools": {}},
+                "capabilities": {"tools": {}, "resources": {}},
                 "serverInfo": {"name": "code-harness", "version": "0.1.0"},
             },
         )
@@ -302,6 +343,29 @@ def handle_mcp(message: Dict[str, Any], service: Optional[RetrieveService] = Non
         return _rpc(req_id, {})
     if method == "tools/list":
         return _rpc(req_id, {"tools": list(MCP_TOOLS)})
+    if method == "resources/list":
+        return _rpc(
+            req_id,
+            {
+                "resources": [
+                    {
+                        "uri": "resource://retrieve_filters",
+                        "name": "retrieve_filters",
+                        "description": "Valid retrieve filters and allowed values.",
+                        "mimeType": "application/json",
+                    }
+                ]
+            },
+        )
+    if method == "resources/read":
+        uri = ((msg.get("params") or {}).get("uri") or "")
+        if uri in ("resource://retrieve_filters", "retrieve_filters"):
+            return _rpc(req_id, {"contents": [{"uri": "resource://retrieve_filters", "mimeType": "application/json", "text": json.dumps(list_filters())}]})
+        return {
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "error": {"code": -32602, "message": f"unknown resource: {uri}"},
+        }
     if method == "tools/call":
         params = msg.get("params") or {}
         name = params.get("name") or ""
@@ -332,6 +396,9 @@ def _call_tool(
     args = args or {}
     if name == "retrieve":
         payload = service.retrieve(args)
+        return _tool_text(json.dumps(payload, ensure_ascii=False), payload)
+    if name == "list_filters":
+        payload = list_filters()
         return _tool_text(json.dumps(payload, ensure_ascii=False), payload)
     if name == "retrieve_chunk":
         from .ccr import retrieve_chunk
@@ -595,9 +662,10 @@ class _RetrieveHandler(BaseHTTPRequestHandler):
             try:
                 payload = self.service.retrieve(data)
             except ValueError as exc:
-                self._json(400, {"error": str(exc)})
+                self._json(400, error_envelope(str(exc)))
                 return
-            self._json(200, payload)
+            status = 400 if payload.get("error") else 200
+            self._json(status, payload)
             return
         if path in ("/mcp", "/v1/mcp"):
             self._json(200, handle_mcp(data, self.service))

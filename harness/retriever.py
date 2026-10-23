@@ -12,6 +12,7 @@ from rich.progress import track
 from .models import Chunk, RetrievalResult
 from .config import Config
 from .embedder import Embedder
+from .index_text import chunk_index_text
 from .vector_store import VectorStore
 from .knowledge_graph import KnowledgeGraph
 from .okf import is_memory_path, is_wiki_path
@@ -83,6 +84,7 @@ class Retriever:
         self.ce_config = ret_cfg.get("cross_encoder", {})
         self.ce_enabled = self.ce_config.get("enabled", True)
         self.ce_model_name = self.ce_config.get("model", "cross-encoder/ms-marco-MiniLM-L-6-v2")
+        self.skip_expansion = False
 
         self._bm25_index: Optional[BM25Okapi] = None
         self._bm25_chunks: List[Chunk] = []
@@ -99,7 +101,7 @@ class Retriever:
         self._all_chunks = chunks
         if chunks:
             tokenized = [
-                self._tokenize(c.content)
+                self._tokenize(chunk_index_text(c, self.config))
                 for c in track(chunks, description="  Tokenizing BM25 index")
             ]
             self._bm25_index = BM25Okapi(tokenized)
@@ -149,10 +151,12 @@ class Retriever:
                  debug: bool = False,
                  mode: str = "hybrid",
                  hyde: Optional[bool] = None,
-                 expand_neighbors: Optional[int] = None) -> List[RetrievalResult]:
+                 expand_neighbors: Optional[int] = None,
+                 skip_expansion: Optional[bool] = None) -> List[RetrievalResult]:
         k = top_k or self.top_k
         latencies_ms: Dict[str, float] = {}
         mode = (mode or "hybrid").lower()
+        skip = self.skip_expansion if skip_expansion is None else bool(skip_expansion)
         prev_hyde = None
         if hyde is not None and getattr(self, "embedder", None) is not None:
             prev_hyde = getattr(self.embedder, "hyde_enabled", None)
@@ -170,7 +174,7 @@ class Retriever:
                 latencies_ms["wiki"] = 0.0
                 latencies_ms["memory"] = 0.0
                 latencies_ms["ce"] = 0.0
-                top = sparse_results[:k]
+                top = self._maybe_expand(query, sparse_results[:k])
                 if debug:
                     return top, {
                         "dense": [],
@@ -189,34 +193,15 @@ class Retriever:
         old_neighbors = self.expand_neighbors
         self.expand_neighbors = neighbor_override
         try:
+            variants = self._query_variants(query, skip_expansion=skip)
             started = time.perf_counter()
-            query_embedding = self.embedder.embed_query(query, expand=True)
-
-            use_allowlist = bool(getattr(self.vector_store, "supports_allowlist", False))
-            if use_allowlist:
-                embed_ms = (time.perf_counter() - started) * 1000.0
-                started_sparse = time.perf_counter()
-                sparse_results = self._bm25_search(query, top_k=max(k * 3, 200)) if self._bm25_index else []
-                latencies_ms["bm25"] = (time.perf_counter() - started_sparse) * 1000.0
-                allowlist = [r.chunk.id for r in sparse_results[:200] if getattr(r.chunk, "id", None)]
-                allow_arg = allowlist if len(allowlist) >= 20 else None
-                started_dense = time.perf_counter()
-                dense_results = self.vector_store.search(
-                    query_embedding,
-                    top_k=k * 2,
-                    repo_name=self.repo_name or None,
-                    allowlist_ids=allow_arg,
-                )
-                latencies_ms["dense"] = embed_ms + (time.perf_counter() - started_dense) * 1000.0
-            else:
-                dense_results = self.vector_store.search(
-                    query_embedding, top_k=k * 2, repo_name=self.repo_name or None
-                )
-                latencies_ms["dense"] = (time.perf_counter() - started) * 1000.0
-
-                started = time.perf_counter()
-                sparse_results = self._bm25_search(query, top_k=k * 3) if self._bm25_index else []
-                latencies_ms["bm25"] = (time.perf_counter() - started) * 1000.0
+            dense_results, sparse_results, variant_lists, variant_weights = self._search_variants(
+                variants, k=k, expand=not skip
+            )
+            latencies_ms["dense"] = (time.perf_counter() - started) * 1000.0
+            latencies_ms["bm25"] = 0.0
+            if len(variants) > 1:
+                latencies_ms["multi_query"] = latencies_ms["dense"]
 
             started = time.perf_counter()
             graph_results = self._graph_search(
@@ -247,15 +232,36 @@ class Retriever:
         else:
             latencies_ms["memory"] = 0.0
 
-        fuse_lists = [dense_results, sparse_results]
-        fuse_weights = [self.dense_weight, self.sparse_weight]
-        if wiki_results:
-            fuse_lists.append(wiki_results)
-            fuse_weights.append(self.wiki_weight)
-        if memory_results:
-            fuse_lists.append(memory_results)
-            fuse_weights.append(self.memory_weight)
-        fused = self._reciprocal_rank_fusion(fuse_lists, weights=fuse_weights)
+        if len(variant_lists) > 1:
+            mq = (self.config.retrieval or {}).get("multi_query") or {}
+            rrf_k = float(mq.get("rrf_k") or 50)
+            fused = self._reciprocal_rank_fusion(
+                variant_lists, weights=variant_weights, k=rrf_k
+            )
+            extra_lists = []
+            extra_weights = []
+            if wiki_results:
+                extra_lists.append(wiki_results)
+                extra_weights.append(self.wiki_weight)
+            if memory_results:
+                extra_lists.append(memory_results)
+                extra_weights.append(self.memory_weight)
+            if extra_lists:
+                fused = self._reciprocal_rank_fusion(
+                    [fused] + extra_lists,
+                    weights=[1.0] + extra_weights,
+                    k=rrf_k,
+                )
+        else:
+            fuse_lists = [dense_results, sparse_results]
+            fuse_weights = [self.dense_weight, self.sparse_weight]
+            if wiki_results:
+                fuse_lists.append(wiki_results)
+                fuse_weights.append(self.wiki_weight)
+            if memory_results:
+                fuse_lists.append(memory_results)
+                fuse_weights.append(self.memory_weight)
+            fused = self._reciprocal_rank_fusion(fuse_lists, weights=fuse_weights)
         for r in fused:
             if (r.chunk.metadata or {}).get("kind") == "gloss":
                 r.score = r.score + 0.12
@@ -292,6 +298,7 @@ class Retriever:
                 top = prefer_wiki_results(top)
         except Exception:
             pass
+        top = self._maybe_expand(query, top)
 
         if debug:
             return top, {
@@ -502,3 +509,99 @@ class Retriever:
         text = text.lower()
         tokens = re.findall(r'[a-z0-9_]+', text)
         return tokens
+
+    def _query_variants(self, query: str, skip_expansion: bool = False) -> List[tuple]:
+        """Original + identifier + free HyDE template. Dedupe case-fold, sum weights."""
+        mq = (self.config.retrieval or {}).get("multi_query") or {}
+        enabled = bool(mq.get("enabled")) and not skip_expansion
+        original_w = float(mq.get("original_weight") or 1.0)
+        variants = [("original", query, original_w)]
+        if not enabled:
+            return variants
+        from .loop import extract_focus_terms
+
+        ident = " ".join(extract_focus_terms(query) or [])
+        ident_w = float(mq.get("identifier_weight") or 1.0)
+        if ident.strip() and ident.strip().lower() != (query or "").strip().lower():
+            variants.append(("identifier", ident, ident_w))
+        hyde_w = float(mq.get("hyde_weight") or 0.7)
+        hyde_text = ""
+        if getattr(self, "embedder", None) is not None:
+            try:
+                hyde_text = self.embedder._generate_hypothetical(query)
+            except Exception:
+                hyde_text = ""
+        if hyde_text.strip() and hyde_text.strip().lower() != (query or "").strip().lower():
+            variants.append(("hyde", hyde_text, hyde_w))
+        return self._dedupe_query_variants(variants)
+
+    @staticmethod
+    def _dedupe_query_variants(variants: List[tuple]) -> List[tuple]:
+        merged: Dict[str, list] = {}
+        order = []
+        for name, text, weight in variants:
+            key = (text or "").strip().lower()
+            if not key:
+                continue
+            if key not in merged:
+                merged[key] = [name, text, float(weight)]
+                order.append(key)
+            else:
+                merged[key][2] += float(weight)
+        return [(merged[key][0], merged[key][1], merged[key][2]) for key in order]
+
+    def _search_variants(self, variants: List[tuple], k: int, expand: bool = True):
+        """Run dense + BM25 per variant. First variant is the displayed dense/sparse."""
+        dense_results: List[RetrievalResult] = []
+        sparse_results: List[RetrievalResult] = []
+        variant_lists: List[List[RetrievalResult]] = []
+        variant_weights: List[float] = []
+        use_allowlist = bool(getattr(self.vector_store, "supports_allowlist", False))
+        for idx, (_name, text, weight) in enumerate(variants):
+            expand_this = expand if idx == 0 else False
+            query_embedding = self.embedder.embed_query(text, expand=expand_this)
+            if use_allowlist:
+                sparse = self._bm25_search(text, top_k=max(k * 3, 200)) if self._bm25_index else []
+                allowlist = [r.chunk.id for r in sparse[:200] if getattr(r.chunk, "id", None)]
+                allow_arg = allowlist if len(allowlist) >= 20 else None
+                dense = self.vector_store.search(
+                    query_embedding,
+                    top_k=k * 2,
+                    repo_name=self.repo_name or None,
+                    allowlist_ids=allow_arg,
+                )
+            else:
+                dense = self.vector_store.search(
+                    query_embedding, top_k=k * 2, repo_name=self.repo_name or None
+                )
+                sparse = self._bm25_search(text, top_k=k * 3) if self._bm25_index else []
+            hybrid = self._reciprocal_rank_fusion(
+                [dense, sparse], weights=[self.dense_weight, self.sparse_weight]
+            )
+            variant_lists.append(hybrid)
+            variant_weights.append(float(weight))
+            if idx == 0:
+                dense_results = dense
+                sparse_results = sparse
+        return dense_results, sparse_results, variant_lists, variant_weights
+
+    def _maybe_expand(self, query: str, results: List[RetrievalResult]) -> List[RetrievalResult]:
+        from .expansion import apply_expansion, expansion_enabled
+
+        if not expansion_enabled(self.config) or not results:
+            return results
+        decider = None
+        try:
+            from .decision import build_decision_client
+
+            decider = build_decision_client(self.config)
+        except Exception:
+            decider = None
+        return apply_expansion(
+            query,
+            results,
+            all_chunks=self._all_chunks,
+            knowledge_graph=self.knowledge_graph,
+            config=self.config,
+            decider=decider,
+        )

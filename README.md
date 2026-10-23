@@ -77,9 +77,12 @@ See [`.docs/research/eval/README.md`](.docs/research/eval/README.md) for the sui
 python main.py index ./my-project
 python main.py index ./my-project --embed-model voyage-code-2
 python main.py index ./my-project --save-config
+python main.py index ./my-project --enrich-index-text
 ```
 
 Parses all code files (via tree-sitter AST when available, regex fallback), chunks into semantic units (functions, classes, files), builds a knowledge graph of code relationships, generates embeddings (local/Voyage/Jina/OpenAI), builds BM25 lexical index, stores everything for fast retrieval.
+
+`--enrich-index-text` (config `indexing.enrich_index_text`, default **off**) prefixes the *embedded and BM25* text with file path + symbol + signature. Packed context still uses the plain chunk. Toggle this only with a re-index — old vectors were built from `chunk.content` alone. Left off: on the golden suite it did not move Recall@10 / nDCG@10 and raised packed tokens.
 
 ### `query` — Query the indexed repository
 
@@ -371,11 +374,16 @@ python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --c
 python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --compare-embedders all-MiniLM-L6-v2,jina-embeddings-v2-base-code
 python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --embed-model jina-embeddings-v2-base-code
 python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --query-cache
+python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --per-file-chunk-cap 3
+python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --multi-query
+python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --context-expansion
 python3 main.py eval-ab .
 python3 main.py eval-ab . --compare-embedders all-MiniLM-L6-v2,jina-embeddings-v2-base-code
 ```
 
 Reports Recall@k, nDCG@k, citation-path hit rate, stage latency (dense / BM25 / graph / CE / MMR), estimated prompt tokens after context assembly (`prompt_tokens_full` vs `prompt_tokens_packed`), and easy/hard splits. Writes `.code-harness/eval/{suite}-{timestamp}.json`. Use `--pack-mode ccr_lite` to score citation paths against packed headers (Recall@k is unchanged). `--loop` / `--max-loops N` is opt-in; default remains one-shot. `--query-cache` reuses retrieve/pack on identical queries (hit/miss in the summary); Recall@k stays identical.
+
+Query-time knobs scored on the golden suite (n=8, MiniLM, Chroma, decision off, max_loops 0): `--per-file-chunk-cap` default **3**, `--multi-query` default **on** (original + identifier + free HyDE template, weighted RRF, no LLM), `--context-expansion` default **on** (heuristic drop / chunk / neighbours / file; a decision-model classify runs only when `decision.enabled` is true). Index-time `--enrich-index-text` stays **off** (re-index required; did not lift Recall/nDCG). See [`.docs/research/eval/RESULTS-retrieval-quick-wins.md`](.docs/research/eval/RESULTS-retrieval-quick-wins.md).
 
 `--compare-backends chromadb,turbovec` prints a side-by-side Recall@k / nDCG@k table and writes `.code-harness/eval/{suite}-ab-{timestamp}.json` (override with `--compare-output` / `--compare-markdown`). `eval-ab` indexes both persist dirs and writes [`.docs/research/eval/RESULTS.md`](.docs/research/eval/RESULTS.md). If `turbovec` is the selected backend and it misses the gate (more than 5% relative drop, or the deep-dive point limits: Recall@10 −2 pts / Recall@30 −1), eval exits non-zero unless `--force-experimental`. Missing `turbovec` extra is an honest skip, not a silent FAISS swap.
 
@@ -517,11 +525,14 @@ Key settings:
     "hyde": { "enabled": false, "on_retry": true },
     "max_loops": 0,
     "grade_threshold": 0.35,
-    "citation_threshold": 0.5
+    "citation_threshold": 0.5,
+    "multi_query": { "enabled": true, "original_weight": 1.0, "identifier_weight": 1.0, "hyde_weight": 0.7 },
+    "expansion": { "enabled": true }
   },
   "context": {
     "pack_mode": "full",
     "max_tokens_multiplier": 2,
+    "per_file_chunk_cap": 3,
     "include_memory_brief": false,
     "include_memory_search": false,
     "knowledge_prefix": false,

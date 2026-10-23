@@ -71,6 +71,19 @@ python main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --lo
 
 `--loop` (or `--max-loops N`) enables the bounded corrective retrieve loop. Default `max_loops=0` is one-shot. Reports include `metrics.by_difficulty` and per-case `loop` traces (`attempts`, `grade`, `stop_reason`).
 
+Optional retrieval knobs (R2/R3/R5 default on after the golden A/B; R1 stays off). Score each on vs off before flipping a default:
+
+```bash
+python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --per-file-chunk-cap 3
+python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --multi-query
+python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml --context-expansion
+# R1 needs a re-index first:
+python3 main.py index . --enrich-index-text
+python3 main.py eval . --suite .docs/research/eval/code-harness.fixture.yaml
+```
+
+Keep MiniLM, Chroma, `decision.enabled=false`, `max_loops=0`, and verify off for those A/Bs.
+
 ### Optional verify stage (`--verify`)
 
 Eval stays retrieval-only unless you pass `--verify`. Fixtures that declare `completion_criteria` then run the independent default-fail gate (file / command / contains / coverage). Retrieval fixtures without a rubric are **skipped** by that stage — they do not fail the suite. See [agent-completion.example.yaml](agent-completion.example.yaml).

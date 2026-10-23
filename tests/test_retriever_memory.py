@@ -58,6 +58,9 @@ def _retriever(chunks, dense, memory_weight=0.0, repo_path=".", include_memory_s
     cfg.retrieval["memory_weight"] = memory_weight
     cfg.retrieval["cross_encoder"] = {"enabled": False}
     cfg.retrieval["expand_neighbors"] = 0
+    cfg.retrieval["multi_query"]["enabled"] = False
+    cfg.retrieval["expansion"]["enabled"] = False
+    cfg.context["per_file_chunk_cap"] = 0
     cfg.context["include_memory_search"] = include_memory_search
     cfg.repo_path = repo_path
     kg = KnowledgeGraph(cfg, repo_name="fixture")

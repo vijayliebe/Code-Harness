@@ -1,5 +1,6 @@
 import json
 import os
+from copy import deepcopy
 from dataclasses import dataclass, field, asdict
 from typing import Dict, Optional, List
 
@@ -69,6 +70,9 @@ DEFAULT_CONFIG = {
         "knowledge_token_budget": 800,
         "prefix_stable": False,
         "max_tokens_multiplier": 2,
+        # Applied after MMR, before the token-budget cut. 0 = unlimited.
+        # Default 3: golden suite Recall/nDCG/cite unchanged, tokens slightly down.
+        "per_file_chunk_cap": 3,
     },
     "ccr": {
         "first_lines": 12,
@@ -150,6 +154,19 @@ DEFAULT_CONFIG = {
             "enabled": False,
             "on_retry": True,
         },
+        "multi_query": {
+            "enabled": True,
+            "original_weight": 1.0,
+            "identifier_weight": 1.0,
+            "hyde_weight": 0.7,
+            "rrf_k": 50,
+        },
+        "expansion": {
+            "enabled": True,
+            "drop_below": 0.02,
+            "neighbor_score": 0.35,
+            "file_score": 0.85,
+        },
     },
 
     "vector_store": {
@@ -168,6 +185,10 @@ DEFAULT_CONFIG = {
     },
 
     "indexing": {
+        # Path + symbol + signature prefix on the *embedded/BM25* text only.
+        # Display and packed context stay chunk.content. Requires a re-index.
+        "enrich_index_text": False,
+        "enrich_prefix_ratio": 0.25,
         "exclude_patterns": [
             "node_modules", "__pycache__", ".git", "venv",
             ".venv", ".tox", "dist", "build", ".next",
@@ -190,27 +211,24 @@ DEFAULT_CONFIG = {
 
 @dataclass
 class Config:
-    embedding: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["embedding"]))
-    chunking: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["chunking"]))
-    vector_store: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["vector_store"]))
-    knowledge_graph: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["knowledge_graph"]))
-    repo_graph: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["repo_graph"]))
-    retrieval: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["retrieval"]))
-    llm: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["llm"]))
-    decision: Dict = field(default_factory=lambda: {
-        **DEFAULT_CONFIG["decision"],
-        "uses": list(DEFAULT_CONFIG["decision"]["uses"]),
-    })
-    indexing: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["indexing"]))
-    context: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["context"]))
-    ccr: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["ccr"]))
-    session: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["session"]))
-    chat: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["chat"]))
-    memory: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["memory"]))
-    redaction: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["redaction"]))
-    serve: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["serve"]))
-    query_cache: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["query_cache"]))
-    prestep: Dict = field(default_factory=lambda: dict(DEFAULT_CONFIG["prestep"]))
+    embedding: Dict = field(default_factory=lambda: deepcopy(DEFAULT_CONFIG["embedding"]))
+    chunking: Dict = field(default_factory=lambda: deepcopy(DEFAULT_CONFIG["chunking"]))
+    vector_store: Dict = field(default_factory=lambda: deepcopy(DEFAULT_CONFIG["vector_store"]))
+    knowledge_graph: Dict = field(default_factory=lambda: deepcopy(DEFAULT_CONFIG["knowledge_graph"]))
+    repo_graph: Dict = field(default_factory=lambda: deepcopy(DEFAULT_CONFIG["repo_graph"]))
+    retrieval: Dict = field(default_factory=lambda: deepcopy(DEFAULT_CONFIG["retrieval"]))
+    llm: Dict = field(default_factory=lambda: deepcopy(DEFAULT_CONFIG["llm"]))
+    decision: Dict = field(default_factory=lambda: deepcopy(DEFAULT_CONFIG["decision"]))
+    indexing: Dict = field(default_factory=lambda: deepcopy(DEFAULT_CONFIG["indexing"]))
+    context: Dict = field(default_factory=lambda: deepcopy(DEFAULT_CONFIG["context"]))
+    ccr: Dict = field(default_factory=lambda: deepcopy(DEFAULT_CONFIG["ccr"]))
+    session: Dict = field(default_factory=lambda: deepcopy(DEFAULT_CONFIG["session"]))
+    chat: Dict = field(default_factory=lambda: deepcopy(DEFAULT_CONFIG["chat"]))
+    memory: Dict = field(default_factory=lambda: deepcopy(DEFAULT_CONFIG["memory"]))
+    redaction: Dict = field(default_factory=lambda: deepcopy(DEFAULT_CONFIG["redaction"]))
+    serve: Dict = field(default_factory=lambda: deepcopy(DEFAULT_CONFIG["serve"]))
+    query_cache: Dict = field(default_factory=lambda: deepcopy(DEFAULT_CONFIG["query_cache"]))
+    prestep: Dict = field(default_factory=lambda: deepcopy(DEFAULT_CONFIG["prestep"]))
     repo_path: str = "."
     verbose: bool = False
 
@@ -231,6 +249,12 @@ class Config:
                     incoming_tv = d[section].get("turbovec") if isinstance(d[section], dict) else None
                     if isinstance(base_tv, dict) or isinstance(incoming_tv, dict):
                         merged["turbovec"] = {**base_tv, **(incoming_tv or {})}
+                if section == "retrieval":
+                    for nested in ("hyde", "cross_encoder", "multi_query", "expansion"):
+                        base_nested = getattr(config, section).get(nested) or {}
+                        incoming_nested = d[section].get(nested) if isinstance(d[section], dict) else None
+                        if isinstance(base_nested, dict) or isinstance(incoming_nested, dict):
+                            merged[nested] = {**base_nested, **(incoming_nested or {})}
                 setattr(config, section, merged)
         if "repo_path" in d:
             config.repo_path = d["repo_path"]
