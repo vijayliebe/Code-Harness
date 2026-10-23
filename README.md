@@ -256,6 +256,23 @@ python main.py okf export . --out ./okf-bundle --redact
 python main.py query . --no-llm --include-knowledge-prefix -q "why is Chroma the default?"
 ```
 
+### `external` — Local ticket/doc exports (off by default)
+
+Onyx-inspired connector *contract* (full load, mtime poll, checkpoint, ID-only prune, failures as data), our own `ExternalDoc` / `Section` model. Docs live in `.code-harness/external/` (JSONL + BM25 sidecar), never in the code Chroma collection. First connector is a local folder of markdown/txt ticket or doc exports. Redaction runs at ingest.
+
+```bash
+python3 main.py external ingest . --path ./exports
+python3 main.py external poll . --path ./exports --since 2026-01-01T00:00:00+00:00
+python3 main.py external link .
+python3 main.py external list .
+python3 main.py external mine . --output .docs/research/eval/ticket-to-code.fixture.yaml
+python3 main.py query . --no-llm --external -q "ABC-123 login timeout"
+```
+
+`external link` mines ticket keys (`ABC-123`) and doc URLs from git commits, branch names, and code comments, then writes `ticket/doc → mentions → file/symbol` edges. Re-index re-applies saved mentions. A query that names a ticket key surfaces linked code plus any ingested export for that ticket, even while the sidecar RRF channel is off.
+
+**Defaults stay off.** `--external` / `CODEHARNESS_EXTERNAL=1` fuses the sidecar into generic retrieve (weight 0.15). Leave it off unless you have ingested docs and have checked that code-only recall on the golden suite does not drop. Failure modes: this repo's git history has no ticket keys, so `mine` is empty here; hyphenated keys are not BM25 tokens (`ABC-123` → `abc` + `123`); comments in strings are not mined; a chatty export can steal top-k when the channel is on.
+
 ### `doctor` — Local health check
 
 No network. Prints pass / warn / fail plus a fix hint. Exit `0` when required checks pass (missing cloud LLM key is a warn; an enabled decision model with no key is also a warn). Exit `1` when index, graph, embedding config, core deps, or the audit path fail.
@@ -561,6 +578,12 @@ Key settings:
   },
   "prestep": {
     "retrieve": true
+  },
+  "external": {
+    "enabled": false,
+    "weight": 0.15,
+    "persist_directory": ".code-harness/external",
+    "ticket_lookup": true
   },
   "redaction": {
     "enabled": true,

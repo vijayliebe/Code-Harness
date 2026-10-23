@@ -178,4 +178,17 @@ Interactive `/compact` is session-only and does not change these eval numbers (e
 
 Path-question fixtures (`q-who-calls-*`, `q-what-exposes-*`) are the KG-enrichment anchors: they should improve when `exposes` / `tested_by` / beam expansion fire. If extractors cannot yet find enough edges, beam + Mermaid still ship.
 
+## Ticket-to-code (X0–X1)
+
+This repo's git history has **no** `ABC-123`-style keys, so `python3 main.py external mine .` writes an empty suite. The miner is real: point it at a repo whose commits/branches/comments name tickets.
+
+```bash
+python3 main.py external mine /path/to/ticketed-repo --output /tmp/ticket-to-code.fixture.yaml
+python3 main.py eval /path/to/ticketed-repo --suite /tmp/ticket-to-code.fixture.yaml
+```
+
+Each mined ticket becomes two fixtures: query *with* the key, and the commit subject *without* it. Gold is the paths from those commits. Unit tests seed a temp git repo and assert both variants; see `tests/test_external_context.py` and [RESULTS-external-context.md](RESULTS-external-context.md).
+
+Enabling the sidecar (`--external`) must not reduce code-only Recall@10 on [code-harness.fixture.yaml](code-harness.fixture.yaml). Default remains **off**.
+
 **Citation-path vs one expand:** citation-path hit rate is computed from packed file-path headers, not omitted bodies, so it does not require an LLM `retrieve_chunk` to stay within 5% of `full`. To manually check answer quality after one expand, run `query --pack-mode ccr_lite --expand-chunk <id>` (or `retrieve-chunk <id>`) on a fixture whose packed header still names the must-cite path.

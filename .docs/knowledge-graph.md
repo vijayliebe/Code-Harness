@@ -53,6 +53,7 @@ doc:README.md:Quick Start
 | `exposes` | FILE/FUNC → endpoint | HTTP/CLI/MCP surface (`add_parser`, FastAPI/Flask, click, MCP tools) |
 | `tested_by` | test file/func → code | Test entity covers a uniquely named production entity |
 | `gloss` | note → entity | Markdown note under `.code-harness/gloss/` or `knowledge/gloss/` |
+| `mentions` | ticket/doc → file/symbol | Offline link from a ticket key or doc URL (git / comment / ingest) |
 
 #### Edge Properties
 
@@ -60,7 +61,7 @@ Edges carry a single property:
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `relationship` | string | `contains`, `inherits`, `calls`, `references`, `exposes`, `tested_by`, `gloss` |
+| `relationship` | string | `contains`, `inherits`, `calls`, `references`, `exposes`, `tested_by`, `gloss`, `mentions` |
 | `confidence` | float | Optional extractor confidence (new edges only) |
 
 ### Construction

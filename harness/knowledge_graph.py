@@ -23,6 +23,7 @@ from .kg_enrich import (
 EDGE_PRIOR = {
     "gloss": 0.9,
     "exposes": 0.85,
+    "mentions": 0.8,
     "calls": 0.8,
     "tested_by": 0.8,
     "inherits": 0.65,

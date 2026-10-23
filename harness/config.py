@@ -129,6 +129,20 @@ DEFAULT_CONFIG = {
         "retrieve": True,
     },
 
+    # External tickets/docs (X0–X1). Separate store from the code index.
+    # Off: ingest is CLI-only; retrieve ignores the sidecar unless enabled.
+    "external": {
+        "enabled": False,
+        "weight": 0.15,
+        "persist_directory": ".code-harness/external",
+        "ticket_lookup": True,
+        "connectors": {
+            "file": {
+                "extensions": [".md", ".txt", ".markdown"],
+            }
+        },
+    },
+
     "retrieval": {
         "dense_weight": 0.3,
         "sparse_weight": 0.25,
@@ -229,6 +243,7 @@ class Config:
     serve: Dict = field(default_factory=lambda: deepcopy(DEFAULT_CONFIG["serve"]))
     query_cache: Dict = field(default_factory=lambda: deepcopy(DEFAULT_CONFIG["query_cache"]))
     prestep: Dict = field(default_factory=lambda: deepcopy(DEFAULT_CONFIG["prestep"]))
+    external: Dict = field(default_factory=lambda: deepcopy(DEFAULT_CONFIG["external"]))
     repo_path: str = "."
     verbose: bool = False
 
@@ -255,6 +270,17 @@ class Config:
                         incoming_nested = d[section].get(nested) if isinstance(d[section], dict) else None
                         if isinstance(base_nested, dict) or isinstance(incoming_nested, dict):
                             merged[nested] = {**base_nested, **(incoming_nested or {})}
+                if section == "external":
+                    base_conn = getattr(config, section).get("connectors") or {}
+                    incoming_conn = d[section].get("connectors") if isinstance(d[section], dict) else None
+                    if isinstance(base_conn, dict) or isinstance(incoming_conn, dict):
+                        merged_conn = dict(base_conn)
+                        for name, cfg in (incoming_conn or {}).items():
+                            if isinstance(cfg, dict) and isinstance(merged_conn.get(name), dict):
+                                merged_conn[name] = {**merged_conn[name], **cfg}
+                            else:
+                                merged_conn[name] = cfg
+                        merged["connectors"] = merged_conn
                 setattr(config, section, merged)
         if "repo_path" in d:
             config.repo_path = d["repo_path"]
@@ -292,6 +318,7 @@ class Config:
             "serve": self.serve,
             "query_cache": self.query_cache,
             "prestep": self.prestep,
+            "external": self.external,
             "repo_path": self.repo_path,
             "verbose": self.verbose,
         }

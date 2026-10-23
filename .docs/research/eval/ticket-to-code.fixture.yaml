@@ -1,0 +1,15 @@
+# Ticket-to-code suite (X1).
+#
+# This repository's git history has no ABC-123-style keys, so
+# `python3 main.py external mine .` produces an empty fixture list.
+# The miner is covered by tests/test_external_context.py against a
+# temporary git repo. Shape:
+#
+#   python3 main.py external mine /path/to/ticketed-repo --output this-file
+#
+# Each ticket becomes two queries: with the key, and the commit subject
+# with the key stripped. Gold is the paths touched by those commits.
+
+suite: ticket-to-code
+k: 10
+fixtures: []

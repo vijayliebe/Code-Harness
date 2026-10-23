@@ -76,6 +76,15 @@ def cmd_index(args):
     kg.save()
     print(f"[*] Knowledge graph: {kg.graph.number_of_nodes()} nodes, "
           f"{kg.graph.number_of_edges()} edges")
+    try:
+        from harness.external.linking import reapply_saved_mentions
+
+        reapplied = reapply_saved_mentions(kg, config, repo_path)
+        if reapplied:
+            kg.save()
+            print(f"[*] Re-applied {reapplied} ticket/doc mention edges")
+    except Exception as exc:
+        print(f"[!] External mention re-apply skipped: {exc}")
 
     print(f"[*] Generating embeddings ({config.embedding['model']})...")
     embedder = Embedder(config)
@@ -859,6 +868,94 @@ def cmd_knowledge(args):
         return
 
 
+def cmd_external(args):
+    from harness.external.ingest import run_ingest, run_link
+    from harness.external.linking import mine_fixtures
+    from harness.external.store import ExternalStore
+    from harness.knowledge_graph import KnowledgeGraph
+
+    action = getattr(args, "external_cmd", None)
+    if not action:
+        parser = getattr(args, "external_parser", None)
+        if parser is not None:
+            parser.print_help()
+        else:
+            print("usage: main.py external {ingest,poll,link,list,mine}")
+        sys.exit(2)
+
+    config = _load_config(args)
+    repo = os.path.abspath(getattr(args, "repo", None) or config.repo_path or ".")
+    config.repo_path = repo
+    repo_name = _derive_repo_name(args)
+
+    if action in ("ingest", "poll"):
+        path = getattr(args, "path", None)
+        if not path:
+            print("[!] --path is required for ingest/poll")
+            sys.exit(2)
+        try:
+            result = run_ingest(
+                config,
+                path,
+                poll=action == "poll",
+                start=getattr(args, "since", None),
+                end=getattr(args, "until", None),
+                resume=bool(getattr(args, "resume", False)),
+                prune=not bool(getattr(args, "no_prune", False)),
+            )
+        except ValueError as exc:
+            print(f"[!] {exc}")
+            sys.exit(1)
+        print(
+            f"[+] {action}: upserted={result['upserted']} "
+            f"failures={result['failures']} pruned={result['pruned']} "
+            f"store={result['docs']} docs"
+        )
+        return
+
+    if action == "link":
+        kg = KnowledgeGraph(config, repo_name=repo_name)
+        kg.load()
+        result = run_link(config, repo, knowledge_graph=kg)
+        print(
+            f"[+] link: mentions={result['mentions']} "
+            f"edges={result['applied_edges']} tickets={len(result['tickets'])}"
+        )
+        if result["tickets"]:
+            print("    " + ", ".join(result["tickets"][:20]))
+        return
+
+    if action == "list":
+        store = ExternalStore.for_config(config, repo)
+        docs = store.list_docs()
+        if not docs:
+            print("[*] No external docs. Run: python3 main.py external ingest . --path <folder>")
+            return
+        print(f"[*] {len(docs)} external doc(s) in {store.root}")
+        for doc in docs:
+            keys = ", ".join(doc.ticket_keys()[:4])
+            extra = f" tickets={keys}" if keys else ""
+            print(f"    {doc.id}  {doc.title}{extra}")
+        return
+
+    if action == "mine":
+        fixtures = mine_fixtures(repo)
+        print(f"[*] Mined {len(fixtures)} ticket-to-code fixture(s) from {repo}")
+        dest = getattr(args, "output", None)
+        if dest:
+            import yaml
+
+            payload = {"suite": "ticket-to-code", "k": 10, "fixtures": fixtures}
+            os.makedirs(os.path.dirname(os.path.abspath(dest)) or ".", exist_ok=True)
+            with open(dest, "w") as fh:
+                yaml.safe_dump(payload, fh, sort_keys=False)
+            print(f"[+] Wrote {dest}")
+        else:
+            for row in fixtures[:20]:
+                print(f"    {row['id']}: {row['query'][:80]}")
+        return
+
+
 def cmd_memory(args):
     from harness.memory import MemoryError, MemoryStore
     from harness.okf import default_memory_dir
@@ -1501,6 +1598,38 @@ def _apply_retrieval_quick_win_args(config, args):
     return config
 
 
+def _apply_external_args(config, args):
+    ext = dict(getattr(config, "external", None) or {})
+    env_ext = os.environ.get("CODEHARNESS_EXTERNAL", "").strip().lower()
+    if env_ext in ("1", "true", "yes", "on") or getattr(args, "external", False):
+        ext["enabled"] = True
+    if env_ext in ("0", "false", "off", "no") or getattr(args, "no_external", False):
+        ext["enabled"] = False
+    if getattr(args, "external_weight", None) is not None:
+        ext["weight"] = float(args.external_weight)
+    config.external = ext
+    return config
+
+
+def _add_external_flags(parser):
+    parser.add_argument(
+        "--external",
+        action="store_true",
+        help="Fuse ingested ticket/doc sidecar into retrieve (default off; env CODEHARNESS_EXTERNAL=1)",
+    )
+    parser.add_argument(
+        "--no-external",
+        action="store_true",
+        help="Keep the external sidecar out of retrieve (CODEHARNESS_EXTERNAL=0)",
+    )
+    parser.add_argument(
+        "--external-weight",
+        type=float,
+        default=None,
+        help="RRF weight for the external sidecar when --external is on (default 0.15)",
+    )
+
+
 def _add_retrieval_quick_win_flags(parser, *, index: bool = False):
     parser.add_argument(
         "--enrich-index-text",
@@ -1659,6 +1788,7 @@ def _clone_eval_config(config: Config) -> Config:
         "serve": dict(config.serve),
         "query_cache": dict(getattr(config, "query_cache", None) or {}),
         "decision": dict(getattr(config, "decision", None) or {}),
+        "external": dict(getattr(config, "external", None) or {}),
         "repo_path": config.repo_path,
         "verbose": config.verbose,
     })
@@ -2195,6 +2325,7 @@ def _load_config(args) -> Config:
     if getattr(args, "include_knowledge_prefix", False):
         config.context["knowledge_prefix"] = True
     _apply_retrieval_quick_win_args(config, args)
+    _apply_external_args(config, args)
     env_wiki = os.environ.get("CODEHARNESS_WIKI_MODE", "").strip().lower()
     wiki_on = env_wiki in ("1", "true", "yes", "on") or getattr(args, "wiki", False)
     if wiki_on or (getattr(config, "chat", None) or {}).get("wiki_mode"):
@@ -2263,7 +2394,7 @@ def _print_debug_trace(query: str, trace: dict):
     print("\n" + "=" * 70)
     print("  RETRIEVAL DEBUG TRACE")
     print("=" * 70)
-    for source_name in ("dense", "sparse", "graph", "wiki", "memory", "reranked"):
+    for source_name in ("dense", "sparse", "graph", "wiki", "memory", "ticket", "external", "reranked"):
         results = trace.get(source_name, [])
         label_map = {
             "dense": f"DENSE (Vector DB) — {len(results)} results",
@@ -2271,6 +2402,8 @@ def _print_debug_trace(query: str, trace: dict):
             "graph": f"GRAPH (Knowledge Graph) — {len(results)} results",
             "wiki": f"WIKI (opt-in) — {len(results)} results",
             "memory": f"MEMORY (BM25, opt-in) — {len(results)} results",
+            "ticket": f"TICKET (KG mentions) — {len(results)} results",
+            "external": f"EXTERNAL (sidecar, opt-in) — {len(results)} results",
             "reranked": f"CROSS-ENCODER RERANKED — {len(results)} results",
         }
         print(f"\n  [{label_map[source_name]}]")
@@ -2377,6 +2510,7 @@ Examples:
     _add_query_cache_flags(q)
     _add_retrieve_prestep_flags(q)
     _add_retrieval_quick_win_flags(q)
+    _add_external_flags(q)
     q.set_defaults(func=cmd_query)
 
     int_p = subparsers.add_parser(
@@ -2398,6 +2532,7 @@ Examples:
     _add_redact_flag(int_p)
     _add_query_cache_flags(int_p)
     _add_retrieve_prestep_flags(int_p)
+    _add_external_flags(int_p)
     _add_clear_tool_result_flags(int_p)
     int_p.add_argument(
         "--event-session",
@@ -2537,6 +2672,7 @@ Examples:
     )
     _add_query_cache_flags(ev)
     _add_retrieval_quick_win_flags(ev)
+    _add_external_flags(ev)
     ev.set_defaults(func=cmd_eval)
 
     from harness.eval_ab import (
@@ -3007,6 +3143,41 @@ Examples:
         description=_SERVE_DESC,
     )
     _add_serve_flags(api_serve)
+
+    ext = subparsers.add_parser(
+        "external",
+        help="Ingest local ticket/doc exports and link them to code (off by default)",
+    )
+    ext.set_defaults(func=cmd_external, repo=".")
+    ext_sub = ext.add_subparsers(dest="external_cmd")
+    ext.external_parser = ext
+
+    ext_ingest = ext_sub.add_parser("ingest", help="Full-load a local folder of md/txt exports")
+    ext_ingest.add_argument("repo", nargs="?", default=".", help="Repository path")
+    ext_ingest.add_argument("--path", required=True, help="Folder of markdown/txt ticket or doc exports")
+    ext_ingest.add_argument("--resume", action="store_true", help="Resume from the last checkpoint cursor")
+    ext_ingest.add_argument("--no-prune", action="store_true", help="Do not drop docs missing from the folder")
+    ext_ingest.set_defaults(func=cmd_external)
+
+    ext_poll = ext_sub.add_parser("poll", help="Time-window incremental sync (mtime)")
+    ext_poll.add_argument("repo", nargs="?", default=".", help="Repository path")
+    ext_poll.add_argument("--path", required=True, help="Folder of markdown/txt ticket or doc exports")
+    ext_poll.add_argument("--since", default=None, help="ISO timestamp or unix seconds")
+    ext_poll.add_argument("--until", default=None, help="ISO timestamp or unix seconds")
+    ext_poll.set_defaults(func=cmd_external)
+
+    ext_link = ext_sub.add_parser("link", help="Mine git/comments and add ticket/doc → mentions → code edges")
+    ext_link.add_argument("repo", nargs="?", default=".", help="Repository path")
+    ext_link.set_defaults(func=cmd_external)
+
+    ext_list = ext_sub.add_parser("list", help="List ingested external docs")
+    ext_list.add_argument("repo", nargs="?", default=".", help="Repository path")
+    ext_list.set_defaults(func=cmd_external)
+
+    ext_mine = ext_sub.add_parser("mine", help="Mine ticket-to-code eval fixtures from git history")
+    ext_mine.add_argument("repo", nargs="?", default=".", help="Repository path")
+    ext_mine.add_argument("--output", default=None, help="Write a YAML suite")
+    ext_mine.set_defaults(func=cmd_external)
 
     args = parser.parse_args(rewrite_session_search_argv())
 

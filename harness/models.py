@@ -24,6 +24,7 @@ class RelationshipType(str, Enum):
     EXPOSES = "exposes"
     TESTED_BY = "tested_by"
     GLOSS = "gloss"
+    MENTIONS = "mentions"
     # Cross-repo relationships
     SHARED_IMPORT = "shared_import"
     SHARED_ENTITY = "shared_entity"

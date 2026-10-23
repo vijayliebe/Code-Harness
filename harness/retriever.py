@@ -9,7 +9,32 @@ from typing import Dict, List, Optional, Set
 from rank_bm25 import BM25Okapi
 from rich.progress import track
 
-from .models import Chunk, RetrievalResult
+from .models import Chunk, EntityType, RetrievalResult
+
+
+def _external_doc_chunk(doc, repo_name: str = "") -> Chunk:
+    body = doc.body() if hasattr(doc, "body") else ""
+    tickets = []
+    try:
+        tickets = list(doc.ticket_keys() or [])
+    except Exception:
+        tickets = []
+    return Chunk(
+        id=f"external:{doc.source}:{doc.id}",
+        content=body or (getattr(doc, "title", "") or ""),
+        entity_id=f"external:{doc.source}:{doc.id}",
+        entity_name=getattr(doc, "title", None) or doc.id,
+        entity_type=EntityType.DOCUMENTATION,
+        file_path=getattr(doc, "url", "") or doc.id,
+        start_line=1,
+        end_line=max(1, (body or "").count("\n") + 1),
+        repo_name=repo_name,
+        metadata={
+            "kind": "external",
+            "source": getattr(doc, "source", "") or "file",
+            "tickets": tickets,
+        },
+    )
 from .config import Config
 from .embedder import Embedder
 from .index_text import chunk_index_text
@@ -60,6 +85,12 @@ class Retriever:
         self.graph_weight = ret_cfg.get("graph_weight", 0.2)
         self.wiki_weight = float(ret_cfg.get("wiki_weight", 0.0) or 0.0)
         self.memory_weight = float(ret_cfg.get("memory_weight", 0.0) or 0.0)
+        ext_cfg = getattr(config, "external", None) or {}
+        self.external_enabled = bool(ext_cfg.get("enabled"))
+        self.external_weight = float(ext_cfg.get("weight", 0.0) or 0.0)
+        if not self.external_enabled:
+            self.external_weight = 0.0
+        self.ticket_lookup = bool(ext_cfg.get("ticket_lookup", True))
         try:
             from .wiki_chat import WIKI_MODE_WEIGHT, wiki_mode_enabled
 
@@ -173,6 +204,8 @@ class Retriever:
                 latencies_ms["graph"] = 0.0
                 latencies_ms["wiki"] = 0.0
                 latencies_ms["memory"] = 0.0
+                latencies_ms["external"] = 0.0
+                latencies_ms["ticket"] = 0.0
                 latencies_ms["ce"] = 0.0
                 top = self._maybe_expand(query, sparse_results[:k])
                 if debug:
@@ -232,6 +265,18 @@ class Retriever:
         else:
             latencies_ms["memory"] = 0.0
 
+        started = time.perf_counter()
+        ticket_results = self._ticket_search(query, top_k=k * 2)
+        latencies_ms["ticket"] = (time.perf_counter() - started) * 1000.0
+
+        external_results: List[RetrievalResult] = []
+        if self.external_weight > 0:
+            started = time.perf_counter()
+            external_results = self._external_search(query, top_k=k * 2)
+            latencies_ms["external"] = (time.perf_counter() - started) * 1000.0
+        else:
+            latencies_ms["external"] = 0.0
+
         if len(variant_lists) > 1:
             mq = (self.config.retrieval or {}).get("multi_query") or {}
             rrf_k = float(mq.get("rrf_k") or 50)
@@ -246,6 +291,9 @@ class Retriever:
             if memory_results:
                 extra_lists.append(memory_results)
                 extra_weights.append(self.memory_weight)
+            if external_results:
+                extra_lists.append(external_results)
+                extra_weights.append(self.external_weight)
             if extra_lists:
                 fused = self._reciprocal_rank_fusion(
                     [fused] + extra_lists,
@@ -261,6 +309,9 @@ class Retriever:
             if memory_results:
                 fuse_lists.append(memory_results)
                 fuse_weights.append(self.memory_weight)
+            if external_results:
+                fuse_lists.append(external_results)
+                fuse_weights.append(self.external_weight)
             fused = self._reciprocal_rank_fusion(fuse_lists, weights=fuse_weights)
         for r in fused:
             if (r.chunk.metadata or {}).get("kind") == "gloss":
@@ -276,6 +327,20 @@ class Retriever:
                 if r.chunk.id not in seen_ids:
                     r.score = r.score * max_fused if max_fused > 0 else r.score * 0.5
                     fused.append(r)
+
+        if ticket_results:
+            max_fused = max((r.score for r in fused), default=0)
+            seen_ids = {f.chunk.id for f in fused}
+            for r in ticket_results:
+                if r.chunk.id in seen_ids:
+                    for existing in fused:
+                        if existing.chunk.id == r.chunk.id:
+                            existing.score = existing.score + 0.25 * max(max_fused, 0.1)
+                            break
+                else:
+                    r.score = max(r.score, 0.35 + 0.2 * max(max_fused, 0.1))
+                    fused.append(r)
+                    seen_ids.add(r.chunk.id)
 
         fused_pre_ce = list(fused)
 
@@ -307,6 +372,8 @@ class Retriever:
                 "graph": graph_results,
                 "wiki": wiki_results,
                 "memory": memory_results,
+                "ticket": ticket_results,
+                "external": external_results,
                 "fused": fused_pre_ce,
                 "reranked": reranked[:k] if self.ce_enabled else [],
                 "latencies_ms": latencies_ms,
@@ -407,6 +474,77 @@ class Retriever:
                     chunk=memory_entry_to_chunk(hit.entry, repo_name=self.repo_name),
                     score=normalized,
                     source="memory",
+                )
+            )
+        return results
+
+    def _ticket_search(self, query: str, top_k: int = 20) -> List[RetrievalResult]:
+        """Surface KG-linked code and ingested docs when the query names a ticket."""
+        if not self.ticket_lookup:
+            return []
+        try:
+            from .external.linking import (
+                extract_ticket_keys,
+                linked_entity_ids_for_ticket,
+                linked_paths_for_ticket,
+            )
+        except Exception:
+            return []
+        keys = extract_ticket_keys(query or "")
+        if not keys:
+            return []
+        results: List[RetrievalResult] = []
+        seen = set()
+        path_hits = set()
+        for key in keys:
+            for eid in linked_entity_ids_for_ticket(self.knowledge_graph, key):
+                for chunk in self._all_chunks:
+                    if chunk.entity_id == eid and chunk.id not in seen:
+                        results.append(RetrievalResult(chunk=chunk, score=0.72, source="ticket"))
+                        seen.add(chunk.id)
+                        path_hits.add((chunk.file_path or "").replace("\\", "/"))
+            for path in linked_paths_for_ticket(self.knowledge_graph, key):
+                norm = path.replace("\\", "/")
+                if norm in path_hits:
+                    continue
+                for chunk in self._all_chunks:
+                    if (chunk.file_path or "").replace("\\", "/") == norm and chunk.id not in seen:
+                        results.append(RetrievalResult(chunk=chunk, score=0.62, source="ticket"))
+                        seen.add(chunk.id)
+                        path_hits.add(norm)
+            try:
+                from .external.store import ExternalStore
+
+                store = ExternalStore.for_config(self.config)
+                for doc in store.docs_for_ticket(key):
+                    chunk = _external_doc_chunk(doc, self.repo_name)
+                    if chunk.id in seen:
+                        continue
+                    results.append(RetrievalResult(chunk=chunk, score=0.68, source="ticket"))
+                    seen.add(chunk.id)
+            except Exception:
+                continue
+        results.sort(key=lambda r: r.score, reverse=True)
+        return results[:top_k]
+
+    def _external_search(self, query: str, top_k: int = 20) -> List[RetrievalResult]:
+        if self.external_weight <= 0:
+            return []
+        try:
+            from .external.store import ExternalStore
+        except Exception:
+            return []
+        store = ExternalStore.for_config(self.config)
+        results = []
+        for doc, raw in store.search(query, top_k=top_k):
+            if raw <= 0:
+                continue
+            normalized = float(1.0 / (1.0 + math.exp(-raw / 5)))
+            results.append(
+                RetrievalResult(
+                    chunk=_external_doc_chunk(doc, self.repo_name),
+                    score=normalized,
+                    source="external",
                 )
             )
         return results
