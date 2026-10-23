@@ -68,6 +68,8 @@ Failure labels (same vocabulary as `--debug` source misses):
 
 After MMR, `context.per_file_chunk_cap` (default **3**, `0` = unlimited, CLI `--per-file-chunk-cap` / `CODEHARNESS_PER_FILE_CHUNK_CAP`) drops extra hits from the same file before the token-budget cut. Ranking is unchanged; packed tokens typically go down.
 
+Cross-encoder knobs (`retrieval.cross_encoder`, CLI `--ce-mode` / `--ce-blend-alpha` / `--ce-gate-margin` / `--ce-input`): default is **off** after the golden-v2 rerank-fix (ms-marco `replace` dropped gold). `replace` overwrites fused RRF scores with ms-marco logits on `chunk.content`. `blend` mixes min-max CE with min-max fused; `gate` keeps fused order unless the CE top-1−top-2 margin exceeds `gate_margin`. `input=path_symbol_text` prefixes `path symbol` before the chunk. See [RESULTS-rerank-fix.md](RESULTS-rerank-fix.md).
+
 Default pack mode is `full`. Compare token columns without changing ranking:
 
 ```bash

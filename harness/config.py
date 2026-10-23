@@ -154,8 +154,16 @@ DEFAULT_CONFIG = {
         "verify": False,
         "deepen_neighbors": 8,
         "cross_encoder": {
-            "enabled": True,
+            "enabled": False,
             "model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+            # Default off: ms-marco replace dropped gold on golden-v2.
+            # replace = CE logits overwrite fused scores (old default).
+            # blend = alpha*norm(CE) + (1-alpha)*norm(RRF).
+            # gate = CE reorder only when top1-top2 exceeds gate_margin.
+            "mode": "off",
+            "blend_alpha": 1.0,
+            "gate_margin": None,
+            "input": "content",
         },
         "hyde": {
             "enabled": False,
@@ -243,6 +251,11 @@ class Config:
                     incoming_tv = d[section].get("turbovec") if isinstance(d[section], dict) else None
                     if isinstance(base_tv, dict) or isinstance(incoming_tv, dict):
                         merged["turbovec"] = {**base_tv, **(incoming_tv or {})}
+                if section == "retrieval":
+                    base_ce = getattr(config, section).get("cross_encoder") or {}
+                    incoming_ce = d[section].get("cross_encoder") if isinstance(d[section], dict) else None
+                    if isinstance(base_ce, dict) or isinstance(incoming_ce, dict):
+                        merged["cross_encoder"] = {**base_ce, **(incoming_ce or {})}
                 setattr(config, section, merged)
         if "repo_path" in d:
             config.repo_path = d["repo_path"]

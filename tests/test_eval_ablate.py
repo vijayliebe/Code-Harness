@@ -75,7 +75,7 @@ class TestAblationVariants(unittest.TestCase):
         self.assertEqual(cfg.retrieval.get("dense_weight"), DEFAULT_CONFIG["retrieval"]["dense_weight"])
         self.assertEqual(cfg.retrieval.get("sparse_weight"), DEFAULT_CONFIG["retrieval"]["sparse_weight"])
         self.assertEqual(cfg.retrieval.get("graph_weight"), DEFAULT_CONFIG["retrieval"]["graph_weight"])
-        self.assertTrue((cfg.retrieval.get("cross_encoder") or {}).get("enabled", True))
+        self.assertFalse((cfg.retrieval.get("cross_encoder") or {}).get("enabled", True))
         self.assertFalse((cfg.retrieval.get("hyde") or {}).get("enabled", False))
         self.assertEqual(cfg.context.get("pack_mode"), "full")
         self.assertEqual(cfg.retrieval.get("max_loops", 0), 0)
@@ -111,7 +111,7 @@ class TestAblationVariants(unittest.TestCase):
 
         no_rerank = apply_ablation(Config(), "no_rerank")
         self.assertFalse((no_rerank.retrieval.get("cross_encoder") or {}).get("enabled"))
-        self.assertTrue((Config().retrieval.get("cross_encoder") or {}).get("enabled", True))
+        self.assertFalse((Config().retrieval.get("cross_encoder") or {}).get("enabled", True))
 
         no_mmr = apply_ablation(Config(), "no_mmr")
         self.assertFalse(no_mmr.retrieval.get("mmr"))

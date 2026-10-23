@@ -42,6 +42,7 @@ Target project: [vijayliebe/Code-Harness](https://github.com/vijayliebe/Code-Har
 
 ## See also
 - [eval/RESULTS-golden-v2.md](eval/RESULTS-golden-v2.md) — 40–50 query golden-v2 noise band and pending-branch merge verdicts
+- [eval/RESULTS-rerank-fix.md](eval/RESULTS-rerank-fix.md) — why ms-marco replace drops gold, blend/gate/off/path arms, CE now off by default
 - [SYNTHESIS.md](SYNTHESIS.md) — prioritized Code-Harness roadmap
 - [deep/README.md](deep/README.md) — HIGH-source design notes
 - [deep/INTEGRATION_PLAN.md](deep/INTEGRATION_PLAN.md) — sequenced PRs (`eval metrics → CCR-lite packer → query loop → KG enrichment`) — **spine shipped**; remaining work in the fusion pack

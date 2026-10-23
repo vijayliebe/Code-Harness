@@ -35,7 +35,7 @@ Code Harness is a RAG (Retrieval-Augmented Generation) system purpose-built for 
 │       │            │                                     │
 │  ┌────┴────────────┴──────────────────────────┐          │
 │  │              Retriever                      │          │
-│  │  RRF Fusion → Cross-Encoder → MMR Diverse   │          │
+│  │  RRF Fusion → Cross-Encoder (replace|blend|gate) → MMR │          │
 │  └──────────────────┬─────────────────────────┘          │
 │                     ▼                                     │
 │  ┌──────────────────────────────────────────────────┐    │
@@ -330,7 +330,7 @@ User Query (--debug flag optional)
     ├─── [--debug] → print per-source tables to stdout
     │
     ▼
-[Cross-Encoder Rerank] → re-score top candidates
+[Cross-Encoder Rerank] → optional (default off); replace | blend | gate
     │
     ▼
 [ContextBuilder.build_context()]

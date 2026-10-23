@@ -481,7 +481,7 @@ The corrective loop is **off by default** (`retrieval.max_loops: 0`) so one-shot
 3. **Graph expansion**: beam walk over the knowledge graph (exposes / tested_by / gloss / calls / inheritance). Default `beam_width=6`, `beam_depth=2`; `expand_mode: bfs` keeps the old hop walk.
 4. **HyDE** (optional): hypothetical code document generation for query expansion
 5. **RRF fusion**: three signals combined via Reciprocal Rank Fusion
-6. **Cross-encoder reranking**: `cross-encoder/ms-marco-MiniLM-L-6-v2` re-scores top candidates
+6. **Cross-encoder reranking** (off by default): `cross-encoder/ms-marco-MiniLM-L-6-v2` can replace, blend, or gate the fused order (`retrieval.cross_encoder.mode`). Restore the old overwrite with `mode=replace` / `--ce-mode replace`.
 7. **MMR diversity**: Maximum Marginal Relevance prevents file dominance
 8. **Context injection**: `ARCHITECTURE.md`, `AGENTS.md`, `CLAUDE.md` as a stable prefix when present; optional CCR-lite pack (`--pack-mode ccr_lite`) after MMR
 9. **Corrective loop** (opt-in): heuristic grade → rewrite / HyDE-on-retry / graph deepen, then citation-coverage stop. Default is one-shot.
@@ -518,7 +518,14 @@ Key settings:
     "beam_width": 6,
     "beam_depth": 2,
     "expand_neighbors": 3,
-    "cross_encoder": { "enabled": true, "model": "cross-encoder/ms-marco-MiniLM-L-6-v2" },
+    "cross_encoder": {
+      "enabled": false,
+      "model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+      "mode": "off",
+      "blend_alpha": 1.0,
+      "gate_margin": null,
+      "input": "content"
+    },
     "hyde": { "enabled": false, "on_retry": true },
     "max_loops": 0,
     "stop_on_stall": true,

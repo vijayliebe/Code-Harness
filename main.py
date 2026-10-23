@@ -1478,6 +1478,64 @@ def _add_loop_flags(parser, include_verify: bool = False):
         )
 
 
+def _add_rerank_flags(parser):
+    parser.add_argument(
+        "--ce-mode",
+        choices=["replace", "blend", "gate", "off"],
+        default=None,
+        help="Cross-encoder combine mode (default: replace; off keeps fused order)",
+    )
+    parser.add_argument(
+        "--ce-blend-alpha",
+        type=float,
+        default=None,
+        metavar="A",
+        help="Blend weight on min-max CE vs fused RRF (mode=blend)",
+    )
+    parser.add_argument(
+        "--ce-gate-margin",
+        type=float,
+        default=None,
+        metavar="M",
+        help="Only apply CE order when top1-top2 exceeds M (mode=gate)",
+    )
+    parser.add_argument(
+        "--ce-input",
+        choices=["content", "path_symbol_text"],
+        default=None,
+        help="Text scored by the cross-encoder (default: chunk content only)",
+    )
+
+
+def _apply_rerank_args(config, args):
+    ce = dict(config.retrieval.get("cross_encoder") or {})
+    mode = getattr(args, "ce_mode", None)
+    if mode:
+        ce["mode"] = mode
+        if mode == "off":
+            ce["enabled"] = False
+    if getattr(args, "ce_blend_alpha", None) is not None:
+        ce["blend_alpha"] = float(args.ce_blend_alpha)
+        if not mode:
+            ce["mode"] = "blend"
+    if getattr(args, "ce_gate_margin", None) is not None:
+        ce["gate_margin"] = float(args.ce_gate_margin)
+        if not mode:
+            ce["mode"] = "gate"
+    if getattr(args, "ce_input", None):
+        ce["input"] = args.ce_input
+    env_mode = os.environ.get("CODEHARNESS_CE_MODE", "").strip().lower()
+    if env_mode in ("replace", "blend", "gate", "off") and not mode:
+        ce["mode"] = env_mode
+        if env_mode == "off":
+            ce["enabled"] = False
+    env_input = os.environ.get("CODEHARNESS_CE_INPUT", "").strip().lower()
+    if env_input in ("content", "path_symbol_text", "path_symbol") and not getattr(args, "ce_input", None):
+        ce["input"] = env_input
+    config.retrieval["cross_encoder"] = ce
+    return config
+
+
 def _apply_loop_args(config, args):
     max_loops = int(config.retrieval.get("max_loops") or 0)
     if getattr(args, "max_loops", None) is not None:
@@ -2307,6 +2365,7 @@ def _load_config(args) -> Config:
     apply_decision_config(config, args)
 
     _apply_loop_args(config, args)
+    _apply_rerank_args(config, args)
 
     env_backend = os.environ.get("CODEHARNESS_VECTOR_BACKEND", "").strip()
     backend_name = getattr(args, "vector_backend", None) or env_backend or None
@@ -2455,6 +2514,7 @@ Examples:
                    help="Show per-source retrieval breakdown (dense/sparse/graph/cross-encoder)")
     _add_pack_flags(q)
     _add_loop_flags(q, include_verify=True)
+    _add_rerank_flags(q)
     _add_profile_flag(q)
     _add_redact_flag(q)
     _add_query_cache_flags(q)
@@ -2639,6 +2699,7 @@ Examples:
         help="Ablation JSON path (default: .docs/research/eval/RESULTS-ablation.json)",
     )
     _add_loop_flags(ev, include_verify=False)
+    _add_rerank_flags(ev)
     ev.add_argument(
         "--verify",
         action="store_true",

@@ -91,7 +91,7 @@ class Retriever:
         self.expand_mode = (ret_cfg.get("expand_mode") or "beam").lower()
         self.beam_width = int(ret_cfg.get("beam_width") or 6)
         self.beam_depth = int(ret_cfg.get("beam_depth") or 2)
-        self.ce_config = ret_cfg.get("cross_encoder", {})
+        self.ce_config = dict(ret_cfg.get("cross_encoder") or {})
         self.ce_enabled = self.ce_config.get("enabled", True)
         self.ce_model_name = self.ce_config.get("model", "cross-encoder/ms-marco-MiniLM-L-6-v2")
 
@@ -336,9 +336,32 @@ class Retriever:
             }
         return top
 
+    def _ce_input_text(self, chunk) -> str:
+        content = getattr(chunk, "content", None) or ""
+        kind = str((self.ce_config or {}).get("input") or "content").strip().lower()
+        if kind in ("path_symbol", "path_symbol_text", "path+symbol+text"):
+            path = getattr(chunk, "file_path", None) or ""
+            name = getattr(chunk, "entity_name", None) or ""
+            return f"{path} {name}\n{content}"
+        return content
+
+    @staticmethod
+    def _minmax(values: List[float]) -> List[float]:
+        if not values:
+            return []
+        lo, hi = min(values), max(values)
+        if hi - lo < 1e-12:
+            return [0.5] * len(values)
+        return [(v - lo) / (hi - lo) for v in values]
+
     def _cross_encoder_rerank(self, query: str,
                               results: List[RetrievalResult]) -> List[RetrievalResult]:
         if not results:
+            return results
+        if not self.ce_enabled:
+            return results
+        mode = str((self.ce_config or {}).get("mode") or "replace").strip().lower()
+        if mode in ("off", "disabled", "none"):
             return results
 
         global _cross_encoder_cache
@@ -355,14 +378,41 @@ class Retriever:
             return results
 
         model = _cross_encoder_cache[self.ce_model_name]
-        pairs = [(query, r.chunk.content[:2048]) for r in results]
+        fused_scores = [float(r.score or 0.0) for r in results]
+        pairs = [(query, self._ce_input_text(r.chunk)[:2048]) for r in results]
         try:
-            scores = model.predict(pairs, show_progress_bar=False)
+            raw = model.predict(pairs, show_progress_bar=False)
         except Exception:
             return results
+        ce_scores = [float(score) for score in raw]
 
-        for r, score in zip(results, scores):
-            r.score = float(score)
+        if mode == "gate":
+            raw_margin = (self.ce_config or {}).get("gate_margin")
+            try:
+                threshold = float(raw_margin) if raw_margin is not None else 0.0
+            except (TypeError, ValueError):
+                threshold = 0.0
+            ranked = sorted(ce_scores, reverse=True)
+            margin = ranked[0] - ranked[1] if len(ranked) > 1 else abs(ranked[0])
+            if margin < threshold:
+                return results
+            mode = "replace"
+
+        if mode == "blend":
+            try:
+                alpha = float((self.ce_config or {}).get("blend_alpha") or 0.5)
+            except (TypeError, ValueError):
+                alpha = 0.5
+            alpha = max(0.0, min(1.0, alpha))
+            n_ce = self._minmax(ce_scores)
+            n_rrf = self._minmax(fused_scores)
+            for result, ce_n, rrf_n in zip(results, n_ce, n_rrf):
+                result.score = alpha * ce_n + (1.0 - alpha) * rrf_n
+            results.sort(key=_score_desc_id)
+            return results
+
+        for result, score in zip(results, ce_scores):
+            result.score = score
         results.sort(key=_score_desc_id)
         return results
 

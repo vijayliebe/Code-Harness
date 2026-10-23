@@ -44,8 +44,8 @@ ABLATION_VARIANTS: List[AblationVariant] = [
         "full",
         "Full harness",
         "baseline",
-        "Default retrieve+pack: dense + BM25 + graph expand + CE + MMR; "
-        "HyDE off; pack_mode=full.",
+        "Default retrieve+pack: dense + BM25 + graph expand + MMR; "
+        "cross-encoder off; HyDE off; pack_mode=full.",
     ),
     AblationVariant("no_dense", "Dense off", "leave_one_out", "Skip dense search; dense_weight=0."),
     AblationVariant("no_bm25", "BM25 off", "leave_one_out", "Skip BM25 search; sparse_weight=0."),
