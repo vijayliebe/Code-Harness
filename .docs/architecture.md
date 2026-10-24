@@ -188,7 +188,8 @@ retrieve(query, debug=False)
   ├── Chat-over-wiki (opt-in): `chat.wiki_mode` / `--wiki` prefers wiki hits then falls back to code; CCR expands linked `path:symbol`
   ├── Fusion: RRF with k=60
   ├── Cross-encoder rerank: off by default; `--ce-mode replace|blend|gate` to enable
-  ├── CLI/config catalog (default on): tiny `kind=cli_doc` chunks for cmd_* / Config
+  ├── CLI symbol boost (default 0.5): extra RRF list for cmd_* / Config when the query names a command
+  ├── CLI/config catalog (default off): tiny `kind=cli_doc` stubs; eval ignores them unless the real source is also in top-k
   └── Return top-k (default: 30)
        debug=True → returns (results, trace) tuple with per-source breakdown,
                     fused pre-CE list, and latencies_ms (dense/bm25/graph/ce)
@@ -199,7 +200,7 @@ Key design:
 - **Cross-encoder**: off by default. When enabled, cached as a global singleton; `replace` / `blend` / `gate` over the top `rerank_top_k*2` candidates; falls through silently on import failure
 - **RRF formula**: `score = Σ weight * 1/(k + rank)` for each result list
 - **Graph boost**: graph-matched results get `score + graph_weight * max_fused_score`
-- **CLI retrieval**: `retrieval.cli_retrieval.doc_index` (default on) adds a short catalog so NL CLI questions hit `cmd_*` / `Config`. `--ident-split`, `--argparse-enrich`, and `--cli-symbol-boost` stay off. See [eval/RESULTS-cli-retrieval.md](research/eval/RESULTS-cli-retrieval.md).
+- **CLI retrieval**: `retrieval.cli_retrieval.symbol_boost` (default 0.5) adds a `cmd_*` / Config channel when the query says "the query CLI command". `doc_index` stays off — catalog stubs share a gold entity id and only count if the real handler is also in top-k. `--ident-split` and `--argparse-enrich` stay off. See [eval/RESULTS-cli-retrieval.md](research/eval/RESULTS-cli-retrieval.md).
 - **Debug mode**: when `debug=True`, returns `(results, {dense, sparse, graph, fused, reranked, latencies_ms})` — used by `--debug` and `eval`
 
 ### 8. Context Builder (`harness/context_builder.py`)

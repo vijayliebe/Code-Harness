@@ -75,16 +75,16 @@ def build():
 
 
 class TestCliRetrievalDefaults(unittest.TestCase):
-    def test_default_is_doc_index_only(self):
+    def test_default_is_symbol_boost_without_catalog(self):
         cli = DEFAULT_CONFIG["retrieval"]["cli_retrieval"]
         self.assertFalse(cli.get("ident_split"))
         self.assertFalse(cli.get("argparse_enrich"))
-        self.assertTrue(cli.get("doc_index"))
-        self.assertEqual(float(cli.get("symbol_boost") or 0), 0.0)
+        self.assertFalse(cli.get("doc_index"))
+        self.assertEqual(float(cli.get("symbol_boost") or 0), 0.5)
         live = Config().retrieval.get("cli_retrieval") or {}
-        self.assertTrue(live.get("doc_index"))
+        self.assertFalse(live.get("doc_index"))
         self.assertFalse(live.get("ident_split"))
-        self.assertEqual(float(live.get("symbol_boost") or 0), 0.0)
+        self.assertEqual(float(live.get("symbol_boost") or 0), 0.5)
 
 
 class TestIdentSplit(unittest.TestCase):

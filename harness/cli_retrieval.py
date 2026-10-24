@@ -1,7 +1,8 @@
 """Cheap, config-gated CLI / config retrieval helpers.
 
-``doc_index`` is on by default. The other knobs stay off. Packed
-``chunk.content`` on real source chunks is unchanged.
+``symbol_boost`` default is 0.5. ``doc_index`` stays off — catalog
+stubs share a gold entity id and must not count as the handler.
+Packed ``chunk.content`` on real source chunks is unchanged.
 """
 
 from __future__ import annotations
@@ -15,8 +16,8 @@ from .models import Chunk, EntityType
 CLI_RETRIEVAL_DEFAULTS = {
     "ident_split": False,
     "argparse_enrich": False,
-    "symbol_boost": 0.0,
-    "doc_index": True,
+    "symbol_boost": 0.5,
+    "doc_index": False,
 }
 
 _WORD_RE = re.compile(r"[A-Za-z0-9_]+")
@@ -208,11 +209,11 @@ def make_cli_doc_chunks(
                 entity_name=real.entity_name,
                 entity_type=getattr(real, "entity_type", None) or EntityType.FUNCTION,
                 file_path=real.file_path,
-                start_line=real.start_line,
-                end_line=real.end_line,
+                start_line=0,
+                end_line=0,
                 docstring=real.docstring,
                 repo_name=real.repo_name,
-                metadata={"kind": "cli_doc", **(real.metadata or {})},
+                metadata={**(real.metadata or {}), "kind": "cli_doc", "generated": True},
             )
         )
 
@@ -236,11 +237,11 @@ def make_cli_doc_chunks(
                 entity_name=config_chunk.entity_name,
                 entity_type=getattr(config_chunk, "entity_type", None) or EntityType.CLASS,
                 file_path=config_chunk.file_path,
-                start_line=config_chunk.start_line,
-                end_line=config_chunk.end_line,
+                start_line=0,
+                end_line=0,
                 docstring=config_chunk.docstring,
                 repo_name=config_chunk.repo_name,
-                metadata={"kind": "cli_doc", **(config_chunk.metadata or {})},
+                metadata={**(config_chunk.metadata or {}), "kind": "cli_doc", "generated": True},
             )
         )
     return docs

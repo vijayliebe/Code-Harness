@@ -8,6 +8,10 @@ from harness.metrics import (
     citation_path_hit_rate,
     classify_failures,
     gold_ids_hit,
+    gold_ids_hit_from_ids,
+    is_source_backed,
+    is_synthetic_chunk,
+    match_gold_chunk,
     match_gold_id,
     ndcg_at_k,
     normalize_path,
@@ -132,6 +136,9 @@ class TestNormalizeAndMatch(unittest.TestCase):
                 self.id = cid
                 self.entity_id = eid
                 self.file_path = path
+                self.start_line = 1
+                self.end_line = 4
+                self.metadata = {}
 
         chunks = [
             _C("class:a.py:Foo:1", "class:a.py:Foo", "a.py"),
@@ -143,6 +150,65 @@ class TestNormalizeAndMatch(unittest.TestCase):
             {"class:a.py:Foo"},
         )
         self.assertEqual(paths_in_order(chunks), ["a.py", "b.py"])
+
+
+class TestSourceBackedGold(unittest.TestCase):
+    """Catalog stubs sharing a gold entity id are not a hit by themselves."""
+
+    def _src(self, eid="func:main.py:cmd_query"):
+        class _C:
+            def __init__(self):
+                self.id = f"{eid}:aaaa"
+                self.entity_id = eid
+                self.file_path = "main.py"
+                self.start_line = 130
+                self.end_line = 164
+                self.content = "def cmd_query(args):\n    return 1\n"
+                self.metadata = {}
+
+        return _C()
+
+    def _stub(self, eid="func:main.py:cmd_query"):
+        class _C:
+            def __init__(self):
+                self.id = f"{eid}:cli-doc"
+                self.entity_id = eid
+                self.file_path = "main.py"
+                self.start_line = 130
+                self.end_line = 164
+                self.content = "The query CLI command is defined as cmd_query in main.py."
+                self.metadata = {"kind": "cli_doc", "generated": True}
+
+        return _C()
+
+    def test_stub_alone_is_not_source_backed(self):
+        stub = self._stub()
+        src = self._src()
+        self.assertTrue(is_synthetic_chunk(stub))
+        self.assertFalse(is_source_backed(stub))
+        self.assertFalse(is_synthetic_chunk(src))
+        self.assertTrue(is_source_backed(src))
+
+    def test_stub_alone_does_not_count_as_gold_hit(self):
+        gold = "func:main.py:cmd_query"
+        stub = self._stub(gold)
+        self.assertTrue(match_gold_id(stub.id, stub.entity_id, gold))
+        self.assertFalse(match_gold_chunk(stub, gold))
+        self.assertEqual(gold_ids_hit([stub], [gold]), set())
+        self.assertEqual(gold_ids_hit_from_ids([stub.id], [gold]), set())
+
+    def test_stub_plus_real_source_in_top_k_counts(self):
+        gold = "func:main.py:cmd_query"
+        self.assertEqual(
+            gold_ids_hit([self._stub(gold), self._src(gold)], [gold]),
+            {gold},
+        )
+
+    def test_real_source_alone_still_counts(self):
+        gold = "func:main.py:cmd_query"
+        src = self._src(gold)
+        self.assertTrue(match_gold_chunk(src, gold))
+        self.assertEqual(gold_ids_hit([src], [gold]), {gold})
 
 
 class TestFailureTaxonomy(unittest.TestCase):

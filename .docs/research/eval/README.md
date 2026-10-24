@@ -45,6 +45,8 @@ fixtures:
 
 `relevant_chunk_ids` may be full chunk ids or parser entity ids (`class:path:Name`, `func:path:name`, or treesitter `method:path:Class.name`). `func:path:name` also matches `method:path:Class.name`. Chunk UUIDs change on re-index; entity ids do not. If chunk ids are omitted, Recall@k / nDCG@k fall back to `must_cite_paths`.
 
+A synthetic / generated chunk (catalog stub, `kind=cli_doc`, id ending `:cli-doc`, or anything without a real file path + line range) does **not** count as a gold hit on its own, even if it copies the gold entity id. The real source chunk (same gold id, actual lines) must also be in the top-k. Stub-only retrieve scores as a miss.
+
 Optional `category` (`symbol` / `nl` / `cross-file` / `cli` / `docs` / `hard` / `ticket`) is ignored by older harnesses and is used for per-category breakdowns on v2. Eval pins `random` / NumPy / Torch seeds at the start of `run_eval`; Chroma HNSW can still move a bit.
 
 ## Metrics
@@ -70,7 +72,7 @@ After MMR, `context.per_file_chunk_cap` (default **3**, `0` = unlimited, CLI `--
 
 Cross-encoder knobs (`retrieval.cross_encoder`, CLI `--ce-mode` / `--ce-blend-alpha` / `--ce-gate-margin` / `--ce-input`): default is **off** after the golden-v2 rerank-fix (ms-marco `replace` dropped gold). `replace` overwrites fused RRF scores with ms-marco logits on `chunk.content`. `blend` mixes min-max CE with min-max fused; `gate` keeps fused order unless the CE top-1−top-2 margin exceeds `gate_margin`. `input=path_symbol_text` prefixes `path symbol` before the chunk. See [RESULTS-rerank-fix.md](RESULTS-rerank-fix.md).
 
-CLI / config retrieve knobs (`retrieval.cli_retrieval`, `--ident-split` / `--argparse-enrich` / `--cli-symbol-boost` / `--cli-doc-index`): `cmd_*` bodies do not contain the words "CLI command", and BM25 keeps `cmd_query` as one token, so the five CLI fixtures sat at fused ranks 40–139. Default is now **`doc_index` on** (a short catalog that shares the gold entity id). The other three stay off. See [RESULTS-cli-retrieval.md](RESULTS-cli-retrieval.md).
+CLI / config retrieve knobs (`retrieval.cli_retrieval`, `--ident-split` / `--argparse-enrich` / `--cli-symbol-boost` / `--cli-doc-index`): `cmd_*` bodies do not contain the words "CLI command", and BM25 keeps `cmd_query` as one token, so the five CLI fixtures sat at fused ranks 40–139. Default is **`symbol_boost=0.5`**, catalog **off**. Catalog stubs used to inflate Recall by sharing the gold entity id without bringing the handler source. See [RESULTS-cli-retrieval.md](RESULTS-cli-retrieval.md).
 
 Default pack mode is `full`. Compare token columns without changing ranking:
 

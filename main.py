@@ -1541,14 +1541,14 @@ def _add_cli_retrieval_flags(parser):
         type=float,
         default=None,
         metavar="W",
-        help="RRF weight for cmd_* / Config when the query names a CLI command (0=off)",
+        help="RRF weight for cmd_* / Config when the query names a CLI command (default 0.5; 0=off)",
     )
     parser.add_argument(
         "--cli-doc-index",
         action="store_true",
         dest="cli_doc_index",
         default=None,
-        help="Add a tiny CLI/config catalog channel (shares gold entity ids)",
+        help="Add a tiny CLI/config catalog (default off; eval ignores stubs without the real source)",
     )
     parser.add_argument(
         "--no-cli-doc-index",

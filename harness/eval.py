@@ -15,7 +15,7 @@ from .metrics import (
     cited_paths_hit,
     classify_failures,
     gold_ids_hit,
-    match_gold_id,
+    match_gold_chunk,
     mean,
     median,
     ndcg_at_k,
@@ -192,7 +192,7 @@ def _ranked_for_metrics(results: Sequence, gold_ids: Sequence[str], must_paths: 
             for gold in gold_ids:
                 if gold in seen_gold:
                     continue
-                if match_gold_id(chunk.id, getattr(chunk, "entity_id", None), gold):
+                if match_gold_chunk(chunk, gold):
                     matched = gold
                     break
             if matched:

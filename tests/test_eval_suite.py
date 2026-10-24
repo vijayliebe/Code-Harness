@@ -216,6 +216,67 @@ class TestRunEval(unittest.TestCase):
             self.assertEqual(loaded["suite"], "code-harness")
             self.assertEqual(loaded["cases"][0]["id"], "q-context-builder")
 
+    def test_catalog_stub_is_miss_unless_real_source_is_also_retrieved(self):
+        gold = "func:main.py:cmd_query"
+        path = "main.py"
+        stub = _rr(f"{gold}:cli-doc", path, gold)
+        stub.chunk.metadata = {"kind": "cli_doc", "generated": True}
+        stub.chunk.content = "The query CLI command is defined as cmd_query."
+        real = _rr(f"{gold}:deadbeef", path, gold)
+        real.chunk.content = "def cmd_query(args):\n    return 1\n"
+
+        from harness.eval import EvalFixture
+
+        fixture = EvalFixture(
+            id="q-cli-query",
+            query="Where is the query CLI command defined in main.py?",
+            relevant_chunk_ids=[gold],
+            must_cite_paths=[path],
+            difficulty="medium",
+            category="cli",
+        )
+
+        def _run(final):
+            retriever = _FakeRetriever(
+                {
+                    fixture.query: {
+                        "dense": final,
+                        "sparse": final,
+                        "graph": [],
+                        "fused": final,
+                        "reranked": [],
+                        "final": final,
+                    }
+                }
+            )
+            builder = _FakeContextBuilder(
+                {
+                    fixture.query: {
+                        "ids": [r.chunk.id for r in final],
+                        "paths": [path],
+                        "tokens": 80,
+                    }
+                }
+            )
+            return run_eval(
+                fixtures=[fixture],
+                retriever=retriever,
+                context_builder=builder,
+                k=10,
+                suite_name="cli-honest",
+                suite_path="suite.yaml",
+                repo_path=".",
+                repo_name="workspace",
+            )
+
+        stub_only = _run([stub])
+        self.assertEqual(stub_only["metrics"]["recall_at_k"], 0.0)
+        self.assertEqual(stub_only["cases"][0]["relevant_hit"], [])
+
+        both = _run([stub, real])
+        self.assertEqual(both["metrics"]["recall_at_k"], 1.0)
+        self.assertEqual(both["cases"][0]["relevant_hit"], [gold])
+
 
 class TestContextBuilderCompat(unittest.TestCase):
     def test_build_context_still_assembles_and_reports_tokens(self):

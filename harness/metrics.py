@@ -42,6 +42,56 @@ def _entity_key(eid: Optional[str]) -> Optional[tuple]:
     return path, short
 
 
+SYNTHETIC_KINDS = frozenset({"cli_doc", "catalog", "generated", "synthetic"})
+
+
+def _id_is_synthetic(chunk_id: Optional[str]) -> bool:
+    cid = str(chunk_id or "")
+    if not cid:
+        return False
+    tail = cid.rsplit(":", 1)[-1]
+    return tail in ("cli-doc", "catalog", "generated", "synthetic") or ":cli-doc:" in cid
+
+
+def is_synthetic_chunk(chunk) -> bool:
+    """True for catalog stubs / generated docs that are not real source lines."""
+    if chunk is None:
+        return False
+    meta = getattr(chunk, "metadata", None) or {}
+    kind = str(meta.get("kind") or "").strip().lower()
+    if kind in SYNTHETIC_KINDS:
+        return True
+    if meta.get("generated") or meta.get("synthetic"):
+        return True
+    return _id_is_synthetic(getattr(chunk, "id", None))
+
+
+def is_source_backed(chunk) -> bool:
+    """True when the chunk is real file text with a line range, not a stub."""
+    if chunk is None or is_synthetic_chunk(chunk):
+        return False
+    path = str(getattr(chunk, "file_path", None) or "").strip()
+    if not path:
+        return False
+    try:
+        start = int(getattr(chunk, "start_line", 0) or 0)
+        end = int(getattr(chunk, "end_line", 0) or 0)
+    except (TypeError, ValueError):
+        return False
+    return start >= 1 and end >= start
+
+
+def match_gold_chunk(chunk, gold: str) -> bool:
+    """Id match plus a real source body. Stubs never count on their own."""
+    if not is_source_backed(chunk):
+        return False
+    return match_gold_id(
+        getattr(chunk, "id", None),
+        getattr(chunk, "entity_id", None),
+        gold,
+    )
+
+
 def match_gold_id(chunk_id: Optional[str], entity_id: Optional[str], gold: str) -> bool:
     """Match a retrieved chunk to a gold id.
 
@@ -67,12 +117,11 @@ def match_gold_id(chunk_id: Optional[str], entity_id: Optional[str], gold: str) 
 
 
 def gold_ids_hit(chunks: Iterable, gold_ids: Sequence[str]) -> Set[str]:
+    items = list(chunks)
     hit: Set[str] = set()
     for gold in gold_ids:
-        for chunk in chunks:
-            if match_gold_id(getattr(chunk, "id", None), getattr(chunk, "entity_id", None), gold):
-                hit.add(gold)
-                break
+        if any(match_gold_chunk(chunk, gold) for chunk in items):
+            hit.add(gold)
     return hit
 
 
@@ -80,6 +129,8 @@ def gold_ids_hit_from_ids(candidate_ids: Sequence[str], gold_ids: Sequence[str])
     hit: Set[str] = set()
     for gold in gold_ids:
         for cid in candidate_ids:
+            if _id_is_synthetic(cid):
+                continue
             if match_gold_id(cid, None, gold):
                 hit.add(gold)
                 break

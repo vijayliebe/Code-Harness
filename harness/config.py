@@ -165,19 +165,20 @@ DEFAULT_CONFIG = {
             "gate_margin": None,
             "input": "content",
         },
-        # Cheap CLI / config retrieve helpers. Off by default.
+        # Cheap CLI / config retrieve helpers.
         # ident_split: BM25 tokenizes cmd_query as cmd + query.
         # argparse_enrich: index argparse name/help onto cmd_* chunks
         #   (packed content stays the original source).
         # symbol_boost: RRF weight for a cmd_* / Config channel when
         #   the query says "the query CLI command" or names defaults.
-        # doc_index: tiny synthetic CLI/config catalog chunks.
+        # doc_index: tiny synthetic CLI/config catalog. Off — stubs
+        #   share a gold entity id and do not count unless the real
+        #   handler is also in top-k.
         "cli_retrieval": {
             "ident_split": False,
             "argparse_enrich": False,
-            "symbol_boost": 0.0,
-            # Tiny CLI/config catalog. Golden-v2 CLI was 0.0 without it.
-            "doc_index": True,
+            "symbol_boost": 0.5,
+            "doc_index": False,
         },
         "hyde": {
             "enabled": False,
