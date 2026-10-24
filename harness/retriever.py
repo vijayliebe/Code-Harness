@@ -1,7 +1,6 @@
 import math
 import os
 import pickle
-import re
 import time
 from collections import defaultdict
 from typing import Dict, List, Optional, Set
@@ -15,6 +14,14 @@ from .embedder import Embedder
 from .vector_store import VectorStore
 from .knowledge_graph import KnowledgeGraph
 from .okf import is_memory_path, is_wiki_path
+from .cli_retrieval import (
+    argparse_catalog_from_chunks,
+    cli_retrieval_cfg,
+    index_text_for_chunk,
+    infer_cli_symbols,
+    make_cli_doc_chunks,
+    tokenize,
+)
 
 
 def is_wiki_chunk(chunk) -> bool:
@@ -94,6 +101,16 @@ class Retriever:
         self.ce_config = dict(ret_cfg.get("cross_encoder") or {})
         self.ce_enabled = self.ce_config.get("enabled", True)
         self.ce_model_name = self.ce_config.get("model", "cross-encoder/ms-marco-MiniLM-L-6-v2")
+        cli_cfg = cli_retrieval_cfg(config)
+        self.ident_split = bool(cli_cfg.get("ident_split"))
+        self.argparse_enrich = bool(cli_cfg.get("argparse_enrich"))
+        self.cli_doc_index = bool(cli_cfg.get("doc_index"))
+        try:
+            self.cli_symbol_boost = float(cli_cfg.get("symbol_boost") or 0.0)
+        except (TypeError, ValueError):
+            self.cli_symbol_boost = 0.0
+        self._argparse_catalog: Dict[str, Dict[str, str]] = {}
+        self._cli_doc_chunks: List[Chunk] = []
 
         self._bm25_index: Optional[BM25Okapi] = None
         self._bm25_chunks: List[Chunk] = []
@@ -106,22 +123,48 @@ class Retriever:
         suffix = f"_{self.repo_name}" if self.repo_name else ""
         return os.path.join(base, f"bm25{suffix}.pkl")
 
+    def _index_text(self, chunk: Chunk) -> str:
+        return index_text_for_chunk(
+            chunk,
+            self._argparse_catalog,
+            argparse_enrich=self.argparse_enrich,
+        )
+
+    def _prepare_cli_index(self, chunks: List[Chunk]) -> List[Chunk]:
+        catalog: Dict[str, Dict[str, str]] = {}
+        if self.argparse_enrich or self.cli_doc_index or self.cli_symbol_boost > 0:
+            catalog = argparse_catalog_from_chunks(chunks)
+        self._argparse_catalog = catalog
+        docs: List[Chunk] = []
+        if self.cli_doc_index:
+            docs = make_cli_doc_chunks(chunks, catalog)
+        self._cli_doc_chunks = docs
+        if not docs:
+            return list(chunks)
+        seen = {c.id for c in chunks}
+        extra = [d for d in docs if d.id not in seen]
+        return list(chunks) + extra
+
     def index_chunks(self, chunks: List[Chunk], persist: bool = True):
-        self._all_chunks = chunks
-        if chunks:
+        prepared = self._prepare_cli_index(chunks)
+        self._all_chunks = prepared
+        if prepared:
             tokenized = [
-                self._tokenize(c.content)
-                for c in track(chunks, description="  Tokenizing BM25 index")
+                self._tokenize(self._index_text(c))
+                for c in track(prepared, description="  Tokenizing BM25 index")
             ]
             self._bm25_index = BM25Okapi(tokenized)
-            self._bm25_chunks = chunks
+            self._bm25_chunks = prepared
             if persist:
                 try:
                     path = self._bm25_persist_path()
                     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+                    # Disk cache stays vanilla so a later query with flags
+                    # off does not inherit enriched tokens or synthetic docs.
+                    vanilla = [tokenize(c.content, ident_split=False) for c in chunks]
                     with open(path, "wb") as f:
                         pickle.dump({
-                            "tokenized": tokenized,
+                            "tokenized": vanilla,
                             "chunks": [(c.id, c.content, c.entity_id, c.entity_name,
                                        c.entity_type.value, c.file_path,
                                        c.start_line, c.end_line, c.docstring,
@@ -138,18 +181,24 @@ class Retriever:
         try:
             with open(path, "rb") as f:
                 data = pickle.load(f)
-            self._bm25_index = BM25Okapi(data["tokenized"])
             chunks_data = data["chunks"]
             from .models import EntityType
-            self._bm25_chunks = []
+            loaded: List[Chunk] = []
             for c in chunks_data:
-                self._bm25_chunks.append(Chunk(
+                loaded.append(Chunk(
                     id=c[0], content=c[1], entity_id=c[2],
                     entity_name=c[3], entity_type=EntityType(c[4]),
                     file_path=c[5], start_line=c[6], end_line=c[7],
                     docstring=c[8], repo_name=c[9], metadata=c[10],
                 ))
-            self._all_chunks = self._bm25_chunks
+            rebuild = self.ident_split or self.argparse_enrich or self.cli_doc_index
+            if rebuild:
+                self.index_chunks(loaded, persist=False)
+                return True
+            self._bm25_index = BM25Okapi(data["tokenized"])
+            self._bm25_chunks = loaded
+            self._all_chunks = loaded
+            self._prepare_cli_index(loaded)
             return True
         except Exception:
             return False
@@ -276,6 +325,13 @@ class Retriever:
         else:
             latencies_ms["memory"] = 0.0
 
+        symbol_results: List[RetrievalResult] = []
+        if self.cli_symbol_boost > 0:
+            symbol_results = self._cli_symbol_search(query)
+        doc_results: List[RetrievalResult] = []
+        if self.cli_doc_index:
+            doc_results = self._cli_doc_search(query, top_k=k * 2)
+
         fuse_lists = [dense_results, sparse_results]
         fuse_weights = [self.dense_weight, self.sparse_weight]
         if wiki_results:
@@ -284,6 +340,12 @@ class Retriever:
         if memory_results:
             fuse_lists.append(memory_results)
             fuse_weights.append(self.memory_weight)
+        if symbol_results:
+            fuse_lists.append(symbol_results)
+            fuse_weights.append(self.cli_symbol_boost)
+        if doc_results:
+            fuse_lists.append(doc_results)
+            fuse_weights.append(self.sparse_weight)
         fused = self._reciprocal_rank_fusion(fuse_lists, weights=fuse_weights)
         for r in fused:
             if (r.chunk.metadata or {}).get("kind") == "gloss":
@@ -455,6 +517,53 @@ class Retriever:
         results.sort(key=_score_desc_id)
         return results[:top_k]
 
+    def _cli_symbol_search(self, query: str) -> List[RetrievalResult]:
+        known = {
+            getattr(c, "entity_name", None) or ""
+            for c in (self._all_chunks or [])
+        }
+        known.discard("")
+        names = infer_cli_symbols(query, known)
+        if not names or not self._all_chunks:
+            return []
+        wanted = {n.lower() for n in names}
+        hits: List[RetrievalResult] = []
+        seen = set()
+        for chunk in self._all_chunks:
+            name = (getattr(chunk, "entity_name", None) or "")
+            if name.lower() not in wanted:
+                continue
+            if (chunk.metadata or {}).get("kind") == "cli_doc":
+                continue
+            key = chunk.id
+            if key in seen:
+                continue
+            seen.add(key)
+            hits.append(RetrievalResult(chunk=chunk, score=0.9, source="cli_symbol"))
+        hits.sort(key=_score_desc_id)
+        return hits
+
+    def _cli_doc_search(self, query: str, top_k: int = 20) -> List[RetrievalResult]:
+        docs = self._cli_doc_chunks or [
+            c for c in (self._all_chunks or [])
+            if (c.metadata or {}).get("kind") == "cli_doc"
+        ]
+        if not docs:
+            return []
+        query_tokens = set(self._tokenize(query))
+        if not query_tokens:
+            return []
+        results = []
+        for chunk in docs:
+            tokens = set(self._tokenize(self._index_text(chunk)))
+            overlap = len(query_tokens & tokens)
+            if overlap <= 0:
+                continue
+            score = min(0.95, 0.3 + (overlap / max(len(query_tokens), 1)) * 0.65)
+            results.append(RetrievalResult(chunk=chunk, score=score, source="cli_doc"))
+        results.sort(key=_score_desc_id)
+        return results[:top_k]
+
     def _memory_search(self, query: str, top_k: int = 20) -> List[RetrievalResult]:
         if self.memory_weight <= 0:
             return []
@@ -576,8 +685,5 @@ class Retriever:
 
         return fused
 
-    @staticmethod
-    def _tokenize(text: str) -> List[str]:
-        text = text.lower()
-        tokens = re.findall(r'[a-z0-9_]+', text)
-        return tokens
+    def _tokenize(self, text: str) -> List[str]:
+        return tokenize(text, ident_split=bool(getattr(self, "ident_split", False)))

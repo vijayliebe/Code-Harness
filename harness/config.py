@@ -165,6 +165,20 @@ DEFAULT_CONFIG = {
             "gate_margin": None,
             "input": "content",
         },
+        # Cheap CLI / config retrieve helpers. Off by default.
+        # ident_split: BM25 tokenizes cmd_query as cmd + query.
+        # argparse_enrich: index argparse name/help onto cmd_* chunks
+        #   (packed content stays the original source).
+        # symbol_boost: RRF weight for a cmd_* / Config channel when
+        #   the query says "the query CLI command" or names defaults.
+        # doc_index: tiny synthetic CLI/config catalog chunks.
+        "cli_retrieval": {
+            "ident_split": False,
+            "argparse_enrich": False,
+            "symbol_boost": 0.0,
+            # Tiny CLI/config catalog. Golden-v2 CLI was 0.0 without it.
+            "doc_index": True,
+        },
         "hyde": {
             "enabled": False,
             "on_retry": True,
@@ -256,6 +270,10 @@ class Config:
                     incoming_ce = d[section].get("cross_encoder") if isinstance(d[section], dict) else None
                     if isinstance(base_ce, dict) or isinstance(incoming_ce, dict):
                         merged["cross_encoder"] = {**base_ce, **(incoming_ce or {})}
+                    base_cli = getattr(config, section).get("cli_retrieval") or {}
+                    incoming_cli = d[section].get("cli_retrieval") if isinstance(d[section], dict) else None
+                    if isinstance(base_cli, dict) or isinstance(incoming_cli, dict):
+                        merged["cli_retrieval"] = {**base_cli, **(incoming_cli or {})}
                 setattr(config, section, merged)
         if "repo_path" in d:
             config.repo_path = d["repo_path"]

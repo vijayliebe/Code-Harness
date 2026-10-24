@@ -79,7 +79,9 @@ def cmd_index(args):
 
     print(f"[*] Generating embeddings ({config.embedding['model']})...")
     embedder = Embedder(config)
-    texts = [c.content for c in chunks]
+    from harness.cli_retrieval import index_texts
+
+    texts = index_texts(chunks, config)
     embeddings = embedder.embed(texts)
     print(f"[*] Generated {len(embeddings)} embeddings (dim={len(embeddings[0]) if embeddings else 0})")
 
@@ -1507,6 +1509,55 @@ def _add_rerank_flags(parser):
     )
 
 
+def _add_cli_retrieval_flags(parser):
+    parser.add_argument(
+        "--ident-split",
+        action="store_true",
+        dest="ident_split",
+        default=None,
+        help="Split identifiers for BM25 (cmd_query -> cmd query). Default off.",
+    )
+    parser.add_argument(
+        "--no-ident-split",
+        action="store_true",
+        dest="no_ident_split",
+        help="Keep BM25 tokens whole (default)",
+    )
+    parser.add_argument(
+        "--argparse-enrich",
+        action="store_true",
+        dest="argparse_enrich",
+        default=None,
+        help="Index argparse subcommand name/help onto cmd_* chunks (packed text unchanged)",
+    )
+    parser.add_argument(
+        "--no-argparse-enrich",
+        action="store_true",
+        dest="no_argparse_enrich",
+        help="Do not add argparse text to the BM25/embed index",
+    )
+    parser.add_argument(
+        "--cli-symbol-boost",
+        type=float,
+        default=None,
+        metavar="W",
+        help="RRF weight for cmd_* / Config when the query names a CLI command (0=off)",
+    )
+    parser.add_argument(
+        "--cli-doc-index",
+        action="store_true",
+        dest="cli_doc_index",
+        default=None,
+        help="Add a tiny CLI/config catalog channel (shares gold entity ids)",
+    )
+    parser.add_argument(
+        "--no-cli-doc-index",
+        action="store_true",
+        dest="no_cli_doc_index",
+        help="Skip the CLI/config catalog channel (default)",
+    )
+
+
 def _apply_rerank_args(config, args):
     ce = dict(config.retrieval.get("cross_encoder") or {})
     mode = getattr(args, "ce_mode", None)
@@ -2366,6 +2417,9 @@ def _load_config(args) -> Config:
 
     _apply_loop_args(config, args)
     _apply_rerank_args(config, args)
+    from harness.cli_retrieval import apply_cli_retrieval_config
+
+    apply_cli_retrieval_config(config, args)
 
     env_backend = os.environ.get("CODEHARNESS_VECTOR_BACKEND", "").strip()
     backend_name = getattr(args, "vector_backend", None) or env_backend or None
@@ -2501,6 +2555,7 @@ Examples:
         default=None,
         help="Dense backend: chromadb (default) or turbovec (experimental). Rebuild required on switch.",
     )
+    _add_cli_retrieval_flags(idx)
     idx.set_defaults(func=cmd_index)
 
     q = subparsers.add_parser("query", help="Query the indexed repository")
@@ -2515,6 +2570,7 @@ Examples:
     _add_pack_flags(q)
     _add_loop_flags(q, include_verify=True)
     _add_rerank_flags(q)
+    _add_cli_retrieval_flags(q)
     _add_profile_flag(q)
     _add_redact_flag(q)
     _add_query_cache_flags(q)
@@ -2700,6 +2756,7 @@ Examples:
     )
     _add_loop_flags(ev, include_verify=False)
     _add_rerank_flags(ev)
+    _add_cli_retrieval_flags(ev)
     ev.add_argument(
         "--verify",
         action="store_true",

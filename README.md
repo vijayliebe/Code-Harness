@@ -96,7 +96,7 @@ python main.py query ./my-project --no-llm --pack-mode ccr_lite -q "how does the
 python main.py retrieve-chunk 'func:harness/chunker.py:CodeChunker.chunk_entities:abcd1234'
 ```
 
-Hybrid retrieval: dense vector search (semantic), BM25 keyword index (exact name matches), knowledge graph neighbor expansion. Results are fused via RRF, diversified via MMR, and assembled into LLM context. The cross-encoder is **off** by default (`retrieval.cross_encoder.enabled: false`). Turn it back on with `--ce-mode replace` (old overwrite), `--ce-mode blend --ce-blend-alpha 0.2`, or `--ce-mode gate --ce-gate-margin 2.0`.
+Hybrid retrieval: dense vector search (semantic), BM25 keyword index (exact name matches), knowledge graph neighbor expansion. Results are fused via RRF, diversified via MMR, and assembled into LLM context. The cross-encoder is **off** by default (`retrieval.cross_encoder.enabled: false`). Turn it back on with `--ce-mode replace` (old overwrite), `--ce-mode blend --ce-blend-alpha 0.2`, or `--ce-mode gate --ce-gate-margin 2.0`. A small CLI/config catalog is **on** (`retrieval.cli_retrieval.doc_index`) so questions like "where is the query CLI command" can find `cmd_query`. Turn it off with `--no-cli-doc-index`. Identifier-split BM25, argparse index text, and a `cmd_*` symbol boost stay off unless you pass `--ident-split` / `--argparse-enrich` / `--cli-symbol-boost`.
 
 | Flag | Description |
 |------|-------------|
@@ -110,6 +110,10 @@ Hybrid retrieval: dense vector search (semantic), BM25 keyword index (exact name
 | `--ce-mode` | Cross-encoder: `off` (default), `replace`, `blend`, or `gate` |
 | `--ce-blend-alpha A` | With `--ce-mode blend`, weight on min-max CE vs fused RRF |
 | `--ce-gate-margin M` | With `--ce-mode gate`, only reorder when CE top1−top2 ≥ M |
+| `--cli-doc-index` / `--no-cli-doc-index` | Tiny CLI/config catalog (default on) |
+| `--ident-split` | Split `cmd_query` into `cmd` + `query` for BM25 (default off) |
+| `--argparse-enrich` | Index argparse name/help onto `cmd_*` chunks (packed source unchanged) |
+| `--cli-symbol-boost W` | Extra RRF channel when the query says "the query CLI command" (`0` = off) |
 | `--expand-chunk ID` | Inject a cached original chunk into the prompt (repeatable) |
 
 ### `chat` / `session` / `interactive` — Multi-turn REPL
@@ -483,7 +487,7 @@ The corrective loop is **off by default** (`retrieval.max_loops: 0`) so one-shot
 2. **Sparse retrieval**: BM25 keyword search over all chunks — catches exact function/variable name matches
 3. **Graph expansion**: beam walk over the knowledge graph (exposes / tested_by / gloss / calls / inheritance). Default `beam_width=6`, `beam_depth=2`; `expand_mode: bfs` keeps the old hop walk.
 4. **HyDE** (optional): hypothetical code document generation for query expansion
-5. **RRF fusion**: three signals combined via Reciprocal Rank Fusion
+5. **RRF fusion**: three signals combined via Reciprocal Rank Fusion. A tiny CLI/config catalog (`cli_retrieval.doc_index`, default on) is an extra lexical list so "the query CLI command" can hit `cmd_query`.
 6. **Cross-encoder reranking** (off by default): `cross-encoder/ms-marco-MiniLM-L-6-v2` can replace, blend, or gate the fused order (`retrieval.cross_encoder.mode`). Restore the old overwrite with `mode=replace` / `--ce-mode replace`.
 7. **MMR diversity**: Maximum Marginal Relevance prevents file dominance
 8. **Context injection**: `ARCHITECTURE.md`, `AGENTS.md`, `CLAUDE.md` as a stable prefix when present; optional CCR-lite pack (`--pack-mode ccr_lite`) after MMR
@@ -528,6 +532,12 @@ Key settings:
       "blend_alpha": 1.0,
       "gate_margin": null,
       "input": "content"
+    },
+    "cli_retrieval": {
+      "ident_split": false,
+      "argparse_enrich": false,
+      "symbol_boost": 0.0,
+      "doc_index": true
     },
     "hyde": { "enabled": false, "on_retry": true },
     "max_loops": 0,
