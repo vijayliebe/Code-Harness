@@ -187,7 +187,7 @@ retrieve(query, debug=False)
   ├── Memory (opt-in): on-the-fly BM25 over active `knowledge/memory/**` when `memory_weight` > 0 (default 0.0) or `--include-memory-search`
   ├── Chat-over-wiki (opt-in): `chat.wiki_mode` / `--wiki` prefers wiki hits then falls back to code; CCR expands linked `path:symbol`
   ├── Fusion: RRF with k=60
-  ├── Cross-encoder rerank: cross-encoder/ms-marco-MiniLM-L-6-v2
+  ├── Cross-encoder rerank: off by default; `--ce-mode replace|blend|gate` to enable
   └── Return top-k (default: 30)
        debug=True → returns (results, trace) tuple with per-source breakdown,
                     fused pre-CE list, and latencies_ms (dense/bm25/graph/ce)
@@ -195,7 +195,7 @@ retrieve(query, debug=False)
 
 Key design:
 - **BM25 persistence**: serialized to `bm25_{repo}.pkl` for fast cold starts on re-query, falls back to ChromaDB load
-- **Cross-encoder**: cached as global singleton; reranks top `rerank_top_k*2` candidates; falls through silently on import failure
+- **Cross-encoder**: off by default. When enabled, cached as a global singleton; `replace` / `blend` / `gate` over the top `rerank_top_k*2` candidates; falls through silently on import failure
 - **RRF formula**: `score = Σ weight * 1/(k + rank)` for each result list
 - **Graph boost**: graph-matched results get `score + graph_weight * max_fused_score`
 - **Debug mode**: when `debug=True`, returns `(results, {dense, sparse, graph, fused, reranked, latencies_ms})` — used by `--debug` and `eval`

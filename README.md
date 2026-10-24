@@ -2,7 +2,7 @@
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-Vectorize, index, and query any code repository with AI. Provides optimal context to AI models via hybrid retrieval (semantic + lexical + knowledge graph + cross-encoder reranking).
+Vectorize, index, and query any code repository with AI. Provides optimal context to AI models via hybrid retrieval (semantic + lexical + knowledge graph; cross-encoder reranking is off by default).
 
 ## Quick Start
 
@@ -22,9 +22,9 @@ pip install -r requirements.txt
 # max_loops 0, verify off, HyDE is a free template (not an LLM call).
 python3 main.py index .
 
-# Retrieval only — prints packed context. First query also downloads
-# cross-encoder/ms-marco-MiniLM-L-6-v2. A query *without* --no-llm calls
-# OpenAI gpt-4o and exits if OPENAI_API_KEY is unset.
+# Retrieval only — prints packed context. The cross-encoder is off by
+# default, so this does not download ms-marco. A query *without* --no-llm
+# calls OpenAI gpt-4o and exits if OPENAI_API_KEY is unset.
 python3 main.py query . --no-llm -q "how does the chunker work?"
 
 make test           # python3 -m unittest discover -s tests -v
@@ -96,7 +96,7 @@ python main.py query ./my-project --no-llm --pack-mode ccr_lite -q "how does the
 python main.py retrieve-chunk 'func:harness/chunker.py:CodeChunker.chunk_entities:abcd1234'
 ```
 
-Hybrid retrieval: dense vector search (semantic), BM25 keyword index (exact name matches), knowledge graph neighbor expansion. Results are fused via RRF, cross-encoder reranked, diversified via MMR, and assembled into optimal LLM context.
+Hybrid retrieval: dense vector search (semantic), BM25 keyword index (exact name matches), knowledge graph neighbor expansion. Results are fused via RRF, diversified via MMR, and assembled into LLM context. The cross-encoder is **off** by default (`retrieval.cross_encoder.enabled: false`). Turn it back on with `--ce-mode replace` (old overwrite), `--ce-mode blend --ce-blend-alpha 0.2`, or `--ce-mode gate --ce-gate-margin 2.0`.
 
 | Flag | Description |
 |------|-------------|
@@ -107,6 +107,9 @@ Hybrid retrieval: dense vector search (semantic), BM25 keyword index (exact name
 | `--debug` | Show per-source retrieval breakdown (dense/BM25/graph/cross-encoder) |
 | `--pack-mode` | `full` (default) or `ccr_lite` — pack signatures + key spans after MMR |
 | `--per-file-chunk-cap N` | Max chunks per file before the token budget (default **3**; `0` = unlimited) |
+| `--ce-mode` | Cross-encoder: `off` (default), `replace`, `blend`, or `gate` |
+| `--ce-blend-alpha A` | With `--ce-mode blend`, weight on min-max CE vs fused RRF |
+| `--ce-gate-margin M` | With `--ce-mode gate`, only reorder when CE top1−top2 ≥ M |
 | `--expand-chunk ID` | Inject a cached original chunk into the prompt (repeatable) |
 
 ### `chat` / `session` / `interactive` — Multi-turn REPL
