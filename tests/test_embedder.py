@@ -155,6 +155,34 @@ class TestProbeEmbedder(unittest.TestCase):
         self.assertEqual(reason, "")
 
 
+class TestJinaTransformersCompat(unittest.TestCase):
+    def test_compat_restores_prune_helper_when_missing(self):
+        import transformers.pytorch_utils as pytorch_utils
+
+        from harness.embedder import ensure_jina_transformers_compat
+
+        original = getattr(pytorch_utils, "find_pruneable_heads_and_indices", None)
+        try:
+            if original is not None:
+                delattr(pytorch_utils, "find_pruneable_heads_and_indices")
+            self.assertFalse(hasattr(pytorch_utils, "find_pruneable_heads_and_indices"))
+            ensure_jina_transformers_compat()
+            helper = pytorch_utils.find_pruneable_heads_and_indices
+            heads, index = helper([1], n_heads=2, head_size=2, already_pruned_heads=set())
+            self.assertEqual(heads, {1})
+            self.assertEqual(index.tolist(), [0, 1])
+            from transformers.configuration_utils import PretrainedConfig
+
+            self.assertTrue(hasattr(PretrainedConfig, "is_decoder"))
+            self.assertFalse(PretrainedConfig.is_decoder)
+        finally:
+            if original is None:
+                if hasattr(pytorch_utils, "find_pruneable_heads_and_indices"):
+                    delattr(pytorch_utils, "find_pruneable_heads_and_indices")
+            else:
+                pytorch_utils.find_pruneable_heads_and_indices = original
+
+
 class TestLocalModelLoadUsesHfId(unittest.TestCase):
     def test_jina_code_loads_huggingface_id(self):
         from unittest.mock import patch
@@ -171,8 +199,8 @@ class TestLocalModelLoadUsesHfId(unittest.TestCase):
 
         loaded = []
 
-        def fake_ctor(name, trust_remote_code=False):
-            loaded.append((name, trust_remote_code))
+        def fake_ctor(name, trust_remote_code=False, **kwargs):
+            loaded.append((name, trust_remote_code, kwargs))
             return FakeModel()
 
         import harness.embedder as embed_mod
@@ -185,6 +213,7 @@ class TestLocalModelLoadUsesHfId(unittest.TestCase):
             self.assertEqual(model.get_embedding_dimension(), 768)
             self.assertEqual(loaded[0][0], "jinaai/jina-embeddings-v2-base-code")
             self.assertTrue(loaded[0][1])
+            self.assertIn("dtype", loaded[0][2].get("model_kwargs", {}))
             self.assertEqual(embedder.dimensions, 768)
         finally:
             embed_mod._model_cache.clear()

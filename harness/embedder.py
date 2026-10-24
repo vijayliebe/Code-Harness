@@ -200,10 +200,160 @@ def probe_embedder(
     return True, ""
 
 
-def _try_load_local(hf_id: str):
+_TF5_JINA_CONFIG_DEFAULTS = {
+    "is_decoder": False,
+    "add_cross_attention": False,
+}
+
+
+def ensure_jina_transformers_compat() -> None:
+    """Restore transformers 4.x symbols Jina-code remote BERT still uses.
+
+    ``jinaai/jina-bert-v2-qk-post-norm`` imports
+    ``find_pruneable_heads_and_indices`` (removed in transformers 5) and
+    reads ``config.is_decoder`` / ``config.add_cross_attention`` (no
+    longer on ``PretrainedConfig``). Without these the catalog Jina-code
+    model cannot load on current deps.
+    """
+    try:
+        import transformers.pytorch_utils as pytorch_utils
+    except ImportError:
+        pytorch_utils = None
+    if pytorch_utils is not None and not hasattr(
+        pytorch_utils, "find_pruneable_heads_and_indices"
+    ):
+        import torch
+
+        def find_pruneable_heads_and_indices(
+            heads, n_heads, head_size, already_pruned_heads
+        ):
+            mask = torch.ones(n_heads, head_size)
+            remaining = set(heads) - already_pruned_heads
+            for head in remaining:
+                shifted = head - sum(1 if h < head else 0 for h in already_pruned_heads)
+                mask[shifted] = 0
+            keep = mask.view(-1).contiguous().eq(1)
+            index = torch.arange(len(keep))[keep].long()
+            return remaining, index
+
+        pytorch_utils.find_pruneable_heads_and_indices = find_pruneable_heads_and_indices
+
+    try:
+        from transformers.configuration_utils import PretrainedConfig
+    except ImportError:
+        PretrainedConfig = None
+    if PretrainedConfig is not None:
+        for name, value in _TF5_JINA_CONFIG_DEFAULTS.items():
+            if not hasattr(PretrainedConfig, name):
+                setattr(PretrainedConfig, name, value)
+
+    try:
+        from transformers.modeling_utils import ModuleUtilsMixin
+    except ImportError:
+        return
+    if hasattr(ModuleUtilsMixin, "get_extended_attention_mask"):
+        return
+
+    import torch
+
+    def invert_attention_mask(self, encoder_attention_mask):
+        if encoder_attention_mask.dim() == 3:
+            encoder_extended_attention_mask = encoder_attention_mask[:, None, :, :]
+        else:
+            encoder_extended_attention_mask = encoder_attention_mask[:, None, None, :]
+        dtype = self.dtype
+        encoder_extended_attention_mask = encoder_extended_attention_mask.to(dtype=dtype)
+        return (1.0 - encoder_extended_attention_mask) * torch.finfo(dtype).min
+
+    def get_extended_attention_mask(self, attention_mask, input_shape, device=None, dtype=None):
+        if dtype is None:
+            dtype = self.dtype
+        if attention_mask.dim() == 3:
+            extended_attention_mask = attention_mask[:, None, :, :]
+        elif attention_mask.dim() == 2:
+            extended_attention_mask = attention_mask[:, None, None, :]
+        else:
+            raise ValueError(
+                f"Wrong shape for input_ids (shape {input_shape}) or "
+                f"attention_mask (shape {attention_mask.shape})"
+            )
+        extended_attention_mask = extended_attention_mask.to(dtype=dtype)
+        return (1.0 - extended_attention_mask) * torch.finfo(dtype).min
+
+    def get_head_mask(self, head_mask, num_hidden_layers, is_attention_chunked=False):
+        if head_mask is None:
+            return [None] * num_hidden_layers
+        if head_mask.dim() == 1:
+            head_mask = head_mask.unsqueeze(0).unsqueeze(0).unsqueeze(-1).unsqueeze(-1)
+            head_mask = head_mask.expand(num_hidden_layers, -1, -1, -1, -1)
+        elif head_mask.dim() == 2:
+            head_mask = head_mask.unsqueeze(1).unsqueeze(-1).unsqueeze(-1)
+        if is_attention_chunked:
+            head_mask = head_mask.unsqueeze(-1)
+        return head_mask.to(dtype=self.dtype)
+
+    ModuleUtilsMixin.invert_attention_mask = invert_attention_mask
+    ModuleUtilsMixin.get_extended_attention_mask = get_extended_attention_mask
+    ModuleUtilsMixin.get_head_mask = get_head_mask
+
+
+def _local_st_kwargs(hf_id: str) -> dict:
+    kwargs = {"trust_remote_code": True}
+    if hf_id == JINA_CODE_HF_ID:
+        import torch
+
+        # Hub default is fp16; CPU inference is wrong-slow unless we force fp32.
+        kwargs["model_kwargs"] = {"dtype": torch.float32}
+    return kwargs
+
+
+def _repair_jina_embedding_buffers(model) -> None:
+    """TF5 from_pretrained leaves Jina persistent=False buffers uninitialized."""
+    import torch
+
+    inner = getattr(getattr(model, "0", None), "auto_model", None)
+    if inner is None:
+        try:
+            inner = model[0].auto_model
+        except Exception:
+            inner = getattr(model, "auto_model", None)
+    emb = getattr(inner, "embeddings", None) if inner is not None else None
+    if emb is None:
+        return
+    max_pos = int(getattr(getattr(inner, "config", None), "max_position_embeddings", 8192) or 8192)
+    if hasattr(emb, "position_ids"):
+        emb.register_buffer(
+            "position_ids",
+            torch.arange(max_pos).expand((1, -1)).contiguous(),
+            persistent=False,
+        )
+    if hasattr(emb, "token_type_ids"):
+        emb.register_buffer(
+            "token_type_ids",
+            torch.zeros((1, max_pos), dtype=torch.long),
+            persistent=False,
+        )
+
+
+def _load_sentence_transformer(hf_id: str):
     from sentence_transformers import SentenceTransformer
 
-    return SentenceTransformer(hf_id, trust_remote_code=True)
+    ensure_jina_transformers_compat()
+    model = SentenceTransformer(hf_id, **_local_st_kwargs(hf_id))
+    if hf_id == JINA_CODE_HF_ID:
+        _repair_jina_embedding_buffers(model)
+        # Hub max is 8192; ALiBi + SDPA materializes [B,H,S,S] in fp32.
+        # batch=32 at 8192 needs ~103GB. Cap to 512 so the golden-v2
+        # index fits in a 16GB box; MiniLM is 256 anyway.
+        model.max_seq_length = 512
+        tok = getattr(model, "tokenizer", None)
+        if tok is not None and hasattr(tok, "model_max_length"):
+            tok.model_max_length = 512
+    return model
+
+
+def _try_load_local(hf_id: str):
+    return _load_sentence_transformer(hf_id)
 
 
 class Embedder:
@@ -250,8 +400,7 @@ class Embedder:
             self.dimensions = cached.get_embedding_dimension()
             return cached
         try:
-            from sentence_transformers import SentenceTransformer
-            model = SentenceTransformer(cache_key, trust_remote_code=True)
+            model = _load_sentence_transformer(cache_key)
             self.dimensions = model.get_embedding_dimension()
             _model_cache[cache_key] = model
             return model
@@ -395,5 +544,8 @@ class Embedder:
             return self._embed_jina(texts)
 
         model = self._load_local_model()
-        embeddings = model.encode(texts, show_progress_bar=True, normalize_embeddings=True)
+        encode_kwargs = {"show_progress_bar": True, "normalize_embeddings": True}
+        if self.model_name == JINA_CODE_EMBED_MODEL:
+            encode_kwargs["batch_size"] = 16
+        embeddings = model.encode(texts, **encode_kwargs)
         return embeddings.tolist() if isinstance(embeddings, np.ndarray) else embeddings

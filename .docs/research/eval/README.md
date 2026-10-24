@@ -203,6 +203,12 @@ and exits 0. Selecting `--embed-model jina-embeddings-v2-base-code` as the
 active model while it cannot be loaded still fails clearly. `make test` does
 not download Jina and stays green on the MiniLM default.
 
+Golden-v2 (48 queries, CE off, `symbol_boost=0.5`) is recorded in
+[RESULTS-embed-ab-golden-v2.md](RESULTS-embed-ab-golden-v2.md). Jina did
+not clear the default-flip gate. On `transformers` 5.x the catalog
+loader restores a few 4.x symbols and caps Jina at 512 tokens so ALiBi
+does not allocate ~103 GB. Default embedder stays MiniLM.
+
 Interactive `/compact` is session-only and does not change these eval numbers (easy p50 stays the one-shot path). A synthetic 10-turn session is kept under `llm.max_tokens * 2` by dropping older packs while never dropping the latest pack ids; see `tests/test_session.py`.
 
 Path-question fixtures (`q-who-calls-*`, `q-what-exposes-*`) are the KG-enrichment anchors: they should improve when `exposes` / `tested_by` / beam expansion fire. If extractors cannot yet find enough edges, beam + Mermaid still ship.
